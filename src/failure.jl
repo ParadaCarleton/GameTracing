@@ -13,15 +13,16 @@ struct TraceFailure{C <: NamedTuple}
 end
 
 """
-    TraceResult(state, failure)
+    Traced(logits)
 
-The logits `state` of a trace at its target precision, or its `failure` (`nothing` on success;
-then `state` is the last point the trace accepted).
+The `logits` of a trace at its target precision.
 """
-struct TraceResult{E <: Real, F <: Union{Nothing, TraceFailure}}
-    state::Vector{E}
-    failure::F
+struct Traced{E <: Real}
+    logits::Vector{E}
 end
+
+"""A trace's outcome: `Traced`, or the `TraceFailure` that stopped it, whose context holds the last accepted point."""
+const TraceResult{E <: Real} = Union{Traced{E}, TraceFailure}
 
 """The value of `x` with any automatic-differentiation tangent dropped; clients extend it for their dual types."""
 primal(x::Real)::typeof(x) = x

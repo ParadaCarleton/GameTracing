@@ -155,7 +155,7 @@ end
     trace_endpoint(game, width, settings; keep_going, accept_corrected, context)
 
 Follow `game`'s branch of `width` logits from the flat start (zero logits, the only root at precision zero) to
-`game.target_precision`, and return a `TraceResult` of the logits there (`sinh` of the traced state). The
+`game.target_precision`, and return `Traced` logits there or the `TraceFailure` that stopped short (a `TraceResult`). The
 relative precision `t` is the precision in units of the target.
 
 `keep_going(u, t)` runs at each accepted point before the next step's corrector, and `false` stops the trace.
@@ -179,7 +179,7 @@ function trace_endpoint(
     traced_start = [flat; start]
     # The start is a root of the map for every finite game; a non-finite payoff shows in its residual.
     if !all(isfinite, GameResidual(game)(traced_start, start))
-        return TraceResult(copy(flat), TraceFailure(NotFinite, (; context..., start)))
+        return TraceFailure(NotFinite, (; context..., start))
     end
     progress = TraceProgress(copy(flat), start, 0, start, start, zero(flat), zero(E), false)
     finalise = TraceFinalise(progress, keep_going)
@@ -212,7 +212,7 @@ end
 """
     reached_state(progress, outcome, target, step_limit, target_precision, context)
 
-The `TraceResult` of a trace whose `progress` holds the last accepted point and whose `outcome` is the last
+The `TraceResult` (`Traced` or `TraceFailure`) of a trace whose `progress` holds the last accepted point and whose `outcome` is the last
 corrector's step length or the BifurcationKit exception that ended it.
 """
 function reached_state(
@@ -225,7 +225,7 @@ function reached_state(
 )::TraceResult{E} where {E <: Real}
     logits = sinh.(progress.state)
     if isnothing(outcome.exception) && progress.relative_precision == target
-        return TraceResult(logits, nothing)
+        return Traced(logits)
     end
     cause = if uncorrected_start(outcome.exception)
         TraceStuck
@@ -236,7 +236,7 @@ function reached_state(
     else
         TraceStuck
     end
-    failure = TraceFailure(
+    return TraceFailure(
         cause,
         (;
             context..., progress.steps,
@@ -249,5 +249,4 @@ function reached_state(
             outcome.exception,
         ),
     )
-    return TraceResult(logits, failure)
 end

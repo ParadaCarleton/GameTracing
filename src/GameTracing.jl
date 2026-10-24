@@ -25,6 +25,7 @@ export LogitGame,
     TraceSettings,
     TraceCause,
     TraceFailure,
+    Traced,
     TraceResult,
     trace_endpoint,
     primal

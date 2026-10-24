@@ -33,21 +33,21 @@ const WIDTH = 2
         WIDTH,
         TraceSettings{Float32}(),
     )
-    @test isnothing(result.failure)
-    @test residual_norm(GAME, result.state, TARGET_PRECISION) < 1.0f-4
+    @test result isa Traced
+    @test residual_norm(GAME, result.logits, TARGET_PRECISION) < 1.0f-4
 end
 
 @testset "tangent and bordered solver choices reach the same unique equilibrium" begin
     game = LogitGame(GAME, TARGET_PRECISION)
-    reference = trace_endpoint(game, WIDTH, TraceSettings{Float32}()).state
+    reference = trace_endpoint(game, WIDTH, TraceSettings{Float32}()).logits
     for settings in (
             TraceSettings{Float32}(tangent = :secant),
             TraceSettings{Float32}(bordered_solver = :bordering),
             TraceSettings{Float32}(step_control = false),
         )
         traced = trace_endpoint(game, WIDTH, settings)
-        @test isnothing(traced.failure)
-        @test maximum(abs, traced.state .- reference) < 1.0f-3
+        @test traced isa Traced
+        @test maximum(abs, traced.logits .- reference) < 1.0f-3
     end
 end
 
@@ -57,8 +57,8 @@ end
         WIDTH,
         TraceSettings{Float32}(steps = 1, ds = 0.005f0, dsmax = 0.01f0),
     )
-    @test result.failure isa TraceFailure
-    @test result.failure.cause in (GameTracing.NoConvergence, GameTracing.TraceStuck)
+    @test result isa TraceFailure
+    @test result.cause in (GameTracing.NoConvergence, GameTracing.TraceStuck)
 end
 
 @testset "a refusing keep_going callback stops the trace" begin
@@ -69,8 +69,8 @@ end
         TraceSettings{Float32}();
         keep_going = refuse_all,
     )
-    @test result.failure.cause == GameTracing.TraceStuck
-    @test result.failure.context.relative_precision < 1
+    @test result.cause == GameTracing.TraceStuck
+    @test result.context.relative_precision < 1
 end
 
 @testset "a non-finite game fails at the start" begin
@@ -81,8 +81,8 @@ end
         TraceSettings{Float32}();
         context = (; label = :broken),
     )
-    @test result.failure.cause == GameTracing.NotFinite
-    @test result.failure.context.label == :broken
+    @test result.cause == GameTracing.NotFinite
+    @test result.context.label == :broken
 end
 
 @testset "augmented_theta rejects a trace PALC cannot weight" begin
