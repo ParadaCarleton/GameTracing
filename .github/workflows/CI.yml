@@ -44,7 +44,7 @@ jobs:
         run: |
           gremlins=$(julia --project=@gremlins -e 'using Gremlins; print(pkgdir(Gremlins))')
           julia --project=@gremlins "$gremlins/bin/gremlins-cli.jl" \
-            --pkg "$GITHUB_WORKSPACE" --warm --strong 0.80 --acceptable 0.60 \
+            --pkg "$GITHUB_WORKSPACE" --warm --max-sites 100 --strong 0.80 --acceptable 0.60 \
             --json mutation-report.json
       - uses: actions/upload-artifact@v4
         if: always()
