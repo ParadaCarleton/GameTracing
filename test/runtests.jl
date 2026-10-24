@@ -1,7 +1,7 @@
 using GameTracing
 using Test
 
-"""Logit response `z = λ (A p + b)` with `p = logistic(z)` at precision `λ`: payoff gains `A p + b`, `T` zero at `λ = 0`."""
+"""Logit response `z = precision (A p + b)` with `p = logistic(z)`: payoff gains `A p + b`, `T` zero at precision zero."""
 struct LinearGainPass{E <: Real}
     interaction::Matrix{E}
     stand_alone::Vector{E}

@@ -1,10 +1,10 @@
 """
     LogitGame(pass, target_precision)
 
-A logit game whose equilibria solve `z = T(z, λ)` at precision `λ = 1 / temperature`. `pass(z, λ)` returns
-`(; response, logit_slope, precision_slope)`: the map's value `T(z, λ)`, its Jacobian `∂T/∂z` and its slope
-`∂T/∂λ`, from one evaluation. `T(z, 0) = 0`, so the flat equilibrium `z = 0` is the only root at `λ = 0`.
-`target_precision` is the precision `λ` a trace ends at.
+A logit game whose equilibria solve `z = T(z, precision)` at precision `1 / temperature`. `pass(z, precision)` returns
+`(; response, logit_slope, precision_slope)`: the map's value `T(z, precision)`, its Jacobian `∂T/∂z` and its slope
+`∂T/∂precision`, from one evaluation. `T(z, 0) = 0`, so the flat equilibrium `z = 0` is the only root at zero precision.
+`target_precision` is the precision a trace ends at.
 """
 struct LogitGame{P, T <: Real}
     pass::P
@@ -20,7 +20,7 @@ end
     GameResidual(game)
 
 BifurcationKit's `F(x, pin)` of `game`'s branch with the relative precision carried as the state's last
-coordinate: `x = [u; ρ]`, `F = [sinh(u) - T(sinh(u), ρ λ*); ρ - pin]`, `λ*` the target precision. The logits
+coordinate: `x = [u; ρ]`, `F = [sinh(u) - T(sinh(u), ρ P); ρ - pin]`, `P` the target precision. The logits
 `z = sinh(u)` grow like `ρ` along the branch; `asinh` keeps their arclength commensurate with `ρ`'s near the end.
 `pin` is BifurcationKit's continuation parameter, which only pins `ρ`.
 """
@@ -68,7 +68,7 @@ state_of(x::AbstractVector)::AbstractVector = view(x, firstindex(x):(lastindex(x
     branch_system(game, x, pin)
 
 `(; residual, jacobian)` of `game`'s branch at `x = [u; ρ]`: `∂F/∂u = (I - ∂T/∂z) diag(cosh u)` and
-`∂F/∂ρ = -λ* ∂T/∂λ`, over the relative precision's own row `[0 … 0 1]`.
+`∂F/∂ρ = -P ∂T/∂precision`, over the relative precision's own row `[0 … 0 1]`.
 """
 function branch_system(game::LogitGame, x::AbstractVector{E}, pin::Real)::NamedTuple{
     (:residual, :jacobian),
