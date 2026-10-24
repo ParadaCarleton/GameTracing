@@ -21,7 +21,7 @@ Steps are arclength in PALC's norm `sqrt(θ ‖du‖² / k + (1 - θ) dt²)`, `k
 - `step_control`: BifurcationKit's `CorrectorQuality` with thresholds `max_distance` (the Euclidean length of a
   Newton step's logit part, as Gambit's 0.4 in log probabilities), `max_contraction`, `max_growth` and
   `contraction_offset`; `Inf` switches a threshold off. `orientation_check` orients a bordered tangent by the
-  determinant of the bordered matrix (the `:matrix` solver).
+  determinant of the bordered matrix, and only with the `:matrix` solver (the `:bordering` solver has no determinant).
 """
 Base.@kwdef struct TraceSettings{E <: Real}
     ds::E = 0.05f0
@@ -126,7 +126,8 @@ function continue_trace(
         θ = augmented_theta(theta, width),
         bls = bordered_linear_solver(settings.bordered_solver, length(traced_start), E),
         step_control = step_control(settings, width),
-        orientation_check = settings.orientation_check,
+        orientation_check = settings.orientation_check &&
+            settings.bordered_solver === :matrix,
         corrector = BifurcationKit.FreeParameterNewton(),
     )
     corrector = CorrectorReach(
