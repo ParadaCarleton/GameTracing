@@ -3,7 +3,7 @@
                   newton_iterations, steps, tangent, bordered_solver, step_control, max_distance,
                   max_contraction, max_growth, contraction_offset, orientation_check)
 
-BifurcationKit PALC controls for `trace_endpoint`, in `(u, t)` with `u = asinh(logits)` and `t` the level.
+BifurcationKit PALC controls for `trace_endpoint`, in `(u, t)` with `u = asinh(logits)` and `t` the relative precision.
 Steps are arclength in PALC's norm `sqrt(θ ‖du‖² / k + (1 - θ) dt²)`, `k` the number of logits.
 
 - `ds`, `dsmin`, `dsmax`: first, smallest and largest step. A step whose corrector fails halves; the trace ends
@@ -11,7 +11,7 @@ Steps are arclength in PALC's norm `sqrt(θ ‖du‖² / k + (1 - θ) dt²)`, `k
 - `aggressiveness` (BifurcationKit's `a`): a step grows by `1 + a ((N - n) / N)²` after a corrector of `n` of
   its `N = newton_iterations` iterations.
 - `corrector_reach`: a corrector further than this times its step from its predictor is refused (`CorrectorReach`).
-- `theta`: the state's weight against the level's in the arclength norm. `eta`: the first tangent is the secant
+- `theta`: the state's weight against the relative precision's in the arclength norm. `eta`: the first tangent is the secant
   to a solve at `ds / eta`.
 - `tolerance`, `floor_ulps`: the corrector's sup-norm residual, or `floor_ulps` ulps of the largest logit where
   that is larger (`corrector_tolerance`).
@@ -67,10 +67,10 @@ function step_control(settings::TraceSettings{E}, width::Integer) where {E <: Re
 end
 
 """
-    continue_trace(game, traced_start, settings, finalise, corrected)
+    continue_trace(game, traced_start, settings, finalise, accept_corrected)
 
-Runs the PALC continuation of `game`'s branch from `traced_start = [u; 0]` toward level one, with `finalise` at
-each accepted point and `corrected` at each corrector, and returns the step length its last corrector tried.
+Runs the PALC continuation of `game`'s branch from `traced_start = [u; 0]` toward relative precision one, with `finalise` at
+each accepted point and `accept_corrected` at each corrector, and returns the step length its last corrector tried.
 Its algorithm, bordered solver and step control are runtime choices of `settings`, so BifurcationKit's
 constructors are not inferable; it runs once per trace, whose steps dominate it.
 """
@@ -79,7 +79,7 @@ function continue_trace(
     traced_start::AbstractVector{E},
     settings::TraceSettings,
     finalise::TraceFinalise,
-    corrected::Any,
+    accept_corrected::Any,
 )::E where {E <: Real}
     start = zero(E)
     target = one(E)
@@ -88,7 +88,7 @@ function continue_trace(
         game,
         traced_start,
         start;
-        record_from_solution = trace_record_level,
+        record_from_solution = trace_record_precision,
     )
     newton = BifurcationKit.NewtonPar(;
         tol = E(settings.tolerance),
@@ -130,7 +130,7 @@ function continue_trace(
         corrector = BifurcationKit.FreeParameterNewton(),
     )
     corrector = CorrectorReach(
-        corrected,
+        accept_corrected,
         E(settings.corrector_reach),
         theta,
         newton.tol,
@@ -151,45 +151,37 @@ function continue_trace(
 end
 
 """
-    trace_endpoint(game, flat, settings; accepted, corrected, context)
+    trace_endpoint(game, width, settings; keep_going, accept_corrected, context)
 
-Follow `game`'s branch from the flat start `(flat, 0)` — at infinite temperature the map is zero and `flat`, the
-zero logits, is its only root — to level one, `game.temperature`, and return a `TraceResult` of the logits there
-(`sinh` of the traced state). The level is the precision in units of the end's, `t = temperature / τ`.
+Follow `game`'s branch of `width` logits from the flat start (zero logits, the only root at precision zero) to
+`game.target_precision`, and return a `TraceResult` of the logits there (`sinh` of the traced state). The
+relative precision `t` is the precision in units of the target.
 
-`accepted(u, t)` runs at each accepted point before the next step's corrector, and `false` stops the trace.
-`corrected(u, t, converged)` runs as each corrector ends, and `false` refuses a converged point, which halves
-the step. Both see the state without its level. A trace that stops short fails with `NoConvergence` when it
+`keep_going(u, t)` runs at each accepted point before the next step's corrector, and `false` stops the trace.
+`accept_corrected(u, t, converged)` runs as each corrector ends, and `false` refuses a converged point, which halves
+the step. Both see the logits, without the relative precision. A trace that stops short fails with `NoConvergence` when it
 spends `settings.steps` and `TraceStuck` otherwise (a step below `dsmin`, an unchanged accepted point, or a
 refusal); a non-finite start or a broken linear solve fails `NotFinite` or `Singular`. `context` rides on
 every failure.
 """
 function trace_endpoint(
     game::LogitGame,
-    flat::AbstractVector{E},
-    settings::TraceSettings;
-    accepted::Any = AcceptAll(),
-    corrected::Any = AcceptAll(),
+    width::Integer,
+    settings::TraceSettings{E};
+    keep_going::Any = AcceptAll(),
+    accept_corrected::Any = AcceptAll(),
     context::NamedTuple = (;),
-)::TraceResult where {E <: Real}
+)::TraceResult{E} where {E <: Real}
     start = zero(E)
     target = one(E)
+    flat = zeros(E, width)
     traced_start = [flat; start]
     # The start is a root of the map for every finite game; a non-finite payoff shows in its residual.
     if !all(isfinite, GameResidual(game)(traced_start, start))
-        return TraceResult(Vector{E}(flat), TraceFailure(NotFinite, (; context..., start)))
+        return TraceResult(copy(flat), TraceFailure(NotFinite, (; context..., start)))
     end
-    progress = TraceProgress(
-        Vector{E}(flat),
-        start,
-        0,
-        start,
-        start,
-        zero(Vector{E}(flat)),
-        zero(E),
-        false,
-    )
-    finalise = TraceFinalise(progress, accepted)
+    progress = TraceProgress(copy(flat), start, 0, start, start, zero(flat), zero(E), false)
+    finalise = TraceFinalise(progress, keep_going)
     # Third-party code: BifurcationKit throws a `String` when Newton misses its first point and an
     # `ErrorException` at its second; a non-finite Jacobian reaches LAPACK.
     outcome = try
@@ -198,7 +190,7 @@ function trace_endpoint(
             traced_start,
             settings,
             finalise,
-            corrected,
+            accept_corrected,
         )::E, exception = nothing)
     catch exception
         if !uncorrected_start(exception) && !solver_blowup(exception)
@@ -211,13 +203,13 @@ function trace_endpoint(
         outcome,
         target,
         settings.steps,
-        game.temperature,
+        game.target_precision,
         context,
     )
 end
 
 """
-    reached_state(progress, outcome, target, step_limit, temperature, context)
+    reached_state(progress, outcome, target, step_limit, precision, context)
 
 The `TraceResult` of a trace whose `progress` holds the last accepted point and whose `outcome` is the last
 corrector's step length or the BifurcationKit exception that ended it.
@@ -231,7 +223,7 @@ function reached_state(
     context::NamedTuple,
 )::TraceResult{E} where {E <: Real}
     logits = sinh.(progress.state)
-    if isnothing(outcome.exception) && progress.level == target
+    if isnothing(outcome.exception) && progress.relative_precision == target
         return TraceResult(logits, nothing)
     end
     cause = if uncorrected_start(outcome.exception)
@@ -247,12 +239,12 @@ function reached_state(
         cause,
         (;
             context..., progress.steps,
-            temperature = level_temperature(temperature, progress.level),
-            progress.level_min, progress.level_max, progress.unmoved,
-            state = copy(progress.state), progress.level, step_length = E(
+            precision = precision * progress.relative_precision,
+            progress.precision_min, progress.precision_max, progress.unmoved,
+            state = copy(progress.state), progress.relative_precision, step_length = E(
                 outcome.step_length,
             ),
-            tangent_state = copy(progress.tangent_state), progress.tangent_level,
+            tangent_state = copy(progress.tangent_state), progress.tangent_precision,
             outcome.exception,
         ),
     )

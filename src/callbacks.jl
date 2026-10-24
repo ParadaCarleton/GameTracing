@@ -29,14 +29,14 @@ function corrector_tolerance(
     return max(tolerance, convert(T, floor_ulps * eps(typeof(largest)) * largest))
 end
 
-"""A trace callback that always lets the trace go on: `(state, level)` or `(state, level, converged)`."""
+"""A trace callback that always lets the trace go on: `(state, relative_precision)` or `(state, relative_precision, converged)`."""
 struct AcceptAll end
 
 (::AcceptAll)(::AbstractVector, ::Real)::Bool = true
 (::AcceptAll)(::AbstractVector, ::Real, ::Bool)::Bool = true
 
 """
-    CorrectorReach(corrected, reach, theta, tolerance, floor_ulps, predicted, step_length)
+    CorrectorReach(accept_corrected, reach, theta, tolerance, floor_ulps, predicted, step_length)
 
 The trace's BifurcationKit `callback_newton`, which also decides the corrector's convergence: an iterate
 under `corrector_tolerance` ends Newton's method converged (`NewtonConverged`). A non-finite residual stops
@@ -44,13 +44,13 @@ the corrector, and so does any iterate further from the step's predictor than `r
 own step, in PALC's norm (`arclength_distance`); the step then halves. A converged closing point beyond that
 distance is refused the same way. On a smooth branch the distance is the branch's curvature times `ds² / 2`,
 so halving brings any step under it, while an iterate that diverges or lands on another branch is far from it.
-A predictor that did not move has no reach to compare. `corrected(u, t, converged)` then sees every other
+A predictor that did not move has no reach to compare. `accept_corrected(u, t, converged)` then sees every other
 closing point. `predicted` and `step_length` hold the current step's predictor.
 """
 mutable struct CorrectorReach{C, E <: Real}
     # Mutable because BifurcationKit shows the predictor only to a corrector's first callback and the
-    # corrected point only to its last, and returns neither.
-    corrected::C
+    # accept_corrected point only to its last, and returns neither.
+    accept_corrected::C
     reach::E
     theta::E
     tolerance::E
@@ -69,7 +69,7 @@ function (check::CorrectorReach)(
     end
     # PALC's closing call, the only one without `z0`, ends every corrector.
     if haskey(iterate, :z0)
-        @debug "corrector iterate" _group = :trace step = iterate.step residual = iterate.residual level = last(
+        @debug "corrector iterate" _group = :trace step = iterate.step residual = iterate.residual relative_precision = last(
             iterate.x,
         )
         if iterate.step == 0
@@ -97,7 +97,7 @@ function (check::CorrectorReach)(
         )
         return false
     end
-    if !check.corrected(state_of(iterate.x), iterate.p, converged)
+    if !check.accept_corrected(state_of(iterate.x), iterate.p, converged)
         return false
     end
     return newton_verdict(check, iterate, true)
@@ -131,21 +131,21 @@ function within_reach(check::CorrectorReach, point::AbstractVector)::Bool
 end
 
 """
-    TraceProgress(state, level, steps, level_min, level_max, tangent_state, tangent_level, unmoved)
+    TraceProgress(state, relative_precision, steps, precision_min, precision_max, tangent_state, tangent_precision, unmoved)
 
-The last point `(state, level)` a trace accepted, its step count, the range of the level over accepted points
-and the tangent there: BifurcationKit's `finalise_solution` callback. An accepted point bitwise equal to the one
+The last point `(state, relative_precision)` a trace keep_going, its step count, the range of the relative_precision over keep_going points
+and the tangent there: BifurcationKit's `finalise_solution` callback. An keep_going point bitwise equal to the one
 before it (a step below the point's rounding) sets `unmoved` and stops the trace, a stall. `JULIA_DEBUG=trace`
 lists every point.
 """
 mutable struct TraceProgress{E <: Real}
     state::Vector{E}
-    level::E
+    relative_precision::E
     steps::Int
-    level_min::E
-    level_max::E
+    precision_min::E
+    precision_max::E
     tangent_state::Vector{E}
-    tangent_level::E
+    tangent_precision::E
     unmoved::Bool
 end
 
@@ -156,30 +156,30 @@ function (progress::TraceProgress)(
     result::Any;
     keywords...,
 )::Bool
-    @debug "trace point" _group = :trace step level = point.p x = copy(
+    @debug "trace point" _group = :trace step relative_precision = point.p x = copy(
         point.u,
     ) tangent = copy(tangent.u)
-    progress.unmoved = point.p == progress.level &&
+    progress.unmoved = point.p == progress.relative_precision &&
         view(point.u, eachindex(progress.state)) == progress.state
     copyto!(progress.state, 1, point.u, 1, length(progress.state))
-    progress.level = point.p
+    progress.relative_precision = point.p
     progress.steps = step
-    progress.level_min = min(progress.level_min, point.p)
-    progress.level_max = max(progress.level_max, point.p)
+    progress.precision_min = min(progress.precision_min, point.p)
+    progress.precision_max = max(progress.precision_max, point.p)
     copyto!(progress.tangent_state, 1, tangent.u, 1, length(progress.tangent_state))
-    progress.tangent_level = tangent.p
+    progress.tangent_precision = tangent.p
     return !progress.unmoved
 end
 
 """
-    TraceFinalise(progress, accepted)
+    TraceFinalise(progress, keep_going)
 
 BifurcationKit's `finalise_solution` of a trace: `progress` records the point, and the trace goes on
-while `accepted(state, level)` holds, `state` the point without its level.
+while `keep_going(state, relative_precision)` holds, `state` the point without its relative_precision.
 """
 struct TraceFinalise{R <: TraceProgress, A}
     progress::R
-    accepted::A
+    keep_going::A
 end
 
 function (finalise::TraceFinalise)(
@@ -190,10 +190,11 @@ function (finalise::TraceFinalise)(
     keywords...,
 )::Bool
     recorded = finalise.progress(point, tangent, step, result)
-    return recorded && finalise.accepted(state_of(point.u), point.p)
+    return recorded && finalise.keep_going(state_of(point.u), point.p)
 end
 
-"""One scalar per step for BifurcationKit's branch record, the level: `TraceProgress` keeps the point."""
-function trace_record_level(::Any, level::L; keywords...)::L where {L <: Real}
-    return level
+"""One scalar per step for BifurcationKit's branch record, the relative_precision: `TraceProgress` keeps the point."""
+function trace_record_precision(::Any, relative_precision::L; keywords...)::L where {L <:
+    Real}
+    return relative_precision
 end

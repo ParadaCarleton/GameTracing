@@ -1,4 +1,4 @@
-"""Why a trace stopped short of its target temperature."""
+"""Why a trace stopped short of its target precision."""
 @enum TraceCause NoConvergence TraceStuck NotFinite Singular
 
 """
@@ -15,7 +15,7 @@ end
 """
     TraceResult(state, failure)
 
-The logits `state` of a trace at its target temperature, or its `failure` (`nothing` on success;
+The logits `state` of a trace at its target precision, or its `failure` (`nothing` on success;
 then `state` is the last point the trace accepted).
 """
 struct TraceResult{E <: Real, F <: Union{Nothing, TraceFailure}}
