@@ -158,9 +158,9 @@ Follow `game`'s branch of `width` logits from the flat start (zero logits, the o
 `game.target_precision`, and return `Traced` logits there or the `TraceFailure` that stopped short (a `TraceResult`). The
 relative precision `t` is the precision in units of the target.
 
-`keep_going(u, t)` runs at each accepted point before the next step's corrector, and `false` stops the trace.
-`accept_corrected(u, t, converged)` runs as each corrector ends, and `false` refuses a converged point, which halves
-the step. Both see the logits, without the relative precision. A trace that stops short fails with `NoConvergence` when it
+`keep_going(logits, t)` runs at each accepted point before the next step's corrector, and `false` stops the trace.
+`accept_corrected(logits, t, converged)` runs as each corrector ends, and `false` refuses a converged point, which
+halves the step. A trace that stops short fails with `NoConvergence` when it
 spends `settings.steps` and `TraceStuck` otherwise (a step below `dsmin`, an unchanged accepted point, or a
 refusal); a non-finite start or a broken linear solve fails `NotFinite` or `Singular`. `context` rides on
 every failure.
@@ -179,7 +179,10 @@ function trace_endpoint(
     traced_start = [flat; start]
     # The start is a root of the map for every finite game; a non-finite payoff shows in its residual.
     if !all(isfinite, GameResidual(game)(traced_start, start))
-        return TraceFailure(NotFinite, (; context..., start))
+        return TraceFailure(
+            NotFinite,
+            (; context..., logits = flat, relative_precision = start),
+        )
     end
     progress = TraceProgress(copy(flat), start, 0, start, start, zero(flat), zero(E), false)
     finalise = TraceFinalise(progress, keep_going)
@@ -223,7 +226,7 @@ function reached_state(
     target_precision::Real,
     context::NamedTuple,
 )::TraceResult{E} where {E <: Real}
-    logits = sinh.(progress.state)
+    logits = sinh.(progress.asinh_logits)
     if isnothing(outcome.exception) && progress.relative_precision == target
         return Traced(logits)
     end
@@ -242,10 +245,8 @@ function reached_state(
             context..., progress.steps,
             precision = target_precision * progress.relative_precision,
             progress.precision_min, progress.precision_max, progress.unmoved,
-            state = copy(progress.state), progress.relative_precision, step_length = E(
-                outcome.step_length,
-            ),
-            tangent_state = copy(progress.tangent_state), progress.tangent_precision,
+            logits, progress.relative_precision, step_length = E(outcome.step_length),
+            asinh_tangent = copy(progress.asinh_tangent), progress.tangent_precision,
             outcome.exception,
         ),
     )

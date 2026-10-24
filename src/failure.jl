@@ -4,8 +4,8 @@
 """
     TraceFailure(cause, context)
 
-A trace that did not reach its target: `cause` names why and `context` carries the last point,
-tangent and step the trace held.
+A trace that did not reach its target: `cause` names why and `context` carries the last accepted `logits`
+and relative precision, the tangent there (in PALC's `asinh` coordinates) and the step the trace held.
 """
 struct TraceFailure{C <: NamedTuple}
     cause::TraceCause
@@ -21,7 +21,7 @@ struct Traced{E <: Real}
     logits::Vector{E}
 end
 
-"""A trace's outcome: `Traced`, or the `TraceFailure` that stopped it, whose context holds the last accepted point."""
+"""A trace's outcome: `Traced`, or the `TraceFailure` that stopped it, whose context holds the last accepted `logits`."""
 const TraceResult{E <: Real} = Union{Traced{E}, TraceFailure}
 
 """The value of `x` with any automatic-differentiation tangent dropped; clients extend it for their dual types."""

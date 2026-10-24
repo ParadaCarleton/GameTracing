@@ -29,7 +29,7 @@ function corrector_tolerance(
     return max(tolerance, convert(T, floor_ulps * eps(typeof(largest)) * largest))
 end
 
-"""A trace callback that always lets the trace go on: `(state, relative_precision)` or `(state, relative_precision, converged)`."""
+"""A trace callback that always lets the trace go on: `(logits, relative_precision)` or `(logits, relative_precision, converged)`."""
 struct AcceptAll end
 
 (::AcceptAll)(::AbstractVector, ::Real)::Bool = true
@@ -97,7 +97,7 @@ function (check::CorrectorReach)(
         )
         return false
     end
-    if !check.accept_corrected(state_of(iterate.x), iterate.p, converged)
+    if !check.accept_corrected(sinh.(state_of(iterate.x)), iterate.p, converged)
         return false
     end
     return newton_verdict(check, iterate, true)
@@ -131,20 +131,20 @@ function within_reach(check::CorrectorReach, point::AbstractVector)::Bool
 end
 
 """
-    TraceProgress(state, relative_precision, steps, precision_min, precision_max, tangent_state, tangent_precision, unmoved)
+    TraceProgress(asinh_logits, relative_precision, steps, precision_min, precision_max, asinh_tangent, tangent_precision, unmoved)
 
-The last point `(state, relative_precision)` a trace keep_going, its step count, the range of the relative_precision over keep_going points
-and the tangent there: BifurcationKit's `finalise_solution` callback. An keep_going point bitwise equal to the one
-before it (a step below the point's rounding) sets `unmoved` and stops the trace, a stall. `JULIA_DEBUG=trace`
-lists every point.
+The last accepted point `(asinh_logits, relative_precision)` of a trace, its step count, the range of the relative precision
+over accepted points and the tangent there (both in PALC's `asinh` coordinates): BifurcationKit's `finalise_solution`
+callback. An accepted point bitwise equal to the one before it (a step below the point's rounding) sets `unmoved` and
+stops the trace, a stall. `JULIA_DEBUG=trace` lists every point.
 """
 mutable struct TraceProgress{E <: Real}
-    state::Vector{E}
+    asinh_logits::Vector{E}
     relative_precision::E
     steps::Int
     precision_min::E
     precision_max::E
-    tangent_state::Vector{E}
+    asinh_tangent::Vector{E}
     tangent_precision::E
     unmoved::Bool
 end
@@ -160,13 +160,13 @@ function (progress::TraceProgress)(
         point.u,
     ) tangent = copy(tangent.u)
     progress.unmoved = point.p == progress.relative_precision &&
-        view(point.u, eachindex(progress.state)) == progress.state
-    copyto!(progress.state, 1, point.u, 1, length(progress.state))
+        view(point.u, eachindex(progress.asinh_logits)) == progress.asinh_logits
+    copyto!(progress.asinh_logits, 1, point.u, 1, length(progress.asinh_logits))
     progress.relative_precision = point.p
     progress.steps = step
     progress.precision_min = min(progress.precision_min, point.p)
     progress.precision_max = max(progress.precision_max, point.p)
-    copyto!(progress.tangent_state, 1, tangent.u, 1, length(progress.tangent_state))
+    copyto!(progress.asinh_tangent, 1, tangent.u, 1, length(progress.asinh_tangent))
     progress.tangent_precision = tangent.p
     return !progress.unmoved
 end
@@ -175,7 +175,7 @@ end
     TraceFinalise(progress, keep_going)
 
 BifurcationKit's `finalise_solution` of a trace: `progress` records the point, and the trace goes on
-while `keep_going(state, relative_precision)` holds, `state` the point without its relative_precision.
+while `keep_going(logits, relative_precision)` holds.
 """
 struct TraceFinalise{R <: TraceProgress, A}
     progress::R
@@ -190,7 +190,7 @@ function (finalise::TraceFinalise)(
     keywords...,
 )::Bool
     recorded = finalise.progress(point, tangent, step, result)
-    return recorded && finalise.keep_going(state_of(point.u), point.p)
+    return recorded && finalise.keep_going(sinh.(state_of(point.u)), point.p)
 end
 
 """One scalar per step for BifurcationKit's branch record, the relative_precision: `TraceProgress` keeps the point."""

@@ -71,6 +71,33 @@ end
     )
     @test result.cause == GameTracing.TraceStuck
     @test result.context.relative_precision < 1
+    @test residual_norm(
+        GAME,
+        result.context.logits,
+        TARGET_PRECISION * result.context.relative_precision,
+    ) <
+        1.0f-4
+end
+
+"""A `keep_going` callback that goes on only while the point it sees solves the game's map at its precision."""
+struct OnTheBranch{P, E <: Real}
+    pass::P
+    target_precision::E
+end
+
+function (probe::OnTheBranch)(logits::AbstractVector, relative_precision::Real)::Bool
+    return residual_norm(probe.pass, logits, probe.target_precision * relative_precision) <
+        1.0f-4
+end
+
+@testset "callbacks see logits" begin
+    result = trace_endpoint(
+        LogitGame(GAME, TARGET_PRECISION),
+        WIDTH,
+        TraceSettings{Float32}();
+        keep_going = OnTheBranch(GAME, TARGET_PRECISION),
+    )
+    @test result isa Traced
 end
 
 @testset "a non-finite game fails at the start" begin
