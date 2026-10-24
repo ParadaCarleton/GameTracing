@@ -55,7 +55,7 @@ end
     result = trace_endpoint(
         LogitGame(GAME, TARGET_PRECISION),
         WIDTH,
-        TraceSettings{Float32}(steps = 1, dsmax = 0.01f0),
+        TraceSettings{Float32}(steps = 1, ds = 0.005f0, dsmax = 0.01f0),
     )
     @test result.failure isa TraceFailure
     @test result.failure.cause in (GameTracing.NoConvergence, GameTracing.TraceStuck)
