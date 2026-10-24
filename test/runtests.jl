@@ -41,9 +41,13 @@ end
     game = LogitGame(GAME, TARGET_PRECISION)
     reference = trace_endpoint(game, WIDTH, TraceSettings{Float32}()).logits
     for settings in (
-            TraceSettings{Float32}(tangent = :secant),
-            TraceSettings{Float32}(bordered_solver = :bordering),
-            TraceSettings{Float32}(step_control = false),
+            TraceSettings{Float32}(tangent = SecantTangent),
+            TraceSettings{Float32}(bordered_solver = BorderingSolve),
+            TraceSettings{Float32}(step_control = nothing),
+            TraceSettings{Float32}(step_control = StepControl{Float32}(
+                max_distance = nothing,
+                max_contraction = nothing,
+            )),
         )
         traced = trace_endpoint(game, WIDTH, settings)
         @test traced isa Traced
@@ -55,7 +59,7 @@ end
     result = trace_endpoint(
         LogitGame(GAME, TARGET_PRECISION),
         WIDTH,
-        TraceSettings{Float32}(steps = 1, ds = 0.005f0, dsmax = 0.01f0),
+        TraceSettings{Float32}(max_steps = 1, first_step = 0.005f0, max_step = 0.01f0),
     )
     @test result isa TraceFailure
     @test result.cause in (GameTracing.NoConvergence, GameTracing.TraceStuck)

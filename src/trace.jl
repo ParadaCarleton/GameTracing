@@ -1,68 +1,84 @@
+"""How PALC finds the tangent at each point: `BorderedTangent` solves the bordered Jacobian system, `SecantTangent` extrapolates the last two points."""
+@enum TangentMethod BorderedTangent SecantTangent
+
 """
-    TraceSettings(; ds, dsmin, dsmax, aggressiveness, corrector_reach, theta, eta, tolerance, floor_ulps,
-                  newton_iterations, steps, tangent, bordered_solver, step_control, max_distance,
-                  max_contraction, max_growth, contraction_offset, orientation_check)
+    StepControl{E}(; max_distance, max_contraction, max_growth, contraction_offset)
 
-BifurcationKit PALC controls for `trace_endpoint`, in `(u, t)` with `u = asinh(logits)` and `t` the relative precision.
-Steps are arclength in PALC's norm `sqrt(θ ‖du‖² / k + (1 - θ) dt²)`, `k` the number of logits.
+BifurcationKit's `CorrectorQuality` thresholds, which shrink a step whose corrector looks poor. `max_distance` is the
+Euclidean length of a Newton step's logit part (Gambit's 0.4 in log probabilities); `max_contraction`, `max_growth` and
+`contraction_offset` bound the residual's contraction and growth across iterations. `nothing` switches a threshold off.
+"""
+Base.@kwdef struct StepControl{E <: Real}
+    max_distance::Union{Nothing, E} = 0.4f0
+    max_contraction::Union{Nothing, E} = 0.6f0
+    max_growth::Union{Nothing, E} = nothing
+    contraction_offset::E = 0.1f0
+end
 
-- `ds`, `dsmin`, `dsmax`: first, smallest and largest step. A step whose corrector fails halves; the trace ends
-  as `TraceStuck` once the step reaches `dsmin`.
+"""
+    TraceSettings{E}(; first_step, min_step, max_step, aggressiveness, corrector_reach, state_weight,
+                     first_tangent_divisor, residual_tolerance, tolerance_floor_ulps, max_newton_iterations,
+                     max_steps, tangent, bordered_solver, step_control, orientation_check)
+
+BifurcationKit PALC controls for `trace_endpoint`, in `(u, ρ)` with `u = asinh(logits)` and `ρ` the relative precision.
+Step sizes are arclength in PALC's norm `sqrt(θ ‖du‖² / k + (1 - θ) dρ²)`, `θ` the `state_weight` and `k` the number of logits.
+
+- `first_step`, `min_step`, `max_step`: first, smallest and largest arclength step. A step whose corrector fails
+  halves; the trace ends as `TraceStuck` once the step reaches `min_step`.
 - `aggressiveness` (BifurcationKit's `a`): a step grows by `1 + a ((N - n) / N)²` after a corrector of `n` of
-  its `N = newton_iterations` iterations.
+  its `N = max_newton_iterations` iterations.
 - `corrector_reach`: a corrector further than this times its step from its predictor is refused (`CorrectorReach`).
-- `theta`: the state's weight against the relative precision's in the arclength norm. `eta`: the first tangent is the secant
-  to a solve at `ds / eta`.
-- `tolerance`, `floor_ulps`: the corrector's sup-norm residual, or `floor_ulps` ulps of the largest logit where
-  that is larger (`corrector_tolerance`).
-- `steps`: continuation steps before the trace fails as `NoConvergence`.
-- `tangent`: `:bordered` solves the bordered Jacobian system at each point, `:secant` extrapolates the last two.
-- `bordered_solver`: `:matrix` factors the whole bordered matrix, `:bordering` the Jacobian alone.
-- `step_control`: BifurcationKit's `CorrectorQuality` with thresholds `max_distance` (the Euclidean length of a
-  Newton step's logit part, as Gambit's 0.4 in log probabilities), `max_contraction`, `max_growth` and
-  `contraction_offset`; `Inf` switches a threshold off. `orientation_check` orients a bordered tangent by the
-  determinant of the bordered matrix, and only with the `:matrix` solver (the `:bordering` solver has no determinant).
+- `state_weight`: the logits' weight against the relative precision's in the arclength norm. `first_tangent_divisor`:
+  the first tangent is the secant to a solve at `first_step / first_tangent_divisor`.
+- `residual_tolerance`, `tolerance_floor_ulps`: the corrector's sup-norm residual, or `tolerance_floor_ulps` ulps of
+  the largest logit where that is larger (`corrector_tolerance`).
+- `max_steps`: continuation steps before the trace fails as `NoConvergence`.
+- `tangent`: a `TangentMethod`. `bordered_solver`: a `BorderedSolver`.
+- `step_control`: a `StepControl`, or `nothing` for none.
+- `orientation_check` orients a bordered tangent by the determinant of the bordered matrix. It takes effect only with
+  `MatrixSolve`, the one solver that has a determinant.
 """
 Base.@kwdef struct TraceSettings{E <: Real}
-    ds::E = 0.05f0
-    dsmin::E = 1.1754944f-38
-    dsmax::E = 1000.0f0
+    first_step::E = 0.05f0
+    min_step::E = 1.1754944f-38
+    max_step::E = 1000.0f0
     aggressiveness::E = 0.5f0
     corrector_reach::E = 2.0f0
-    theta::E = 0.5f0
-    eta::E = 150.0f0
-    tolerance::E = 1.0f-5
-    floor_ulps::E = 32.0f0
-    newton_iterations::Int = 10
-    steps::Int = 2_000
-    tangent::Symbol = :bordered
-    bordered_solver::Symbol = :matrix
-    step_control::Bool = true
-    max_distance::E = 0.4f0
-    max_contraction::E = 0.6f0
-    max_growth::E = Inf32
-    contraction_offset::E = 0.1f0
+    state_weight::E = 0.5f0
+    first_tangent_divisor::E = 150.0f0
+    residual_tolerance::E = 1.0f-5
+    tolerance_floor_ulps::E = 32.0f0
+    max_newton_iterations::Int = 10
+    max_steps::Int = 2_000
+    tangent::TangentMethod = BorderedTangent
+    bordered_solver::BorderedSolver = MatrixSolve
+    step_control::Union{Nothing, StepControl{E}} = StepControl{E}()
     orientation_check::Bool = true
 end
 
-"""`limit * scale`, or `nothing` where `limit` is infinite: BifurcationKit's `CorrectorQuality` switches a test off with `nothing`."""
-function optional_limit(limit::Real, scale::Real)
-    if isinf(limit)
+"""`limit * scale`, or `nothing` where the threshold is off (`limit` is `nothing`)."""
+function scaled_limit(limit::Union{Nothing, Real}, scale::Real)
+    if isnothing(limit)
         return nothing
     end
     return limit * scale
 end
 
-"""PALC's `step_control` for `settings` over `width` logits: `nothing` when it is off, else BifurcationKit's `CorrectorQuality`."""
-function step_control(settings::TraceSettings{E}, width::Integer) where {E <: Real}
-    if !settings.step_control
-        return nothing
-    end
+"""PALC's `step_control` for `control` over `width` logits with state weight `state_weight`: `nothing` when it is off, else BifurcationKit's `CorrectorQuality`."""
+function corrector_quality(::Nothing, ::Real, ::Integer)
+    return nothing
+end
+
+function corrector_quality(
+    control::StepControl{E},
+    state_weight::Real,
+    width::Integer,
+)::BifurcationKit.CorrectorQuality{E} where {E <: Real}
     return BifurcationKit.CorrectorQuality{E}(
-        optional_limit(settings.max_distance, sqrt(settings.theta / width)),
-        optional_limit(settings.max_contraction, one(E)),
-        optional_limit(settings.max_growth, one(E)),
-        settings.contraction_offset,
+        scaled_limit(control.max_distance, sqrt(state_weight / width)),
+        scaled_limit(control.max_contraction, one(E)),
+        scaled_limit(control.max_growth, one(E)),
+        control.contraction_offset,
     )
 end
 
@@ -91,21 +107,21 @@ function continue_trace(
         record_from_solution = trace_record_precision,
     )
     newton = BifurcationKit.NewtonPar(;
-        tol = E(settings.tolerance),
-        max_iterations = settings.newton_iterations,
+        tol = E(settings.residual_tolerance),
+        max_iterations = settings.max_newton_iterations,
         α = one(E),
         αmin = one(E) / 1000,
     )
     # Eigenvalues, fold and bifurcation detection serve bifurcation diagrams; the trace reads only its endpoint.
     options = BifurcationKit.ContinuationPar(;
-        ds = E(settings.ds),
-        dsmin = E(settings.dsmin),
-        dsmax = E(settings.dsmax),
+        ds = E(settings.first_step),
+        dsmin = E(settings.min_step),
+        dsmax = E(settings.max_step),
         a = E(settings.aggressiveness),
-        η = E(settings.eta),
+        η = E(settings.first_tangent_divisor),
         p_min = start,
         p_max = target,
-        max_steps = settings.steps,
+        max_steps = settings.max_steps,
         newton_options = newton,
         save_sol_every_step = 0,
         detect_fold = false,
@@ -115,27 +131,27 @@ function continue_trace(
         tol_bisection_eigenvalue = zero(E),
         tol_param_bisection_event = zero(E),
     )
-    tangent = if settings.tangent === :bordered
+    tangent = if settings.tangent == BorderedTangent
         BifurcationKit.Bordered()
     else
         BifurcationKit.Secant()
     end
-    theta = E(settings.theta)
+    state_weight = E(settings.state_weight)
     algorithm = BifurcationKit.PALC(;
         tangent,
-        θ = augmented_theta(theta, width),
+        θ = augmented_theta(state_weight, width),
         bls = bordered_linear_solver(settings.bordered_solver, length(traced_start), E),
-        step_control = step_control(settings, width),
+        step_control = corrector_quality(settings.step_control, state_weight, width),
         orientation_check = settings.orientation_check &&
-            settings.bordered_solver === :matrix,
+            settings.bordered_solver == MatrixSolve,
         corrector = BifurcationKit.FreeParameterNewton(),
     )
     corrector = CorrectorReach(
         accept_corrected,
         E(settings.corrector_reach),
-        theta,
+        state_weight,
         newton.tol,
-        E(settings.floor_ulps),
+        E(settings.tolerance_floor_ulps),
         similar(traced_start),
         zero(E),
     )
@@ -155,13 +171,12 @@ end
     trace_endpoint(game, width, settings; keep_going, accept_corrected, context)
 
 Follow `game`'s branch of `width` logits from the flat start (zero logits, the only root at precision zero) to
-`game.target_precision`, and return `Traced` logits there or the `TraceFailure` that stopped short (a `TraceResult`). The
-relative precision `t` is the precision in units of the target.
+`game.target_precision`, and return `Traced` logits there or the `TraceFailure` that stopped short (a `TraceResult`).
+The relative precision `ρ` is the precision in units of the target.
 
-`keep_going(logits, t)` runs at each accepted point before the next step's corrector, and `false` stops the trace.
-`accept_corrected(logits, t, converged)` runs as each corrector ends, and `false` refuses a converged point, which
-halves the step. A trace that stops short fails with `NoConvergence` when it
-spends `settings.steps` and `TraceStuck` otherwise (a step below `dsmin`, an unchanged accepted point, or a
+`keep_going(logits, ρ)` runs at each accepted point before the next step's corrector, and `false` stops the trace.
+`accept_corrected(logits, ρ, converged)` runs as each corrector ends, and `false` refuses a converged point, which
+halves the step. A trace that stops short fails with `NoConvergence` when it spends `settings.max_steps` and `TraceStuck` otherwise (a step below `min_step`, an unchanged accepted point, or a
 refusal); a non-finite start or a broken linear solve fails `NotFinite` or `Singular`. `context` rides on
 every failure.
 """
@@ -206,7 +221,7 @@ function trace_endpoint(
         progress,
         outcome,
         target,
-        settings.steps,
+        settings.max_steps,
         game.target_precision,
         context,
     )
