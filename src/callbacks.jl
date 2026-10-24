@@ -194,4 +194,6 @@ function (finalise::TraceFinalise)(
 end
 
 """One scalar per step for BifurcationKit's branch record, the level: `TraceProgress` keeps the point."""
-trace_record_level(::Any, level::L; keywords...)::L where {L <: Real} = level
+function trace_record_level(::Any, level::L; keywords...)::L where {L <: Real}
+    return level
+end

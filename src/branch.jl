@@ -109,8 +109,10 @@ struct LevelSlope{E <: Real}
     end
 end
 
-(level_slope::LevelSlope{E})(::AbstractVector{E}, ::Any)::Vector{E} where {E <:
-    Real} = level_slope.slope
+function (level_slope::LevelSlope{E})(::AbstractVector{E}, ::Any)::Vector{E} where {E <:
+    Real}
+    return level_slope.slope
+end
 
 """
     branch_problem(game, start, level; record_from_solution)
