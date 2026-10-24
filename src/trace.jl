@@ -210,7 +210,7 @@ function trace_endpoint(
 end
 
 """
-    reached_state(progress, outcome, target, step_limit, precision, context)
+    reached_state(progress, outcome, target, step_limit, target_precision, context)
 
 The `TraceResult` of a trace whose `progress` holds the last accepted point and whose `outcome` is the last
 corrector's step length or the BifurcationKit exception that ended it.
@@ -220,7 +220,7 @@ function reached_state(
     outcome::NamedTuple,
     target::E,
     step_limit::Integer,
-    temperature::Real,
+    target_precision::Real,
     context::NamedTuple,
 )::TraceResult{E} where {E <: Real}
     logits = sinh.(progress.state)
@@ -240,7 +240,7 @@ function reached_state(
         cause,
         (;
             context..., progress.steps,
-            precision = precision * progress.relative_precision,
+            precision = target_precision * progress.relative_precision,
             progress.precision_min, progress.precision_max, progress.unmoved,
             state = copy(progress.state), progress.relative_precision, step_length = E(
                 outcome.step_length,
