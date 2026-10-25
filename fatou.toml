@@ -1,2 +1,5 @@
 #:schema https://fatou.dev/fatou.schema.json
 [format]
+
+[lint]
+extend-select = ["unused-argument", "test-bare-expression", "unexplained-suppression", "call-arity", "function-has-no-methods", "type-piracy", "unresolved-import"]

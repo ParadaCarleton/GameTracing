@@ -59,9 +59,9 @@ mutable struct CorrectorReach{C, E <: Real}
     step_length::E
 end
 
-function (check::CorrectorReach)(
-    iterate::NamedTuple;
+function (check::CorrectorReach)(iterate::NamedTuple;
     fromNewton::Bool = true,
+    # fatou-ignore unused-argument: BifurcationKit passes keyword arguments this callback ignores
     keywords...,
 )::Union{Bool, BifurcationKit.NewtonConverged}
     if fromNewton
@@ -149,11 +149,8 @@ mutable struct TraceProgress{E <: Real}
     unmoved::Bool
 end
 
-function (progress::TraceProgress)(
-    point::Any,
-    tangent::Any,
-    step::Integer,
-    result::Any;
+function (progress::TraceProgress)(point::Any, tangent::Any, step::Integer, ::Any;
+    # fatou-ignore unused-argument: BifurcationKit passes keyword arguments this callback ignores
     keywords...,
 )::Bool
     @debug "trace point" _group = :trace step relative_precision = point.p x = copy(
@@ -182,11 +179,8 @@ struct TraceFinalise{R <: TraceProgress, A}
     keep_going::A
 end
 
-function (finalise::TraceFinalise)(
-    point::Any,
-    tangent::Any,
-    step::Integer,
-    result::Any;
+function (finalise::TraceFinalise)(point::Any, tangent::Any, step::Integer, result::Any;
+    # fatou-ignore unused-argument: BifurcationKit passes keyword arguments this callback ignores
     keywords...,
 )::Bool
     recorded = finalise.progress(point, tangent, step, result)
@@ -194,7 +188,9 @@ function (finalise::TraceFinalise)(
 end
 
 """One scalar per step for BifurcationKit's branch record, the relative_precision: `TraceProgress` keeps the point."""
-function trace_record_precision(::Any, relative_precision::L; keywords...)::L where {L <:
-    Real}
+function trace_record_precision(::Any, relative_precision::L;
+    # fatou-ignore unused-argument: BifurcationKit passes keyword arguments this callback ignores
+    keywords...,
+)::L where {L <: Real}
     return relative_precision
 end
