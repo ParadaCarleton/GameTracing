@@ -21,7 +21,7 @@ jobs:
       - uses: julia-actions/julia-processcoverage@v1
       - name: Every line of src/ runs in the tests
         run: |
-          if grep -E '^DA:[0-9]+,0$' lcov.info; then exit 1; fi
+          awk '/^SF:/{file=$0} /^DA:[0-9]+,0$/{print file, $0; bad=1} END{exit bad}' lcov.info
   lint:
     runs-on: ubuntu-latest
     steps:

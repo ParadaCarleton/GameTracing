@@ -91,3 +91,8 @@ end
     @test GameTracing.augmented_theta(0.5f0, 3) ≈ 0.5f0 * 4 / 3
     @test_throws ArgumentError GameTracing.augmented_theta(0.9f0, 3)
 end
+
+@testset "an element type LAPACK cannot factor gets BifurcationKit's matrix solver" begin
+    @test GameTracing.matrix_bls(WIDTH, Float16) isa GameTracing.BifurcationKit.MatrixBLS
+    @test GameTracing.matrix_bls(WIDTH, Float32) isa GameTracing.InPlaceMatrixBLS
+end
