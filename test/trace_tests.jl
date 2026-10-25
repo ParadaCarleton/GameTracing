@@ -16,8 +16,8 @@ end
             TraceSettings{Float32}(bordered_solver = BorderingSolve),
             TraceSettings{Float32}(step_control = nothing),
             TraceSettings{Float32}(step_control = StepControl{Float32}(
-                max_distance = nothing,
-                max_contraction = nothing,
+                distance_limit = nothing,
+                contraction_limit = nothing,
             )),
         )
         traced = trace_endpoint(game, WIDTH, settings)
@@ -76,7 +76,7 @@ end
 end
 
 @testset "a non-finite game fails at the start" begin
-    broken = LinearGainPass(Float32[NaN 1; 1 0], Float32[0.5, -0.25])
+    broken = LinearGainPass(Float32[NaN32 1; 1 0], Float32[0.5f0, -0.25f0])
     result = trace_endpoint(
         LogitGame(broken, TARGET_PRECISION),
         WIDTH,

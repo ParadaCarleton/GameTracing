@@ -1,3 +1,5 @@
+using Random: RandomDevice, Xoshiro
+
 """A random game of `width` logits whose map contracts at `precision`: the equilibrium is unique."""
 function contracting_game(rng::Xoshiro, width::Integer, precision::E)::LinearGainPass{
     E,

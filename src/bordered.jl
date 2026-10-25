@@ -1,3 +1,5 @@
+using BifurcationKit: BifurcationKit
+using LinearAlgebra: BlasFloat, BlasInt, LAPACK, LU, istril, istriu, logabsdet
 """How PALC solves its bordered linear system: `MatrixSolve` factors the whole bordered matrix, `BorderingSolve` the Jacobian alone."""
 @enum BorderedSolver MatrixSolve BorderingSolve
 
@@ -18,20 +20,20 @@ struct InPlaceMatrixBLS{E <: BlasFloat, S <: BifurcationKit.AbstractLinearSolver
 end
 
 function (bls::InPlaceMatrixBLS)(
-    J::Any,
+    jacobian::Any,
     dR::AbstractVector,
     dzu::AbstractVector,
     dzp::T,
-    R::AbstractVector,
-    n::T,
+    residual::AbstractVector,
+    border_value::T,
     ξu::T = one(T),
     ξp::T = one(T);
     dotp::Any = nothing,
     applyξu!::Any = nothing,
-) where {T <: Number}
+)::Tuple where {T <: Number}
     bordered = bordered_matrix!(
         bls.matrix,
-        BifurcationKit.getmatrix(J),
+        BifurcationKit.getmatrix(jacobian),
         dR,
         dzu,
         dzp,
@@ -40,7 +42,7 @@ function (bls::InPlaceMatrixBLS)(
         applyξu!,
     )
     width = size(bordered, 1) - 1
-    rhs = vcat(R, n)
+    rhs = vcat(residual, border_value)
     if istril(bordered) || istriu(bordered)
         solution = bordered \ rhs
         return view(solution, 1:width), solution[end], true, 1
@@ -95,19 +97,19 @@ function BifurcationKit.bordered_determinant_sign(
     bls::InPlaceMatrixBLS,
     iter::BifurcationKit.AbstractContinuationIterable,
     state::BifurcationKit.AbstractContinuationState,
-    J::Any,
+    jacobian::Any,
     dFdl::AbstractVector,
-)
-    θ = BifurcationKit.getθ(iter)
-    τ = state.τ
+)::eltype(dFdl)
+    state_weight = BifurcationKit.getθ(iter)
+    tangent = state.τ
     bordered = bordered_matrix!(
         bls.matrix,
-        BifurcationKit.getmatrix(J),
+        BifurcationKit.getmatrix(jacobian),
         dFdl,
-        τ.u,
-        τ.p,
-        θ,
-        one(θ) - θ,
+        tangent.u,
+        tangent.p,
+        state_weight,
+        one(state_weight) - state_weight,
         BifurcationKit._get_apply_dot(BifurcationKit.getdot(iter)),
     )
     _, _, info = LAPACK.getrf!(bordered, bls.pivots; check = false)
@@ -125,16 +127,24 @@ function bordered_linear_solver(
     solver::BorderedSolver,
     width::Integer,
     ::Type{E},
-) where {E <: Real}
+)::BifurcationKit.AbstractBorderedLinearSolver where {E <: Real}
     if solver == BorderingSolve
         return BifurcationKit.BorderingBLS(BifurcationKit.DefaultLS())
     end
     return matrix_bls(width, E)
 end
 
-matrix_bls(width::Integer, ::Type{E}) where {E <: BlasFloat} = InPlaceMatrixBLS(
-    Matrix{E}(undef, width + 1, width + 1),
-    Vector{BlasInt}(undef, width + 1),
-    BifurcationKit.DefaultLS(),
-)
-matrix_bls(::Integer, ::Type{<:Real}) = BifurcationKit.MatrixBLS()
+function matrix_bls(
+    width::Integer,
+    ::Type{E},
+)::BifurcationKit.AbstractBorderedLinearSolver where {E <: BlasFloat}
+    return InPlaceMatrixBLS(
+        Matrix{E}(undef, width + 1, width + 1),
+        Vector{BlasInt}(undef, width + 1),
+        BifurcationKit.DefaultLS(),
+    )
+end
+
+function matrix_bls(::Integer, ::Type{<:Real})::BifurcationKit.AbstractBorderedLinearSolver
+    return BifurcationKit.MatrixBLS()
+end

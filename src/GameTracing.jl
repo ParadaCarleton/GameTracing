@@ -8,19 +8,6 @@ Failures are values (`TraceFailure`), never exceptions.
 """
 module GameTracing
 
-using BifurcationKit: BifurcationKit
-using LinearAlgebra:
-    BlasFloat,
-    BlasInt,
-    LAPACK,
-    LAPACKException,
-    LU,
-    SingularException,
-    istril,
-    istriu,
-    logabsdet
-using Logging: @debug
-
 export LogitGame,
     TraceSettings,
     TraceCause,
@@ -28,6 +15,7 @@ export LogitGame,
     Traced,
     TraceResult,
     StepControl,
+    CorrectorSettings,
     TangentMethod,
     BorderedTangent,
     SecantTangent,

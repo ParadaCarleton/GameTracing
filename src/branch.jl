@@ -1,3 +1,4 @@
+using BifurcationKit: BifurcationKit
 """
     LogitGame(pass, target_precision)
 
@@ -12,7 +13,9 @@ struct LogitGame{P, T <: Real}
 end
 
 """The precision at `relative_precision`: the fraction of `game.target_precision` the trace has reached."""
-function precision_at(game::LogitGame, relative_precision::Real)
+function precision_at(game::LogitGame, relative_precision::R)::typeof(
+    relative_precision * game.target_precision,
+) where {R <: Real}
     return relative_precision * game.target_precision
 end
 
@@ -28,9 +31,10 @@ struct GameResidual{G <: LogitGame}
     game::G
 end
 
-function (residual::GameResidual)(x::AbstractVector{E}, pin::Real)::Vector{E} where {E <:
-    Real}
-    return branch_system(residual.game, x, pin).residual
+function (residual::GameResidual)(point::AbstractVector{E}, pin::Real)::AbstractVector{
+    E,
+} where {E <: Real}
+    return branch_system(residual.game, point, pin).residual
 end
 
 """
@@ -43,11 +47,11 @@ struct GameSystem{G <: LogitGame}
     game::G
 end
 
-function (system::GameSystem)(x::AbstractVector{E}, pin::Real)::Tuple{
+function (system::GameSystem)(point::AbstractVector{E}, pin::Real)::Tuple{
     Vector{E},
     Matrix{E},
 } where {E <: Real}
-    filled = branch_system(system.game, x, pin)
+    filled = branch_system(system.game, point, pin)
     return filled.residual, filled.jacobian
 end
 
@@ -56,13 +60,17 @@ struct GameJacobian{G <: LogitGame}
     game::G
 end
 
-function (jacobian::GameJacobian)(x::AbstractVector{E}, pin::Real)::Matrix{E} where {E <:
-    Real}
-    return branch_system(jacobian.game, x, pin).jacobian
+function (jacobian::GameJacobian)(point::AbstractVector{E}, pin::Real)::AbstractMatrix{
+    E,
+} where {E <: Real}
+    return branch_system(jacobian.game, point, pin).jacobian
 end
 
 """The state coordinates `u` of a branch point `x = [u; ρ]`."""
-state_of(x::AbstractVector)::AbstractVector = view(x, firstindex(x):(lastindex(x) - 1))
+state_of(point::AbstractVector)::AbstractVector = view(
+    point,
+    firstindex(point):(lastindex(point) - 1),
+)
 
 """
     branch_system(game, x, pin)
@@ -70,21 +78,21 @@ state_of(x::AbstractVector)::AbstractVector = view(x, firstindex(x):(lastindex(x
 `(; residual, jacobian)` of `game`'s branch at `x = [u; ρ]`: `∂F/∂u = (I - ∂T/∂z) diag(cosh u)` and
 `∂F/∂ρ = -P ∂T/∂precision`, over the relative precision's own row `[0 … 0 1]`.
 """
-function branch_system(game::LogitGame, x::AbstractVector{E}, pin::Real)::NamedTuple{
+function branch_system(game::LogitGame, point::AbstractVector{E}, pin::Real)::NamedTuple{
     (:residual, :jacobian),
     Tuple{Vector{E}, Matrix{E}},
 } where {E <: Real}
-    u = state_of(x)
-    width = length(u)
-    z = sinh.(u)
-    relative_precision = x[end]
-    pass = game.pass(z, precision_at(game, relative_precision))
+    state = state_of(point)
+    width = length(state)
+    logits = sinh.(state)
+    relative_precision = point[end]
+    pass = game.pass(logits, precision_at(game, relative_precision))
     residual = Vector{E}(undef, width + 1)
     jacobian = zeros(E, width + 1, width + 1)
-    for (slot, logit) in pairs(z)
+    for (slot, logit) in pairs(logits)
         residual[slot] = logit - pass.response[slot]
         jacobian[slot, width + 1] = -pass.precision_slope[slot] * game.target_precision
-        for (rival, scale) in pairs(cosh.(u))
+        for (rival, scale) in pairs(cosh.(state))
             jacobian[slot, rival] = ((slot == rival) - pass.logit_slope[slot, rival]) *
                 scale
         end
@@ -109,7 +117,8 @@ struct PinSlope{E <: Real}
     end
 end
 
-function (pin_slope::PinSlope{E})(::AbstractVector{E}, ::Any)::Vector{E} where {E <: Real}
+function (pin_slope::PinSlope{E})(::AbstractVector{E}, ::Any)::AbstractVector{E} where {E <:
+    Real}
     return pin_slope.slope
 end
 
@@ -139,17 +148,17 @@ function branch_problem(
 end
 
 """
-    augmented_theta(θ, count)
+    augmented_theta(state_weight, count)
 
-`θ` for a branch of `count` state coordinates: PALC's arclength product `θ ⟨Δx, τx⟩ / length(x) + (1 - θ) Δρ τρ`
-over the `count + 1` coordinates, equal to the original at `θ` over `count`. It must stay below 1: at 1
+The state weight for a branch of `count` state coordinates: PALC's arclength product `θ ⟨Δx, τx⟩ / length(x) + (1 - θ) Δρ τρ`
+over the `count + 1` coordinates, equal to the original at `state_weight` over `count`. It must stay below 1: at 1
 PALC weights the relative precision by zero, and its secant start divides by that zero.
 """
-function augmented_theta(θ::T, count::Integer)::T where {T <: Real}
-    augmented = θ * (count + 1) / count
+function augmented_theta(state_weight::T, count::Integer)::T where {T <: Real}
+    augmented = state_weight * (count + 1) / count
     if !(augmented < 1)
         throw(ArgumentError(
-            "a trace of width $count at θ = $θ has augmented θ = $augmented, which PALC needs below 1",
+            "a trace of width $count at state weight $state_weight has augmented θ = $augmented, which PALC needs below 1",
         ))
     end
     return augmented

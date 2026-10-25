@@ -1,3 +1,4 @@
+using LinearAlgebra: LAPACKException, SingularException
 """Why a trace stopped short of its target precision."""
 @enum TraceCause NoConvergence TraceStuck NotFinite Singular
 
@@ -24,8 +25,8 @@ end
 """A trace's outcome: `Traced`, or the `TraceFailure` that stopped it, whose context holds the last accepted `logits`."""
 const TraceResult{E <: Real} = Union{Traced{E}, TraceFailure}
 
-"""The value of `x` with any automatic-differentiation tangent dropped; clients extend it for their dual types."""
-primal(x::Real)::typeof(x) = x
+"""The value of `number` with any automatic-differentiation tangent dropped; clients extend it for their dual types."""
+primal(number::Real)::typeof(number) = number
 
 """
     uncorrected_start(exception)
@@ -33,15 +34,12 @@ primal(x::Real)::typeof(x) = x
 Whether `exception` is BifurcationKit's report that a start point would not correct: a bare
 `"Stopping continuation."` at the first point, an `ErrorException` at the second.
 """
-function uncorrected_start(@nospecialize(exception::Any))::Bool
-    if exception isa String
-        return exception == "Stopping continuation."
-    end
-    if exception isa ErrorException
-        return startswith(exception.msg, "Newton failed to converge")
-    end
-    return false
-end
+uncorrected_start(::Any)::Bool = false
+uncorrected_start(message::String)::Bool = message == "Stopping continuation."
+uncorrected_start(exception::ErrorException)::Bool = startswith(
+    exception.msg,
+    "Newton failed to converge",
+)
 
 """
     solver_blowup(exception)
@@ -50,14 +48,10 @@ Whether `exception` is a broken linear solve or non-finite factorization: `Singu
 `LAPACKException`, or LAPACK's `ArgumentError` for a NaN or infinite matrix. A bare `ArgumentError`
 is a caller's contract violation and propagates.
 """
-function solver_blowup(@nospecialize(exception::Any))::Bool
-    if exception isa SingularException || exception isa LAPACKException
-        return true
-    end
-    if exception isa ArgumentError
-        message = String(exception.msg)
-        return contains(message, "LAPACK") ||
-            contains(message, "matrix contains Infs or NaNs")
-    end
-    return false
+solver_blowup(::Any)::Bool = false
+solver_blowup(::SingularException)::Bool = true
+solver_blowup(::LAPACKException)::Bool = true
+function solver_blowup(exception::ArgumentError)::Bool
+    return contains(exception.msg, "LAPACK") ||
+        contains(exception.msg, "matrix contains Infs or NaNs")
 end

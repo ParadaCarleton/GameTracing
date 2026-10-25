@@ -1,3 +1,5 @@
+using BifurcationKit: BifurcationKit
+using Logging: @debug
 """The distance from `from` to `to`, both `[u; t]`, in PALC's norm `sqrt(θ ‖Δu‖² / k + (1 - θ) Δt²)`."""
 function arclength_distance(
     from::AbstractVector{E},
@@ -23,9 +25,9 @@ The residual under which the corrector accepts `x = [u; t]`: `tolerance`, or the
 function corrector_tolerance(
     tolerance::T,
     floor_ulps::Real,
-    x::AbstractVector,
+    point::AbstractVector,
 )::T where {T <: Real}
-    largest = maximum(entry -> abs(sinh(primal(entry))), state_of(x))
+    largest = maximum(entry -> abs(sinh(primal(entry))), state_of(point))
     return max(tolerance, convert(T, floor_ulps * eps(typeof(largest)) * largest))
 end
 
@@ -59,11 +61,11 @@ mutable struct CorrectorReach{C, E <: Real}
     step_length::E
 end
 
-function (check::CorrectorReach)(iterate::NamedTuple;
+function (check::CorrectorReach)(iterate::I;
     fromNewton::Bool = true,
     # fatou-ignore unused-argument: BifurcationKit passes keyword arguments this callback ignores
     keywords...,
-)::Union{Bool, BifurcationKit.NewtonConverged}
+)::Union{Bool, BifurcationKit.NewtonConverged} where {I <: NamedTuple}
     if fromNewton
         return newton_verdict(check, iterate, isfinite(iterate.residual))
     end
@@ -149,11 +151,11 @@ mutable struct TraceProgress{E <: Real}
     unmoved::Bool
 end
 
-function (progress::TraceProgress)(point::Any, tangent::Any, step::Integer, ::Any;
+function (progress::TraceProgress)(point::P, tangent::T, step::S, ::Any;
     # fatou-ignore unused-argument: BifurcationKit passes keyword arguments this callback ignores
     keywords...,
-)::Bool
-    @debug "trace point" _group = :trace step relative_precision = point.p x = copy(
+)::Bool where {P, T, S <: Integer}
+    @debug "trace point" _group = :trace step relative_precision = point.p state = copy(
         point.u,
     ) tangent = copy(tangent.u)
     progress.unmoved = point.p == progress.relative_precision &&
@@ -179,10 +181,10 @@ struct TraceFinalise{R <: TraceProgress, A}
     keep_going::A
 end
 
-function (finalise::TraceFinalise)(point::Any, tangent::Any, step::Integer, result::Any;
+function (finalise::TraceFinalise)(point::P, tangent::T, step::S, result::Any;
     # fatou-ignore unused-argument: BifurcationKit passes keyword arguments this callback ignores
     keywords...,
-)::Bool
+)::Bool where {P, T, S <: Integer}
     recorded = finalise.progress(point, tangent, step, result)
     return recorded && finalise.keep_going(sinh.(state_of(point.u)), point.p)
 end

@@ -1,3 +1,5 @@
+using LinearAlgebra: LAPACKException, SingularException
+
 const FAILURE_SETTINGS = TraceSettings{Float32}(first_step = 0.01f0, max_step = 0.05f0)
 
 @testset "a non-finite response past a precision stops the trace short of it" begin
@@ -47,7 +49,7 @@ end
 @testset "a corrector reach too short to hold any step ends the trace" begin
     result = trace_endpoint(LogitGame(FOLD_GAME, 2.0f0), 1, TraceSettings{Float32}(
         state_weight = 0.4f0,
-        corrector_reach = 1.0f-6,
+        corrector = CorrectorSettings{Float32}(reach = 1.0f-6),
         first_step = 0.05f0,
         max_step = 0.1f0,
     );
