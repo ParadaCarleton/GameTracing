@@ -48,11 +48,13 @@ jobs:
       - uses: julia-actions/julia-buildpkg@v1
       - name: Install Gremlins
         run: julia --project=@gremlins -e 'using Pkg; Pkg.add(url="https://github.com/ParadaCarleton/Gremlins.jl", rev="main")'
+      # Survivors at 0fc39ed: four `size(_, 1)` → `size(_, 2)` on square matrices (bordered.jl) and five
+      # default-value tweaks (trace.jl); every other mutant is killed, so the bar sits just under.
       - name: Mutation testing
         run: |
           gremlins=$(julia --project=@gremlins -e 'using Gremlins; print(pkgdir(Gremlins))')
           julia --project=@gremlins "$gremlins/bin/gremlins-cli.jl" \
-            --pkg "$GITHUB_WORKSPACE" --warm --files ${{ matrix.file }} --strong 0.80 --acceptable 0.60 \
+            --pkg "$GITHUB_WORKSPACE" --warm --files ${{ matrix.file }} --strong 0.95 --acceptable 0.90 \
             --json mutation-report.json
       - uses: actions/upload-artifact@v4
         if: always()
