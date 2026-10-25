@@ -10,5 +10,6 @@ const WIDTH = 2
 include("trace_tests.jl")
 include("fold_tests.jl")
 include("property_tests.jl")
+include("bordered_tests.jl")
 include("failure_tests.jl")
 include("code_rules.jl")
