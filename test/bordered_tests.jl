@@ -1,3 +1,4 @@
+using LinearAlgebra: SingularException
 using Random: RandomDevice, Xoshiro
 
 """A random bordered system of `width` unknowns: its Jacobian, border column, border row, corner, and the two right-hand sides."""
@@ -55,6 +56,39 @@ end
         @test collect(solutions.ours[1]) ≈ collect(solutions.reference[1]) rtol = 1.0f-3
         @test solutions.ours[2] ≈ solutions.reference[2] rtol = 1.0f-3
         @test solutions.ours[3:4] == solutions.reference[3:4]
+    end
+end
+
+"""The exception `solver` throws on `system`'s bordered solve, or `nothing` when it returns."""
+function solve_exception(solver::Any, system::NamedTuple)::Union{Nothing, Exception}
+    try
+        solver(
+            system.jacobian,
+            system.border_column,
+            system.border_row,
+            system.corner,
+            system.residual,
+            system.border_value,
+        )
+    catch exception
+        return exception
+    end
+    return nothing
+end
+
+@testset "a singular or non-finite bordered matrix throws what MatrixBLS throws" begin
+    singular = (;
+        jacobian = Float32[1 2; 2 4],
+        border_column = Float32[1, 2],
+        border_row = Float32[1, 1],
+        corner = 1.0f0,
+        residual = Float32[1, 1],
+        border_value = 1.0f0,
+    )
+    non_finite = (; singular..., jacobian = Float32[NaN32 2; 2 4])
+    for (system, expected) in ((singular, SingularException), (non_finite, ArgumentError))
+        @test solve_exception(GameTracing.matrix_bls(2, Float32), system) isa expected
+        @test solve_exception(GameTracing.BifurcationKit.MatrixBLS(), system) isa expected
     end
 end
 

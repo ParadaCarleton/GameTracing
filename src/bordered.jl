@@ -1,5 +1,5 @@
 using BifurcationKit: BifurcationKit
-using LinearAlgebra: BlasFloat, BlasInt, LAPACK, LU, istril, istriu, logabsdet
+using LinearAlgebra: BlasFloat, BlasInt, LAPACK, LU, SingularException, istril, istriu, logabsdet
 """How PALC solves its bordered linear system: `MatrixSolve` factors the whole bordered matrix, `BorderingSolve` the Jacobian alone."""
 @enum BorderedSolver MatrixSolve BorderingSolve
 
@@ -47,7 +47,11 @@ function (bls::InPlaceMatrixBLS)(
         solution = bordered \ rhs
         return view(solution, 1:width), solution[end], true, 1
     end
-    LAPACK.getrf!(bordered, bls.pivots; check = true)
+    # `check` rejects only non-finite entries; a zero pivot shows in `info`, which `MatrixBLS`'s `lu` throws on.
+    _, _, info = LAPACK.getrf!(bordered, bls.pivots; check = true)
+    if info > 0
+        throw(SingularException(info))
+    end
     LAPACK.getrs!('N', bordered, bls.pivots, rhs)
     return view(rhs, 1:width), rhs[end], true, 1
 end
