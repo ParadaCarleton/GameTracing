@@ -6,10 +6,7 @@ function arclength_distance(
     to::AbstractVector{E},
     theta::E,
 )::E where {E <: Real}
-    state_squares = sum(
-        abs2(finish - start)
-        for (start, finish) in zip(state_of(from), state_of(to))
-    )
+    state_squares = sum(abs2, state_of(to) .- state_of(from))
     return sqrt(
         theta * state_squares / (length(to) - 1) +
             (1 - theta) * abs2(last(to) - last(from)),
