@@ -54,6 +54,7 @@ end
         )
         @test collect(solutions.ours[1]) ≈ collect(solutions.reference[1]) rtol = 1.0f-3
         @test solutions.ours[2] ≈ solutions.reference[2] rtol = 1.0f-3
+        @test solutions.ours[3:4] == solutions.reference[3:4]
     end
 end
 
@@ -70,6 +71,8 @@ end
     solutions = bordered_solutions(system, 1.0f0, 1.0f0)
     @test collect(solutions.ours[1]) ≈ Float32[0.5f0, 0.5f0] rtol = 1.0f-5
     @test solutions.ours[2] ≈ 2.0f0 rtol = 1.0f-5
+    @test solutions.ours[3:4] == solutions.reference[3:4]
+    @test length(solutions.ours[1]) == 2
 end
 
 @testset "bordered_matrix! lays out the Jacobian, border column, scaled border row and corner" begin
