@@ -34,6 +34,10 @@ jobs:
   mutation:
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        file: [bordered.jl, branch.jl, callbacks.jl, failure.jl, trace.jl]
     steps:
       - uses: actions/checkout@v4
       - uses: julia-actions/setup-julia@v2
@@ -48,11 +52,11 @@ jobs:
         run: |
           gremlins=$(julia --project=@gremlins -e 'using Gremlins; print(pkgdir(Gremlins))')
           julia --project=@gremlins "$gremlins/bin/gremlins-cli.jl" \
-            --pkg "$GITHUB_WORKSPACE" --warm --max-sites 100 --strong 0.80 --acceptable 0.60 \
+            --pkg "$GITHUB_WORKSPACE" --warm --files ${{ matrix.file }} --strong 0.80 --acceptable 0.60 \
             --json mutation-report.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: mutation-report
+          name: mutation-report-${{ matrix.file }}
           path: mutation-report.json
           if-no-files-found: ignore
