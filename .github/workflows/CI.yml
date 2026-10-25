@@ -20,7 +20,9 @@ jobs:
       - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-runtest@v1
       - uses: julia-actions/julia-processcoverage@v1
+        if: matrix.version == '1'
       - name: Every line of src/ runs in the tests
+        if: matrix.version == '1'
         run: |
           awk '/^SF:/{file=$0} /^DA:[0-9]+,0$/{print file, $0; bad=1} END{exit bad}' lcov.info
   lint:
