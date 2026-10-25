@@ -1,4 +1,4 @@
-using LinearAlgebra: SingularException
+using LinearAlgebra: SingularException, tril, triu
 using Random: RandomDevice, Xoshiro
 
 """A random bordered system of `width` unknowns: its Jacobian, border column, border row, corner, and the two right-hand sides."""
@@ -45,17 +45,29 @@ function bordered_solutions(
     return (; reference, ours)
 end
 
-@testset "the in-place bordered solver agrees with BifurcationKit's MatrixBLS" begin
+"""Whether our bordered solve on `system` is bit-identical to `MatrixBLS`'s, as `InPlaceMatrixBLS` promises."""
+function bit_identical(system::NamedTuple, row_scale::Real, corner_scale::Real)::Bool
+    solutions = bordered_solutions(system, row_scale, corner_scale)
+    return collect(solutions.ours[1]) == collect(solutions.reference[1]) &&
+        solutions.ours[2:4] == solutions.reference[2:4]
+end
+
+@testset "the in-place bordered solver is bit-identical to BifurcationKit's MatrixBLS" begin
     rng = Xoshiro(rand(RandomDevice(), UInt))
     for width in 1:5, (row_scale, corner_scale) in ((1.0f0, 1.0f0), (0.3f0, 2.0f0))
-        solutions = bordered_solutions(
-            bordered_system(rng, width, Float32),
-            row_scale,
-            corner_scale,
-        )
-        @test collect(solutions.ours[1]) ≈ collect(solutions.reference[1]) rtol = 1.0f-3
-        @test solutions.ours[2] ≈ solutions.reference[2] rtol = 1.0f-3
-        @test solutions.ours[3:4] == solutions.reference[3:4]
+        @test bit_identical(bordered_system(rng, width, Float32), row_scale, corner_scale)
+    end
+end
+
+# LU and triangular substitution round differently, so only the triangular path matches `MatrixBLS`'s `\`.
+@testset "a triangular bordered matrix is solved bit-identically to MatrixBLS's triangular solve" begin
+    rng = Xoshiro(rand(RandomDevice(), UInt))
+    for width in 1:5, _ in 1:20
+        system = bordered_system(rng, width, Float32)
+        lower = (; system..., jacobian = tril(system.jacobian), border_column = zeros(Float32, width))
+        upper = (; system..., jacobian = triu(system.jacobian), border_row = zeros(Float32, width))
+        @test bit_identical(lower, 0.3f0, 2.0f0)
+        @test bit_identical(upper, 0.3f0, 2.0f0)
     end
 end
 
@@ -92,21 +104,36 @@ end
     end
 end
 
-@testset "a triangular bordered matrix takes the direct solve and agrees with the factored one" begin
-    jacobian = Float32[2 0; 1 3]
-    system = (;
-        jacobian,
-        border_column = Float32[0, 0],
-        border_row = Float32[0, 0],
-        corner = 5.0f0,
-        residual = Float32[1, 2],
-        border_value = 10.0f0,
+@testset "the in-place determinant sign agrees with MatrixBLS's, on singular and non-finite matrices too" begin
+    kit = GameTracing.BifurcationKit
+    settings = TraceSettings{Float32}()
+    start = zeros(Float32, WIDTH + 1)
+    problem = GameTracing.branch_problem(
+        LogitGame(GAME, TARGET_PRECISION),
+        start,
+        0.0f0;
+        record_from_solution = GameTracing.trace_record_precision,
     )
-    solutions = bordered_solutions(system, 1.0f0, 1.0f0)
-    @test collect(solutions.ours[1]) ≈ Float32[0.5f0, 0.5f0] rtol = 1.0f-5
-    @test solutions.ours[2] ≈ 2.0f0 rtol = 1.0f-5
-    @test solutions.ours[3:4] == solutions.reference[3:4]
-    @test length(solutions.ours[1]) == 2
+    iter = kit.ContIterable(
+        problem,
+        GameTracing.palc_algorithm(settings, WIDTH),
+        GameTracing.continuation_options(settings);
+        verbosity = 0,
+    )
+    state, _ = iterate(iter)
+    ours = GameTracing.matrix_bls(WIDTH + 1, Float32)
+    rng = Xoshiro(rand(RandomDevice(), UInt))
+    for _ in 1:50
+        jacobian = randn(rng, Float32, WIDTH + 1, WIDTH + 1)
+        slope = randn(rng, Float32, WIDTH + 1)
+        @test kit.bordered_determinant_sign(ours, iter, state, jacobian, slope) ==
+            kit.bordered_determinant_sign(kit.MatrixBLS(), iter, state, jacobian, slope)
+    end
+    dependent_slope = Float32[1, 2, 0]
+    for degenerate in (Float32[1 2 0; 2 4 0; 0 0 1], Float32[NaN32 2 0; 2 4 0; 0 0 1])
+        @test kit.bordered_determinant_sign(ours, iter, state, degenerate, dependent_slope) ==
+            kit.bordered_determinant_sign(kit.MatrixBLS(), iter, state, degenerate, dependent_slope)
+    end
 end
 
 @testset "bordered_matrix! lays out the Jacobian, border column, scaled border row and corner" begin
