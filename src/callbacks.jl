@@ -24,7 +24,7 @@ function corrector_tolerance(
     floor_ulps::Real,
     point::AbstractVector,
 )::T where {T <: Real}
-    largest = maximum(entry -> abs(sinh(primal(entry))), state_of(point))
+    largest = maximum(entry -> abs(sinh(entry)), state_of(point))
     return max(tolerance, convert(T, floor_ulps * eps(typeof(largest)) * largest))
 end
 

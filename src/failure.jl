@@ -25,9 +25,6 @@ end
 """A trace's outcome: `Traced`, or the `TraceFailure` that stopped it, whose context holds the last accepted `logits`."""
 const TraceResult{E <: Real} = Union{Traced{E}, TraceFailure}
 
-"""The value of `number` with any automatic-differentiation tangent dropped; clients extend it for their dual types."""
-primal(number::Real)::typeof(number) = number
-
 """
     uncorrected_start(exception)
 

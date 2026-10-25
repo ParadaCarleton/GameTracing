@@ -22,8 +22,7 @@ export LogitGame,
     BorderedSolver,
     MatrixSolve,
     BorderingSolve,
-    trace_endpoint,
-    primal
+    trace_endpoint
 
 include("failure.jl")
 include("bordered.jl")
