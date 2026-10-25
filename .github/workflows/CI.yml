@@ -47,7 +47,7 @@ jobs:
       - uses: jdx/mise-action@v2
       - uses: julia-actions/julia-buildpkg@v1
       - name: Install Gremlins
-        run: julia --project=@gremlins -e 'using Pkg; Pkg.add("Gremlins")'
+        run: julia --project=@gremlins -e 'using Pkg; Pkg.add(url="https://github.com/ParadaCarleton/Gremlins.jl", rev="main")'
       - name: Mutation testing
         run: |
           gremlins=$(julia --project=@gremlins -e 'using Gremlins; print(pkgdir(Gremlins))')
