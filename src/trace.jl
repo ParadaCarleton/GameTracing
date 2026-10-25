@@ -99,18 +99,17 @@ function palc_algorithm(
     settings::TraceSettings{E},
     width::Integer,
 )::BifurcationKit.AbstractContinuationAlgorithm where {E <: Real}
-    bordered_width = width + 1
-    oriented = settings.orientation_check && settings.bordered_solver == MatrixSolve
     return BifurcationKit.PALC(;
         tangent = tangent_predictor(settings.tangent),
         θ = augmented_theta(settings.state_weight, width),
-        bls = bordered_linear_solver(settings.bordered_solver, bordered_width, E),
+        bls = bordered_linear_solver(settings.bordered_solver, width + 1, E),
         step_control = corrector_quality(
             settings.step_control,
             settings.state_weight,
             width,
         ),
-        orientation_check = oriented,
+        orientation_check = settings.orientation_check &&
+            settings.bordered_solver == MatrixSolve,
         corrector = BifurcationKit.FreeParameterNewton(),
     )
 end
@@ -122,7 +121,6 @@ fold and bifurcation detection serve bifurcation diagrams; the trace reads only 
 function continuation_options(
     settings::TraceSettings{E},
 )::BifurcationKit.ContinuationPar where {E <: Real}
-    damping_floor = one(E) / 1000
     return BifurcationKit.ContinuationPar(;
         ds = settings.first_step,
         dsmin = settings.min_step,
@@ -136,7 +134,7 @@ function continuation_options(
             tol = settings.corrector.residual_tolerance,
             max_iterations = settings.corrector.newton_iterations,
             α = one(E),
-            αmin = damping_floor,
+            αmin = one(E) / 1000,
         ),
         save_sol_every_step = 0,
         detect_fold = false,
@@ -163,7 +161,6 @@ function continue_trace(
     finalise::TraceFinalise,
     accept_corrected::Any,
 )::E where {E <: Real}
-    width = length(traced_start) - 1
     corrector = CorrectorReach(
         accept_corrected,
         settings.corrector.reach,
@@ -180,7 +177,7 @@ function continue_trace(
             zero(E);
             record_from_solution = trace_record_precision,
         ),
-        palc_algorithm(settings, width),
+        palc_algorithm(settings, length(traced_start) - 1),
         continuation_options(settings);
         normC = BifurcationKit.norminf,
         verbosity = 0,
