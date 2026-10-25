@@ -98,7 +98,10 @@ end
         border_value = 1.0f0,
     )
     non_finite = (; singular..., jacobian = Float32[NaN32 2; 2 4])
-    for (system, expected) in ((singular, SingularException), (non_finite, ArgumentError))
+    # A zero first column makes the first pivot the zero one (LAPACK `info == 1`).
+    zero_first_column = (; singular..., jacobian = Float32[0 2; 0 4], border_row = Float32[0, 1])
+    cases = ((singular, SingularException), (zero_first_column, SingularException), (non_finite, ArgumentError))
+    for (system, expected) in cases
         @test solve_exception(GameTracing.matrix_bls(2, Float32), system) isa expected
         @test solve_exception(GameTracing.BifurcationKit.MatrixBLS(), system) isa expected
     end
