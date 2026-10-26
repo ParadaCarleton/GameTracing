@@ -12,23 +12,38 @@ struct AsinhLogits <: LogitCoordinates end
 struct PlainLogits <: LogitCoordinates end
 
 """The logit at state coordinate `u`."""
-logit_at(::AsinhLogits, u::R)::R where {R <: Real} = sinh(u)
-logit_at(::PlainLogits, u::R)::R where {R <: Real} = u
+function logit_at(::AsinhLogits, u::R)::R where {R <: Real}
+    return sinh(u)
+end
+
+function logit_at(::PlainLogits, u::R)::R where {R <: Real}
+    return u
+end
 
 """`dz/du`, the logit's rate of change in its state coordinate `u`."""
-logit_rate(::AsinhLogits, u::R)::R where {R <: Real} = cosh(u)
-logit_rate(::PlainLogits, u::R)::R where {R <: Real} = one(u)
+function logit_rate(::AsinhLogits, u::R)::R where {R <: Real}
+    return cosh(u)
+end
+
+function logit_rate(::PlainLogits, u::R)::R where {R <: Real}
+    return one(u)
+end
 
 """The state coordinate of logit `z`."""
-state_at(::AsinhLogits, z::R)::R where {R <: Real} = asinh(z)
-state_at(::PlainLogits, z::R)::R where {R <: Real} = z
+function state_at(::AsinhLogits, z::R)::R where {R <: Real}
+    return asinh(z)
+end
+
+function state_at(::PlainLogits, z::R)::R where {R <: Real}
+    return z
+end
 
 """The logits at state coordinates `state`."""
-logits_at(coordinates::LogitCoordinates, state::AbstractVector{R})::AbstractVector{R} where {R <: Real} = [
-    logit_at(coordinates, entry) for entry in state
-]
+function logits_at(coordinates::LogitCoordinates, state::AbstractVector{R})::AbstractVector{R} where {R <: Real}
+    return [logit_at(coordinates, entry) for entry in state]
+end
 
 """The state coordinates of `logits`."""
-states_at(coordinates::LogitCoordinates, logits::AbstractVector{R})::AbstractVector{R} where {R <: Real} = [
-    state_at(coordinates, entry) for entry in logits
-]
+function states_at(coordinates::LogitCoordinates, logits::AbstractVector{R})::AbstractVector{R} where {R <: Real}
+    return [state_at(coordinates, entry) for entry in logits]
+end
