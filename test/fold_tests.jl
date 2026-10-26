@@ -1,8 +1,7 @@
 using BifurcationKit: BifurcationKit
 using ErrorTypes: is_error, unwrap
-const FOLD_GAME = ThresholdPass(6.0f0, 3.0f0)
 # A one-logit trace needs a state weight under 1/2 (`augmented_theta`).
-const FOLD_SETTINGS = TraceSettings{Float32}(state_weight = 0.4f0)
+const FOLD_SETTINGS = TraceSettings{Float32}(geometry = TraceGeometry{Float32}(state_weight = 0.4f0))
 
 @testset "a trace crosses a fold of the branch" begin
     # At target 2 the game has one equilibrium, past a fold at precision about 1.4: only continuation through the fold reaches it.
@@ -13,12 +12,12 @@ const FOLD_SETTINGS = TraceSettings{Float32}(state_weight = 0.4f0)
     @test only(unwrap(result).logits) > 3
     @testset "every tangent and solver choice crosses it" begin
         for settings in (
-                TraceSettings{Float32}(state_weight = 0.4f0, tangent = BifurcationKit.Secant()),
+                TraceSettings{Float32}(geometry = TraceGeometry{Float32}(state_weight = 0.4f0), tangent = BifurcationKit.Secant()),
                 TraceSettings{Float32}(
-                    state_weight = 0.4f0,
+                    geometry = TraceGeometry{Float32}(state_weight = 0.4f0),
                     bordered_solver = BorderingSolve,
                 ),
-                TraceSettings{Float32}(state_weight = 0.4f0, step_control = nothing),
+                TraceSettings{Float32}(geometry = TraceGeometry{Float32}(state_weight = 0.4f0), step_control = nothing),
             )
             traced = trace_endpoint(LogitGame(FOLD_GAME, target), 1, settings)
             @test !is_error(traced)

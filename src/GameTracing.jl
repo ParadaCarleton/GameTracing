@@ -16,6 +16,11 @@ export LogitGame,
     TraceResult,
     StepControl,
     CorrectorSettings,
+    TraceGeometry,
+    StepDistance,
+    AveragedDistance,
+    SummedDistance,
+    FisherDistance,
     BorderedSolver,
     MatrixSolve,
     BorderingSolve,
@@ -24,6 +29,7 @@ export LogitGame,
 
 include("failure.jl")
 include("bordered.jl")
+include("geometry.jl")
 include("branch.jl")
 include("callbacks.jl")
 include("trace.jl")

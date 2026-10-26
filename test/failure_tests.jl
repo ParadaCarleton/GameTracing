@@ -49,7 +49,7 @@ end
 
 @testset "a corrector reach too short to hold any step ends the trace" begin
     result = trace_endpoint(LogitGame(FOLD_GAME, 2.0f0), 1, TraceSettings{Float32}(
-        state_weight = 0.4f0,
+        geometry = TraceGeometry{Float32}(state_weight = 0.4f0),
         corrector = CorrectorSettings{Float32}(reach = 1.0f-6),
         first_step = 0.05f0,
         max_step = 0.1f0,
@@ -107,10 +107,9 @@ end
 @testset "a predictor that did not move has no reach to exceed" begin
     check = GameTracing.CorrectorReach(
         GameTracing.AcceptAll(),
-        2.0f0,
-        0.5f0,
-        1.0f-5,
-        32.0f0,
+        CorrectorSettings{Float32}(),
+        TraceGeometry{Float32}(),
+        zeros(Float32, 3),
         zeros(Float32, 3),
         0.0f0,
     )

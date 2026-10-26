@@ -26,7 +26,7 @@ end
         for _ in 1:5
             logits = randn(rng, width) ./ 10
             relative_precision = 1 // 2 + 2 * rand(rng) / 5
-            step = projection_step(game, logits, relative_precision, state_weight)
+            step = projection_step(game, logits, relative_precision, TraceGeometry{typeof(state_weight)}(; state_weight))
             start = branch_equations(game, [logits ./ relative_precision; relative_precision])
             # Newton's linearized equation holds, and no part of the step runs along the branch's tangent.
             @test norm(start.jacobian * step .+ start.residual) <= inv(float(10^10)) * (1 + norm(start.residual))
@@ -66,9 +66,9 @@ end
 
 @testset "branch_projection applies one projection_step in the trace's norm" begin
     game = LogitGame(GAME, TARGET_PRECISION)
-    settings = TraceSettings{Float32}(state_weight = 3 // 10)
+    settings = TraceSettings{Float32}(geometry = TraceGeometry{Float32}(state_weight = 3 // 10))
     logits, relative_precision = Float32[1 // 10, -1 // 5], 3.0f0 / 4
-    step = projection_step(game, logits, relative_precision, settings.state_weight)
+    step = projection_step(game, logits, relative_precision, settings.geometry)
     projected = branch_projection(game, logits, relative_precision, settings)
     @test projected.logits == logits_at([logits ./ relative_precision; relative_precision] .+ step)
     @test projected.relative_precision == relative_precision + last(step)
@@ -77,13 +77,13 @@ end
 
 @testset "projection_step rejects a state weight outside (0, 1)" begin
     for state_weight in (0.0f0, 1.0f0, -0.5f0, 1.5f0, NaN32)
-        @test_throws ArgumentError projection_step(LogitGame(GAME, TARGET_PRECISION), zeros(Float32, WIDTH), 0.5f0, state_weight)
+        @test_throws ArgumentError projection_step(LogitGame(GAME, TARGET_PRECISION), zeros(Float32, WIDTH), 0.5f0, TraceGeometry{Float32}(; state_weight))
     end
 end
 
 @testset "projection_step refuses a point with no payoff gaps, at a relative precision of zero or below" begin
     for relative_precision in (0.0f0, -0.25f0)
-        @test_throws ArgumentError projection_step(LogitGame(GAME, TARGET_PRECISION), zeros(Float32, WIDTH), relative_precision, 0.5f0)
+        @test_throws ArgumentError projection_step(LogitGame(GAME, TARGET_PRECISION), zeros(Float32, WIDTH), relative_precision, TraceGeometry{Float32}())
     end
 end
 
@@ -115,7 +115,7 @@ end
     @test abs(only(at_fold.residual)) <= inv(float(10^10))
     @test abs(first(at_fold.jacobian)) <= inv(float(10^8)) * norm(at_fold.jacobian)
     # Newton at fixed precision meets a double root here and converges only linearly; the projection stays quadratic.
-    settings = TraceSettings{typeof(float(1))}(state_weight = 2 // 5)
+    settings = TraceSettings{typeof(float(1))}(geometry = TraceGeometry{typeof(float(1))}(state_weight = 2 // 5))
     on_branch = (; logits = [fold], relative_precision = fold_precision)
     for direction in ([-one(fold)], [one(fold)])
         coarse = projected_residual(game, on_branch, inv(float(100)), direction, settings)

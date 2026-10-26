@@ -1,0 +1,198 @@
+# The trace-geometry arms (test/arms.jl) against the shipped trace on GameTracing's games, each beside a
+# fine-step Float64 natural-continuation reference (`branch_reference`). Prints a ROW per game and variant,
+# a SIGNAL per pair of reached endpoints more than 1e-3 apart, and a SUMMARY per variant; writes rows to ARGS[1].
+using GameTracing
+using ErrorTypes: is_error, unwrap, unwrap_error
+using Logging: AbstractLogger, Debug, LogLevel, with_logger
+import Logging: catch_exceptions, handle_message, min_enabled_level, shouldlog
+using Printf: @printf, @sprintf
+using Random: Xoshiro
+using Statistics: median
+
+const TEST_DIRECTORY = joinpath(@__DIR__, "..", "test")
+include(joinpath(TEST_DIRECTORY, "games.jl"))
+include(joinpath(TEST_DIRECTORY, "fixtures.jl"))
+include(joinpath(TEST_DIRECTORY, "arms.jl"))
+
+"""One benchmark game: its name, the pass in Float32 and in Float64 for the reference, its width and target precision."""
+struct Case{P, R, E <: Real}
+    name::String
+    pass::P
+    reference_pass::R
+    width::Int
+    precision::E
+end
+
+"""A two-action normal-form `Case` from integer, rational or float payoff tables."""
+function normal_form_case(name::AbstractString, payoffs::Tuple, precision::Real)::Case
+    return Case(String(name), NormalFormPass(map(table -> Float32.(table), payoffs)), NormalFormPass(map(float, payoffs)), length(payoffs), Float32(precision))
+end
+
+"""`players` random payoff tables of scale 3 from `rng`."""
+random_payoffs(rng::Xoshiro, players::Integer)::Tuple = ntuple(_ -> 3 .* randn(rng, ntuple(_ -> 2, players)), players)
+
+"""A random game of 2 to 5 players from seed `seed`."""
+function random_case(seed::Integer)::Case
+    rng = Xoshiro(seed)
+    return normal_form_case(string("random ", seed), random_payoffs(rng, rand(rng, 2:5)), 3)
+end
+
+"""A random 3-player game whose payoffs move by about 0.05 at relative precision 1/2, as a mid-trace redraw moves a sampled map."""
+function swap_case(seed::Integer)::Case
+    rng = Xoshiro(1000 + seed)
+    before = random_payoffs(rng, 3)
+    after = map(table -> table .+ randn(rng, size(table)...) ./ 20, before)
+    pass = MapSwap(NormalFormPass(map(table -> Float32.(table), before)), NormalFormPass(map(table -> Float32.(table), after)), 3.0f0, 0.5f0, 3)
+    return Case(string("swap ", seed), pass, MapSwap(NormalFormPass(before), NormalFormPass(after), float(3), float(1 // 2), 3), 3, 3.0f0)
+end
+
+"""`case`'s fine Float64 reference: across the swap for a `MapSwap`, else from the flat start."""
+case_reference(case::Case)::NamedTuple = case_reference(case.reference_pass, case)
+case_reference(swap::MapSwap, ::Case)::NamedTuple = swap_reference(swap)
+case_reference(pass::Any, case::Case)::NamedTuple = branch_reference(pass, case.width, case.precision)
+
+"""The benchmark's games: LogitNash's, the overshot game, the fold game, random games, and the near, far and random map-swap games."""
+function benchmark_cases()::Vector{Case}
+    return vcat(
+        Case[normal_form_case(string(name), payoffs, 4) for (name, payoffs) in pairs(LOGITNASH_GAMES)],
+        Case[normal_form_case("overshot 3", OVERSHOT_GAME, 3), normal_form_case("overshot 3.1", OVERSHOT_GAME, 31 // 10)],
+        Case[Case("fold", FOLD_GAME, ThresholdPass(float(6), float(3)), 1, 2.0f0)],
+        Case[random_case(seed) for seed in 1:24],
+        Case[
+            Case("near swap", NEAR_SWAP, MapSwap(LinearGainPass(float.(NEAR_SWAP.before.interaction), float.(NEAR_SWAP.before.stand_alone)), LinearGainPass(float.(NEAR_SWAP.after.interaction), float.(NEAR_SWAP.after.stand_alone)), float(4), float(1 // 2), 2), 2, NEAR_SWAP.precision),
+            Case("far swap", FAR_SWAP, MapSwap(ThresholdPass(float(8), float(4)), ThresholdPass(float(8), float(3 // 2)), float(1), float(1 // 2), 1), 1, FAR_SWAP.precision),
+        ],
+        Case[swap_case(seed) for seed in 1:6],
+    )
+end
+
+"""A logger that sends each trace record's message and `reason` (`:none` without one) into `sink`."""
+struct TraceCounter <: AbstractLogger
+    sink::Channel{Pair{String, Symbol}}
+end
+
+min_enabled_level(::TraceCounter)::LogLevel = Debug
+shouldlog(::TraceCounter, ::LogLevel, ::Module, group::Any, ::Any)::Bool = group === :trace
+catch_exceptions(::TraceCounter)::Bool = false
+
+function handle_message(counter::TraceCounter, ::LogLevel, message::Any, ::Module, ::Any, ::Any, ::Any, ::Any; keywords...)::Nothing
+    put!(counter.sink, string(message) => Symbol(get(keywords, :reason, :none)))
+    return nothing
+end
+
+# Checks GameTracing's corrector callback logs when it stops or refuses a corrector; contraction refusals happen in
+# BifurcationKit's CorrectorQuality and show only as halved steps.
+const REFUSAL_CHECKS = (:reach, :kl, :angle, :nonfinite)
+const REFUSAL_MESSAGES = ("corrector refused", "corrector stopped")
+
+"""`case` traced under `settings`."""
+struct TraceRun{C <: Case, S <: TraceSettings}
+    case::C
+    settings::S
+end
+
+(trace_run::TraceRun)()::GameTracing.TraceResult{Float32} = trace_endpoint(LogitGame(trace_run.case.pass, trace_run.case.precision), trace_run.case.width, trace_run.settings)
+
+"""First-action probabilities of `logits`."""
+first_choices(logits::AbstractVector{E})::Vector{E} where {E <: Real} = inv.(one(E) .+ exp.(-logits))
+
+"""
+What one trace did: first-action probabilities (empty on failure), its status, accepted steps, corrector iterates,
+bytes, refusals per check (`REFUSAL_CHECKS`) and the check that refused last (`:none` if none did).
+"""
+function traced(case::Case, settings::TraceSettings)::NamedTuple
+    trace_run = TraceRun(case, settings)
+    trace_run()
+    bytes = @allocated trace_run()
+    sink = Channel{Pair{String, Symbol}}(Inf)
+    result = with_logger(trace_run, TraceCounter(sink))
+    close(sink)
+    records = collect(sink)
+    steps, iterations = count(record -> first(record) == "trace point", records), count(record -> first(record) == "corrector iterate", records)
+    refusals = [last(record) for record in records if first(record) in REFUSAL_MESSAGES]
+    counts = NamedTuple{REFUSAL_CHECKS}(map(check -> count(==(check), refusals), REFUSAL_CHECKS))
+    last_refusal = last([:none; refusals])
+    common = (; steps, iterations, bytes, refusals = counts, last_refusal)
+    if is_error(result)
+        return (; choices = Float32[], status = string(unwrap_error(result).cause), common...)
+    end
+    return (; choices = first_choices(unwrap(result).logits), status = "reached", common...)
+end
+
+"""The largest probability gap between two profiles, NaN when either is empty."""
+function profile_gap(left::AbstractVector, right::AbstractVector)::Float64
+    if isempty(left) || isempty(right)
+        return NaN
+    end
+    return Float64(maximum(abs, left .- right))
+end
+
+"""Every variant's row on `case`, printed, with a SIGNAL for each pair of reached endpoints over 1e-3 apart."""
+function case_rows(case::Case, variants::AbstractVector)::Vector{NamedTuple}
+    reference = case_reference(case)
+    # A branch that folds back past the target has no natural-continuation reference: its gap is NaN.
+    kind = ifelse(reference.reached, "reference", "folded")
+    rows = NamedTuple[
+        (; case = case.name, label, outcome..., kind, pitchfork = Symbol(case.name) in PITCHFORK_GAMES,
+            swapped = case.pass isa MapSwap,
+            gap = ifelse(reference.reached, profile_gap(outcome.choices, reference.first_choices), NaN))
+        for (label, outcome) in (label => traced(case, settings) for (label, settings) in variants)
+    ]
+    for row in rows
+        @printf(
+            "ROW | %-24s | %-14s | %-13s | steps %5d | iterations %6d | refused reach %d kl %d angle %d nonfinite %d, last %s | gap %.2e (%s) | bytes %d\n",
+            row.case, row.label, row.status, row.steps, row.iterations, row.refusals..., row.last_refusal, row.gap, row.kind, row.bytes,
+        )
+    end
+    reached = [row for row in rows if !isempty(row.choices)]
+    for (index, left) in pairs(reached), right in reached[(index + 1):end]
+        if profile_gap(left.choices, right.choices) > 1.0e-3
+            println("SIGNAL | ", case.name, " | ", left.label, " vs ", right.label, " | ", @sprintf("%.3e", profile_gap(left.choices, right.choices)))
+        end
+    end
+    flush(stdout)
+    return rows
+end
+
+"""`reduction` of `values`, NaN when there are none."""
+function statistic(reduction::Any, values::AbstractVector)::Float64
+    if isempty(values)
+        return NaN
+    end
+    return Float64(reduction(values))
+end
+
+"""
+One SUMMARY line for variant `label` over the `rows` of one game group (`group` names it); the gap statistics skip
+pitchfork games, whose branch is ambiguous. Failures list the check that refused last before each stall.
+"""
+function print_summary(group::AbstractString, label::AbstractString, rows::AbstractVector)::Nothing
+    mine = [row for row in rows if row.label == label]
+    gaps = [row.gap for row in mine if row.status == "reached" && !isnan(row.gap) && !row.pitchfork]
+    failures = join(sort([string(row.status, ":", row.last_refusal) for row in mine if row.status != "reached"]), " ")
+    @printf(
+        "SUMMARY %-5s | %-14s | reached %2d/%2d | off-reference %2d | steps %6d | iterations %7d | gap median %.1e worst %.1e | bytes mean %d | failed %s\n",
+        group, label, count(row -> row.status == "reached", mine), length(mine), count(>(1.0e-3), gaps),
+        sum(row.steps for row in mine), sum(row.iterations for row in mine), statistic(median, gaps),
+        statistic(maximum, gaps), round(Int, sum(row.bytes for row in mine) / length(mine)), failures,
+    )
+    return nothing
+end
+
+function main(output::AbstractString)::Nothing
+    variants = ["shipped" => TraceSettings{Float32}(); arm_variants()]
+    rows = reduce(vcat, [case_rows(case, variants) for case in benchmark_cases()])
+    io = open(output, "w")
+    println(io, "game,variant,status,steps,iterations,refused_reach,refused_kl,refused_angle,refused_nonfinite,last_refusal,gap,bytes,reference,swapped")
+    for row in rows
+        println(io, join((row.case, row.label, row.status, row.steps, row.iterations, row.refusals..., row.last_refusal, row.gap, row.bytes, row.kind, row.swapped), ','))
+    end
+    close(io)
+    # A map that swaps mid-trace is compared only once the projection hook lands; until then its rows record stalls.
+    for (group, swapped) in (("fixed", false), ("swap", true)), (label, _) in variants
+        print_summary(group, label, [row for row in rows if row.swapped == swapped])
+    end
+    return nothing
+end
+
+main(get(ARGS, 1, joinpath(@__DIR__, "arms.csv")))
