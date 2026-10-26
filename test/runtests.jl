@@ -13,4 +13,8 @@ include("property_tests.jl")
 include("bordered_tests.jl")
 include("failure_tests.jl")
 include("result_tests.jl")
+# Mooncake does not load on prerelease Julia; CI drops it from that job's test target.
+if isempty(VERSION.prerelease)
+    include("mooncake_tests.jl")
+end
 include("code_rules.jl")
