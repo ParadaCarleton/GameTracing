@@ -67,6 +67,28 @@ function (probe::OnTheBranch)(logits::AbstractVector, relative_precision::Real):
         1.0f-4
 end
 
+"""A `keep_going` callback that stops the trace once its relative precision passes `limit`."""
+struct StopPast{E <: Real}
+    limit::E
+end
+
+(stop::StopPast)(::AbstractVector, relative_precision::Real)::Bool = relative_precision < stop.limit
+
+@testset "a failure reports its tangent in logits" begin
+    result = trace_endpoint(
+        LogitGame(GAME, TARGET_PRECISION),
+        WIDTH,
+        TraceSettings{Float32}();
+        keep_going = StopPast(0.75f0),
+    )
+    @test result.cause == GameTracing.TraceStuck
+    (; logits, logit_tangent, tangent_precision, relative_precision) = result.context
+    # A step `h` along the branch's tangent leaves a residual of order h², far under h ‖dz‖.
+    step = 1.0f-2
+    moved = residual_norm(GAME, logits .+ step .* logit_tangent, TARGET_PRECISION * (relative_precision + step * tangent_precision))
+    @test moved < step * maximum(abs, logit_tangent) / 10
+end
+
 @testset "callbacks see logits" begin
     result = trace_endpoint(
         LogitGame(GAME, TARGET_PRECISION),

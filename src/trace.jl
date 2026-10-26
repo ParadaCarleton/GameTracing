@@ -310,7 +310,7 @@ function reached_state(
             precision = target_precision * progress.relative_precision,
             progress.precision_min, progress.precision_max, progress.unmoved,
             logits, progress.relative_precision, step_length = E(outcome.step_length),
-            asinh_tangent = copy(progress.asinh_tangent), progress.tangent_precision,
+            logit_tangent = cosh.(progress.asinh_logits) .* progress.asinh_tangent, progress.tangent_precision,
             outcome.exception,
         ),
     )
