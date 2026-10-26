@@ -166,4 +166,11 @@ end
     @test stalled.context.unmoved
     progress.unmoved = false
     @test GameTracing.reached_state(progress, outcome, 1.0f0, 2, TARGET_PRECISION, (;)).cause == GameTracing.NoConvergence
+    # A change in the precision alone, or in the logits alone, is progress.
+    precision_only = (; u = moved.u, p = 0.6f0)
+    @test progress(precision_only, tangent, 3, nothing)
+    @test !progress.unmoved
+    logits_only = (; u = Float32[0.3f0, 0.2f0, 0.6f0], p = 0.6f0)
+    @test progress(logits_only, tangent, 4, nothing)
+    @test !progress.unmoved
 end
