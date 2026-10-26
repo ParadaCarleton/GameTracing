@@ -104,7 +104,9 @@ end
 """`weights!` of an `AveragedDistance` trace's `PointWeightedDot`: its weights stay those it was built with."""
 struct FixedWeights end
 
-(::FixedWeights)(weights::AbstractVector{E}, ::BifurcationKit.BorderedArray)::AbstractVector{E} where {E <: Real} = weights
+function (::FixedWeights)(weights::AbstractVector{E}, ::BifurcationKit.BorderedArray)::AbstractVector{E} where {E <: Real}
+    return weights
+end
 
 """
 PALC's `θ` and `dotθ` for `geometry` over a trace of `width` gaps. PALC's norm of `[Δx; Δρ]`, `x = [w; ρ]`, is
