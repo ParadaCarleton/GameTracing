@@ -142,9 +142,8 @@ end
     result = GameTracing.reached_state(
         progress,
         (; step_length = 0.0f0, exception = "Stopping continuation."),
-        1.0f0,
-        10,
-        TARGET_PRECISION,
+        LogitGame(GAME, TARGET_PRECISION),
+        TraceSettings{Float32}(; max_steps = 10),
         (;),
     )
     @test is_error(result)
