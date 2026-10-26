@@ -21,10 +21,9 @@ LogitNash = "56ed5f9e-c32e-46b8-b489-5928d745fddb"
 Mooncake = "da2b9cff-9c12-43a0-ae48-6db2b0edb7d6"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
-YAML = "ddb6d928-2868-570f-bddf-ab3f9cf99eb6"
 
 [targets]
-test = ["Corset", "ErrorTypes", "LogitNash", "Mooncake", "Random", "Test", "YAML"]
+test = ["Corset", "ErrorTypes", "LogitNash", "Mooncake", "Random", "Test"]
 
 [compat]
 julia = "1.11"
