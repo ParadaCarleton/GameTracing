@@ -46,16 +46,21 @@ end
 agreeing(left::AbstractVector, right::AbstractVector)::Bool = maximum(abs, left .- right) < 1.0f-3
 
 """
-Whether `logits` solve `payoffs` at `precision` to the corrector's tolerance there: at relative precision one the
-gap residual the corrector bounds is the logit residual, and twice the tolerance covers recomputing it.
+Whether `logits` solve the game of `pass` at `precision` to the corrector's tolerance there: at relative precision
+one the gap residual the corrector bounds is the logit residual, and twice the tolerance covers recomputing it.
 """
-function settled_endpoint(payoffs::Tuple, logits::AbstractVector{E}, precision::Real, settings::TraceSettings{E})::Bool where {E <: Real}
+function settled_endpoint(pass::Any, logits::AbstractVector{E}, precision::Real, settings::TraceSettings{E})::Bool where {E <: Real}
     tolerance = GameTracing.corrector_tolerance(
         settings.corrector.residual_tolerance,
         settings.corrector.tolerance_floor_ulps,
         [logits; one(E)],
     )
-    return residual_norm(NormalFormPass(map(table -> E.(table), payoffs)), logits, precision) < 2 * tolerance
+    return residual_norm(pass, logits, precision) < 2 * tolerance
+end
+
+"""`settled_endpoint` for the two-action payoff tables `payoffs` (`NormalFormPass`)."""
+function settled_endpoint(payoffs::Tuple, logits::AbstractVector{E}, precision::Real, settings::TraceSettings{E})::Bool where {E <: Real}
+    return settled_endpoint(NormalFormPass(map(table -> E.(table), payoffs)), logits, precision, settings)
 end
 
 """

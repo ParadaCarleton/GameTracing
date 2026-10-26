@@ -10,7 +10,6 @@ module GameTracing
 
 export LogitGame,
     NormalFormGains,
-    normal_form_game,
     mixed_strategies,
     logit_count,
     TraceSettings,
