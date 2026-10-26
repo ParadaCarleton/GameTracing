@@ -49,7 +49,7 @@ end
 
 @testset "a corrector reach too short to hold any step ends the trace" begin
     result = trace_endpoint(LogitGame(FOLD_GAME, 2.0f0), 1, TraceSettings{Float32}(
-        state_weight = 0.4f0,
+        geometry = TraceGeometry{Float32}(state_weight = 0.4f0),
         corrector = CorrectorSettings{Float32}(reach = 1.0f-6),
         first_step = 0.05f0,
         max_step = 0.1f0,
@@ -107,10 +107,9 @@ end
 @testset "a predictor that did not move has no reach to exceed" begin
     check = GameTracing.CorrectorReach(
         GameTracing.AcceptAll(),
-        2.0f0,
-        0.5f0,
-        1.0f-5,
-        32.0f0,
+        CorrectorSettings{Float32}(),
+        TraceGeometry{Float32}(),
+        zeros(Float32, 3),
         zeros(Float32, 3),
         0.0f0,
     )
@@ -145,6 +144,7 @@ end
         1.0f0,
         10,
         TARGET_PRECISION,
+        AsinhLogits,
         (;),
     )
     @test is_error(result)
@@ -158,15 +158,15 @@ end
     @test progress(moved, tangent, 1, nothing)
     @test !progress.unmoved
     outcome = (; step_length = 0.0f0, exception = nothing)
-    @test unwrap_error(GameTracing.reached_state(progress, outcome, 1.0f0, 2, TARGET_PRECISION, (;))).cause == GameTracing.TraceStuck
+    @test unwrap_error(GameTracing.reached_state(progress, outcome, 1.0f0, 2, TARGET_PRECISION, AsinhLogits, (;))).cause == GameTracing.TraceStuck
     @test !progress(moved, tangent, 2, nothing)
     @test progress.unmoved
     # A stall that spends the step budget is still a stall; moving points that spend it are not.
-    stalled = unwrap_error(GameTracing.reached_state(progress, outcome, 1.0f0, 2, TARGET_PRECISION, (;)))
+    stalled = unwrap_error(GameTracing.reached_state(progress, outcome, 1.0f0, 2, TARGET_PRECISION, AsinhLogits, (;)))
     @test stalled.cause == GameTracing.TraceStuck
     @test stalled.context.unmoved
     progress.unmoved = false
-    @test unwrap_error(GameTracing.reached_state(progress, outcome, 1.0f0, 2, TARGET_PRECISION, (;))).cause == GameTracing.NoConvergence
+    @test unwrap_error(GameTracing.reached_state(progress, outcome, 1.0f0, 2, TARGET_PRECISION, AsinhLogits, (;))).cause == GameTracing.NoConvergence
     # A change in the precision alone, or in the logits alone, is progress.
     precision_only = (; u = moved.u, p = 0.6f0)
     @test progress(precision_only, tangent, 3, nothing)

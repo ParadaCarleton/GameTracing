@@ -19,11 +19,21 @@ export LogitGame,
     BorderedSolver,
     MatrixSolve,
     BorderingSolve,
+    TraceGeometry,
+    TraceCoordinates,
+    AsinhLogits,
+    Logits,
+    PayoffGaps,
+    StepDistance,
+    AveragedDistance,
+    SummedDistance,
+    FisherDistance,
     trace_endpoint,
     branch_projection
 
 include("failure.jl")
 include("bordered.jl")
+include("geometry.jl")
 include("branch.jl")
 include("callbacks.jl")
 include("trace.jl")

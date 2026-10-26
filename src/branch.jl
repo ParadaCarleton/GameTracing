@@ -1,13 +1,13 @@
 using BifurcationKit: BifurcationKit
+using LinearAlgebra: mul!
 """
     LogitGame(pass!, target_precision)
 
-A logit game whose equilibria solve `z = T(z, precision)` at precision `1 / temperature`.
-`pass!(response, logit_slope, precision_slope, z, precision)` writes the map's value `T(z, precision)`, its Jacobian
-`∂T/∂z` and its slope `∂T/∂precision` into the three arrays, from one evaluation, and returns `nothing`. The arrays
-are views into the trace's own residual and Jacobian (`BranchWorkspace`), so a pass allocates nothing of its own.
-`T(z, 0) = 0`, so the flat equilibrium `z = 0` is the only root at zero precision. `target_precision` is the
-precision a trace ends at.
+A logit game whose equilibria solve `z = λ G(z, λ)` at precision `λ = 1 / temperature`, `G` the payoff gains the
+logits scale. `pass!(gain, gain_slope, gain_precision_slope, z, λ)` writes `G(z, λ)`, its Jacobian `∂G/∂z` and its
+slope `∂G/∂λ` into the three arrays, from one evaluation, and returns `nothing`. The arrays are views into the
+trace's own residual and Jacobian (`BranchWorkspace`), so a pass allocates nothing of its own. The flat
+equilibrium `z = 0` is the only root at zero precision. `target_precision` is the precision a trace ends at.
 """
 struct LogitGame{P, T <: Real}
     pass!::P
@@ -43,30 +43,32 @@ function BranchWorkspace(point::AbstractVector{E})::BranchWorkspace{E} where {E 
 end
 
 """
-    GameResidual(game)
+    GameResidual(game, coordinates)
 
 BifurcationKit's `F(x, pin)` of `game`'s branch with the relative precision carried as the state's last
-coordinate: `x = [u; ρ]`, `F = [sinh(u) - T(sinh(u), ρ P); ρ - pin]`, `P` the target precision. The logits
-`z = sinh(u)` grow like `ρ` along the branch; `asinh` keeps their arclength commensurate with `ρ`'s near the end.
-`pin` is BifurcationKit's continuation parameter, which only pins `ρ`. Each call fills a fresh `BranchWorkspace`:
-BifurcationKit keeps its problem's `F` apart from the fused system.
+coordinate: `x = [u; ρ]` with `u` in `coordinates`, `F = [z - λ G(z, λ); ρ - pin]` at the logits `z` of `u` and
+`λ = ρ P`, `P` the target precision; for `PayoffGaps`, `F = [u - P G(ρ u, λ); ρ - pin]`, which stays regular at
+`ρ = 0`. `pin` is BifurcationKit's continuation parameter, which only pins `ρ`. Each call fills a fresh
+`BranchWorkspace`: BifurcationKit keeps its problem's `F` apart from the fused system.
 """
 struct GameResidual{G <: LogitGame}
     game::G
+    coordinates::TraceCoordinates
 end
 
 function (residual::GameResidual)(point::AbstractVector{E}, pin::Real)::AbstractVector{E} where {E <: Real}
-    return branch_system!(BranchWorkspace(point), residual.game, point, pin).residual
+    return branch_system!(BranchWorkspace(point), residual.game, residual.coordinates, point, pin).residual
 end
 
 """
-    GameSystem(game, workspace)
+    GameSystem(game, coordinates, workspace)
 
 BifurcationKit's fused `FJ(x, pin)` of `game`'s branch: the residual and Jacobian from one `pass!`, written into
 `workspace` (`branch_system!`). PALC's Newton method calls it in place of the residual and `J`.
 """
 struct GameSystem{G <: LogitGame, W <: BranchWorkspace}
     game::G
+    coordinates::TraceCoordinates
     workspace::W
 end
 
@@ -74,18 +76,19 @@ function (system::GameSystem)(point::AbstractVector{E}, pin::Real)::Tuple{
     Vector{E},
     Matrix{E},
 } where {E <: Real}
-    filled = branch_system!(system.workspace, system.game, point, pin)
+    filled = branch_system!(system.workspace, system.game, system.coordinates, point, pin)
     return filled.residual, filled.jacobian
 end
 
-"""BifurcationKit's `J(x, pin)` of `game`'s branch, written into `workspace`."""
+"""BifurcationKit's `J(x, pin)` of `game`'s branch in `coordinates`, written into `workspace`."""
 struct GameJacobian{G <: LogitGame, W <: BranchWorkspace}
     game::G
+    coordinates::TraceCoordinates
     workspace::W
 end
 
 function (jacobian::GameJacobian)(point::AbstractVector{E}, pin::Real)::AbstractMatrix{E} where {E <: Real}
-    return branch_system!(jacobian.workspace, jacobian.game, point, pin).jacobian
+    return branch_system!(jacobian.workspace, jacobian.game, jacobian.coordinates, point, pin).jacobian
 end
 
 """The state coordinates `u` of a branch point `x = [u; ρ]`."""
@@ -95,42 +98,74 @@ state_of(point::AbstractVector)::AbstractVector = view(
 )
 
 """
-    branch_system!(workspace, game, x, pin)
+    branch_system!(workspace, game, coordinates, x, pin)
 
-`workspace` with `game`'s branch residual and Jacobian at `x = [u; ρ]`: `∂F/∂u = (I - ∂T/∂z) diag(cosh u)` and
-`∂F/∂ρ = -P ∂T/∂precision`, over the relative precision's own row `[0 … 0 1]`. The pass writes `T`, `∂T/∂z` and
-`∂T/∂precision` into the blocks that hold `F` and its Jacobian, which are then formed in place.
+`workspace` with `game`'s branch residual and Jacobian at `x = [u; ρ]` in `coordinates`, over the relative
+precision's own row `[0 … 0 1]`. With `λ = ρ P` and `dz/du` the logits' slope (`cosh u`, or 1):
+`∂F/∂u = (I - λ ∂G/∂z) diag(dz/du)` and `∂F/∂ρ = -P (G + λ ∂G/∂λ)`; for `PayoffGaps`, `∂F/∂u = I - λ ∂G/∂z` and
+`∂F/∂ρ = -P (∂G/∂z u + P ∂G/∂λ)`. The pass writes `G` and its slopes into the blocks that hold `F` and its Jacobian.
 """
 function branch_system!(
     workspace::BranchWorkspace{E},
     game::LogitGame,
+    coordinates::TraceCoordinates,
     point::AbstractVector{E},
     pin::Real,
 )::typeof(workspace) where {E <: Real}
     (; residual, jacobian, logits) = workspace
     state = state_of(point)
     width = length(state)
-    map!(sinh, logits, state)
     relative_precision = point[end]
-    response = view(residual, 1:width)
+    trace_logits!(logits, coordinates, state, relative_precision)
+    precision = precision_at(game, relative_precision)
+    target = game.target_precision
+    gain = view(residual, 1:width)
     # fatou-ignore call-arity: Base `view` takes any number of indices (jolars/fatou#125)
-    logit_slope = view(jacobian, 1:width, 1:width)
+    gain_slope = view(jacobian, 1:width, 1:width)
     # fatou-ignore call-arity: Base `view` takes any number of indices (jolars/fatou#125)
-    precision_slope = view(jacobian, 1:width, width + 1)
-    game.pass!(response, logit_slope, precision_slope, logits, precision_at(game, relative_precision))
+    precision_column = view(jacobian, 1:width, width + 1)
+    game.pass!(gain, gain_slope, precision_column, logits, precision)
+    # `∂F/∂ρ` first: it reads `G` and `∂G/∂z`, which the next lines overwrite.
+    if coordinates == PayoffGaps
+        mul!(precision_column, gain_slope, state, -target, -target^2)
+    else
+        precision_column .= .-target .* (gain .+ precision .* precision_column)
+    end
     for (column, coordinate) in pairs(state)
-        scale = cosh(coordinate)
-        for row in axes(logit_slope, 1)
-            logit_slope[row, column] = ((row == column) - logit_slope[row, column]) * scale
+        scale = logit_scale(coordinates, coordinate)
+        for row in axes(gain_slope, 1)
+            gain_slope[row, column] = ((row == column) - precision * gain_slope[row, column]) * scale
         end
     end
-    precision_slope .*= -game.target_precision
+    if coordinates == PayoffGaps
+        gain .= state .- target .* gain
+    else
+        gain .= logits .- precision .* gain
+    end
     # fatou-ignore call-arity: Base `view` takes any number of indices (jolars/fatou#125)
     fill!(view(jacobian, width + 1, 1:width), zero(E))
     jacobian[end, end] = one(E)
-    response .= logits .- response
     residual[end] = relative_precision - pin
     return workspace
+end
+
+"""
+    trace_start(game, coordinates, width, element)
+
+The branch's start `[u; 0]` at zero precision: the flat logits, or for `PayoffGaps` the gains `P G(0, 0)`, which
+is minus the gap residual at `u = 0`.
+"""
+function trace_start(
+    game::LogitGame,
+    coordinates::TraceCoordinates,
+    width::Integer,
+    ::Type{E},
+)::Vector{E} where {E <: Real}
+    start = zeros(E, width + 1)
+    if coordinates == PayoffGaps
+        state_of(start) .= .-state_of(branch_system!(BranchWorkspace(start), game, coordinates, start, zero(E)).residual)
+    end
+    return start
 end
 
 """
@@ -154,23 +189,24 @@ function (pin_slope::PinSlope{E})(::AbstractVector{E}, ::Any)::AbstractVector{E}
 end
 
 """
-    branch_problem(game, start, pin; record_from_solution)
+    branch_problem(game, coordinates, start, pin; record_from_solution)
 
-BifurcationKit's problem for `game`'s branch from `start = [u; ρ]` at `pin`, with the fused system and
-exact `∂F/∂pin` supplied. The system and Jacobian each own a `BranchWorkspace`.
+BifurcationKit's problem for `game`'s branch in `coordinates` from `start = [u; ρ]` at `pin`, with the fused system
+and exact `∂F/∂pin` supplied. The system and Jacobian each own a `BranchWorkspace`.
 """
 function branch_problem(
     game::LogitGame,
+    coordinates::TraceCoordinates,
     start::AbstractVector{E},
     pin::Real;
     record_from_solution::Any,
 )::BifurcationKit.AbstractBifurcationProblem where {E <: Real}
     return BifurcationKit.BifurcationProblem(
-        GameResidual(game),
+        GameResidual(game, coordinates),
         start,
         pin;
-        J = GameJacobian(game, BranchWorkspace(start)),
-        FJ = GameSystem(game, BranchWorkspace(start)),
+        J = GameJacobian(game, coordinates, BranchWorkspace(start)),
+        FJ = GameSystem(game, coordinates, BranchWorkspace(start)),
         delta = one(E),
         inplace = false,
         R01 = PinSlope(start),

@@ -168,25 +168,49 @@ end
     end
 end
 
-@testset "the fused system reuses one workspace and matches a fresh evaluation" begin
+@testset "the fused system reuses one workspace and matches a fresh evaluation in every coordinate system" begin
     game = LogitGame(GAME, TARGET_PRECISION)
     point = Float32[0.3f0, -0.2f0, 0.6f0]
-    workspace = GameTracing.BranchWorkspace(point)
-    system = GameTracing.GameSystem(game, workspace)
-    first_residual, first_jacobian = system(point, 0.5f0)
-    second_residual, second_jacobian = system(point .+ 0.1f0, 0.5f0)
-    @test first_residual === second_residual === workspace.residual
-    @test first_jacobian === second_jacobian === workspace.jacobian
-    residual, jacobian = system(point, 0.5f0)
-    @test residual == GameTracing.GameResidual(game)(point, 0.5f0)
-    @test jacobian == GameTracing.GameJacobian(game, GameTracing.BranchWorkspace(point))(point, 0.5f0)
-    # A forward difference in each coordinate checks the Jacobian the pass formed in place.
-    for (column, step) in pairs(Float32[1.0f-3, 1.0f-3, 1.0f-3])
-        moved = copy(point)
-        moved[column] += step
-        slope = (GameTracing.GameResidual(game)(moved, 0.5f0) .- GameTracing.GameResidual(game)(point, 0.5f0)) ./ step
-        @test maximum(abs, slope .- jacobian[:, column]) < 1.0f-2
+    for coordinates in instances(TraceCoordinates)
+        workspace = GameTracing.BranchWorkspace(point)
+        system = GameTracing.GameSystem(game, coordinates, workspace)
+        residual_at = GameTracing.GameResidual(game, coordinates)
+        first_residual, first_jacobian = system(point, 0.5f0)
+        second_residual, second_jacobian = system(point .+ 0.1f0, 0.5f0)
+        @test first_residual === second_residual === workspace.residual
+        @test first_jacobian === second_jacobian === workspace.jacobian
+        residual, jacobian = system(point, 0.5f0)
+        @test residual == residual_at(point, 0.5f0)
+        @test jacobian == GameTracing.GameJacobian(game, coordinates, GameTracing.BranchWorkspace(point))(point, 0.5f0)
+        # A central difference in each coordinate, the relative precision included, checks the Jacobian formed in place.
+        step = 1.0f-3
+        for column in eachindex(point)
+            nudge = step .* (eachindex(point) .== column)
+            slope = (residual_at(point .+ nudge, 0.5f0) .- residual_at(point .- nudge, 0.5f0)) ./ (2 * step)
+            @test maximum(abs, slope .- jacobian[:, column]) < 1.0f-2
+        end
     end
+end
+
+@testset "every coordinate system writes the same logit residual, up to its own scale" begin
+    game = LogitGame(GAME, TARGET_PRECISION)
+    logits, relative_precision = Float32[0.4f0, -0.3f0], 0.6f0
+    for coordinates in instances(TraceCoordinates)
+        point = [GameTracing.trace_state(coordinates, logits, relative_precision); relative_precision]
+        @test GameTracing.trace_logits(coordinates, point[1:WIDTH], relative_precision) ≈ logits
+        residual = GameTracing.GameResidual(game, coordinates)(point, relative_precision)[1:WIDTH]
+        # Payoff gaps divide the logit residual `z - λ G` by `ρ`.
+        scale = ifelse(coordinates == PayoffGaps, relative_precision, 1.0f0)
+        @test scale .* residual ≈ logits .- evaluated(GAME, logits, TARGET_PRECISION * relative_precision).response
+    end
+    @test_throws ArgumentError GameTracing.trace_state(PayoffGaps, logits, 0.0f0)
+end
+
+@testset "payoff gaps start at the target's flat-start gains" begin
+    start = GameTracing.trace_start(LogitGame(GAME, TARGET_PRECISION), PayoffGaps, WIDTH, Float32)
+    @test start[1:WIDTH] ≈ TARGET_PRECISION .* evaluated(GAME, zeros(Float32, WIDTH), 1.0f0).response
+    @test last(start) == 0
+    @test GameTracing.trace_start(LogitGame(GAME, TARGET_PRECISION), Logits, WIDTH, Float32) == zeros(Float32, WIDTH + 1)
 end
 
 @testset "a Jacobian call leaves the residual the fused system returned" begin
@@ -194,6 +218,7 @@ end
     point = Float32[0.3f0, -0.2f0, 0.6f0]
     problem = GameTracing.branch_problem(
         LogitGame(GAME, TARGET_PRECISION),
+        AsinhLogits,
         point,
         0.5f0;
         record_from_solution = GameTracing.trace_record_precision,
