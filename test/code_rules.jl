@@ -1,6 +1,6 @@
-# CodeRules on GameTracing with no baseline: every rule must find nothing.
+# Corset on GameTracing with no baseline: every rule must find nothing.
 
-using CodeRules:
+using Corset:
     Repository,
     Site,
     abstract_fields,
@@ -33,7 +33,7 @@ const STRUCT_FIELD_LIMIT = 12
 const FILE_LINE_LIMIT = 1500
 const SOURCE_DIRECTORIES = ("src", "test")
 
-const REPOSITORY = Repository(dirname(@__DIR__), joinpath(@__DIR__, "no_baseline.toml"), ())
+const REPOSITORY = Repository(dirname(@__DIR__); baseline = joinpath(@__DIR__, "no_baseline.toml"))
 const SOURCE_FILES = [
     file
     for file in readdir(joinpath(pkgdir(GameTracing), "src"); join = true)
