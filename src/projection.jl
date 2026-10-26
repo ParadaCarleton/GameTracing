@@ -3,10 +3,11 @@ using LinearAlgebra: Diagonal
 """
     projection_step(game, logits, relative_precision, state_weight)
 
-One minimum-norm Gauss–Newton step from `x = [asinh(logits); ρ]` onto `game`'s branch `F(x) = 0`, in PALC's norm
-`θ ‖du‖² / k + (1 - θ) dρ²` (`θ` the `state_weight`, `k` the number of logits): `dx = -W⁻¹ Jᵀ (J W⁻¹ Jᵀ)⁻¹ F`.
+One minimum-norm Gauss–Newton step from `x = [logits / ρ; ρ]` onto `game`'s branch `F(x) = 0` in payoff gaps, in
+PALC's norm `θ ‖dw‖² / k + (1 - θ) dρ²` (`θ` the `state_weight`, `k` the number of logits): `dx = -W⁻¹ Jᵀ (J W⁻¹ Jᵀ)⁻¹ F`.
 It is the minimum-norm solution of `(J W^-½) y = -F` by pivoted QR, scaled back by `W^-½`; the normal matrix is never
 formed. The step moves `ρ` as well, so it stays defined at a fold, where a correction at fixed `ρ` is singular.
+Payoff gaps have no point at `ρ = 0`, so `ρ` must be positive.
 """
 function projection_step(
     game::LogitGame,
@@ -17,8 +18,11 @@ function projection_step(
     if !(0 < state_weight < 1)
         throw(ArgumentError("state_weight must lie in (0, 1); got $state_weight"))
     end
+    if !(relative_precision > 0)
+        throw(ArgumentError("payoff gaps need a positive relative precision; got $relative_precision"))
+    end
     width = length(logits)
-    point = [asinh.(logits); E(relative_precision)]
+    point = [logits ./ E(relative_precision); E(relative_precision)]
     system = branch_system!(BranchWorkspace(point), game, point, relative_precision)
     jacobian = system.jacobian[1:width, :]
     scale = Diagonal([fill(E(sqrt(width / state_weight)), width); E(sqrt(1 / (1 - state_weight)))])
@@ -38,5 +42,6 @@ function branch_projection(
     settings::TraceSettings,
 )::NamedTuple{(:logits, :relative_precision), Tuple{Vector{E}, E}} where {E <: Real}
     step = projection_step(game, logits, relative_precision, settings.state_weight)
-    return (; logits = sinh.(asinh.(logits) .+ state_of(step)), relative_precision = E(relative_precision) + last(step))
+    moved = [logits ./ E(relative_precision); E(relative_precision)] .+ step
+    return (; logits = logits_at(moved), relative_precision = last(moved))
 end
