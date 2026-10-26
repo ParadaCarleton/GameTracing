@@ -68,6 +68,22 @@ function (pass::DampedGainPass)(
     return nothing
 end
 
+"""One logit whose gain is the precision itself, `G = λ`: the branch `z = λ²`."""
+struct PrecisionGainPass end
+
+function (::PrecisionGainPass)(
+    gain::AbstractVector,
+    gain_slope::AbstractMatrix,
+    gain_precision_slope::AbstractVector,
+    ::AbstractVector{E},
+    precision::Real,
+)::Nothing where {E <: Real}
+    fill!(gain, E(precision))
+    fill!(gain_slope, zero(E))
+    fill!(gain_precision_slope, one(E))
+    return nothing
+end
+
 """A pass whose gain is NaN once the precision passes `poison`."""
 struct PoisonedPass{P, E <: Real}
     pass::P
