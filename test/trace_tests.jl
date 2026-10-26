@@ -207,7 +207,7 @@ end
     pass = DampedGainPass(LinearGainPass(Float32[1 -2; 0.5f0 1], Float32[0.5f0, -0.25f0]), 0.8f0)
     game = LogitGame(pass, 3.0f0)
     for point in (Float32[0.4f0, -0.7f0, 0], Float32[0.3f0, -0.2f0, 0.6f0], Float32[-1.5f0, 2, 1])
-        residual, jacobian = GameTracing.GameSystem(game, GameTracing.BranchWorkspace(point))(point, last(point))
+        _, jacobian = GameTracing.GameSystem(game, GameTracing.BranchWorkspace(point))(point, last(point))
         for column in eachindex(point)
             step = 1.0f-2
             nudge = setindex!(zeros(Float32, length(point)), step, column)
