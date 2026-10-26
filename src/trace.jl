@@ -21,8 +21,11 @@ end
 The corrector's controls. `reach`: a corrector further than this times its step from its predictor is refused
 (`CorrectorReach`). `residual_tolerance`, `tolerance_floor_ulps`: the corrector's sup-norm residual, or
 `tolerance_floor_ulps` ulps of the largest logit where that is larger (`corrector_tolerance`).
-`newton_iterations`: Newton iterations per corrector. `redraw_reach`: the largest Euclidean logit distance a redraw's
-fixed-precision correction may move the point (`level_correction`); a farther root is another branch.
+`newton_iterations`: Newton iterations per corrector. `redraw_reach`: the largest Euclidean distance in logits that a
+redraw's fixed-precision correction may move the accepted point (`level_correction`); a farther root is taken for
+another branch, and the trace fails `TraceStuck`. The default 0.4 is `StepControl`'s `distance_limit`, Gambit's bound
+on one Newton step: a redraw may move the point as far as one corrector step may, and one that moves it farther
+changed the branch, not the sample. The test swaps bracket it: the near one moves under 0.2, the far one about 3.5.
 """
 Base.@kwdef struct CorrectorSettings{E <: Real}
     reach::E = 2.0f0
