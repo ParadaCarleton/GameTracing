@@ -165,3 +165,39 @@ end
         @test options.save_sol_every_step == 0
     end
 end
+
+@testset "the fused system reuses one workspace and matches a fresh evaluation" begin
+    game = LogitGame(GAME, TARGET_PRECISION)
+    point = Float32[0.3f0, -0.2f0, 0.6f0]
+    workspace = GameTracing.BranchWorkspace(point)
+    system = GameTracing.GameSystem(game, workspace)
+    first_residual, first_jacobian = system(point, 0.5f0)
+    second_residual, second_jacobian = system(point .+ 0.1f0, 0.5f0)
+    @test first_residual === second_residual === workspace.residual
+    @test first_jacobian === second_jacobian === workspace.jacobian
+    residual, jacobian = system(point, 0.5f0)
+    @test residual == GameTracing.GameResidual(game)(point, 0.5f0)
+    @test jacobian == GameTracing.GameJacobian(game, GameTracing.BranchWorkspace(point))(point, 0.5f0)
+    # A forward difference in each coordinate checks the Jacobian the pass formed in place.
+    for (column, step) in pairs(Float32[1.0f-3, 1.0f-3, 1.0f-3])
+        moved = copy(point)
+        moved[column] += step
+        slope = (GameTracing.GameResidual(game)(moved, 0.5f0) .- GameTracing.GameResidual(game)(point, 0.5f0)) ./ step
+        @test maximum(abs, slope .- jacobian[:, column]) < 1.0f-2
+    end
+end
+
+@testset "a Jacobian call leaves the residual the fused system returned" begin
+    bifurcation_kit = GameTracing.BifurcationKit
+    point = Float32[0.3f0, -0.2f0, 0.6f0]
+    problem = GameTracing.branch_problem(
+        LogitGame(GAME, TARGET_PRECISION),
+        point,
+        0.5f0;
+        record_from_solution = GameTracing.trace_record_precision,
+    )
+    residual, _ = bifurcation_kit.residual_and_jacobian(problem, point, 0.5f0)
+    kept = copy(residual)
+    bifurcation_kit.jacobian(problem, point .+ 0.1f0, 0.5f0)
+    @test residual == kept
+end
