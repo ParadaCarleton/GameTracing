@@ -1,7 +1,10 @@
 using ErrorTypes: Result
 using LinearAlgebra: LAPACKException, SingularException
-"""Why a trace stopped short of its target precision."""
-@enum TraceCause NoConvergence TraceStuck NotFinite Singular
+"""
+Why a trace stopped short of its target precision. `OffMap`: the trace reached the target, but its endpoint misses the
+corrector tolerance on the game in effect there, a bug in the tracer that the endpoint check catches.
+"""
+@enum TraceCause NoConvergence TraceStuck NotFinite Singular OffMap
 
 """
     TraceFailure(cause, context)
@@ -16,12 +19,14 @@ struct TraceFailure{C <: NamedTuple}
 end
 
 """
-    Traced(logits)
+    Traced(logits, steps)
 
-The `logits` of a trace at its target precision.
+The `logits` of a trace at its target precision, a root of the game in effect there to the corrector's tolerance,
+and the continuation `steps` it took, over every segment.
 """
 struct Traced{E <: Real}
     logits::Vector{E}
+    steps::Int
 end
 
 """

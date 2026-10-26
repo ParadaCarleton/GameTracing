@@ -219,19 +219,48 @@ function (pass::NormalFormPass{N})(
     return nothing
 end
 
-"""
-    branch_reference(pass, width, precision)
+"""Whether `logits` solves `pass` at `precision` to `Float64` rounding at `scale`, times the logits' size."""
+function settled_root(pass::Any, logits::AbstractVector{E}, precision::E, scale::E)::Bool where {E <: Real}
+    return residual_norm(pass, logits, precision) <= 10^4 * eps(scale) * (1 + maximum(abs, logits))
+end
 
-`(; reached, logits, first_choices)`: an independent reference for the principal branch of `pass` at `precision`, by natural
-continuation in `Float64` from zero precision. Each step runs Newton from the last point and halves until Newton
-converges with no logit moving more than `1/1000`, so it creeps through the sharp turn of an unfolded pitchfork. A
-branch that folds back in precision has no next point, and the reference stops short (`reached = false`).
 """
-function branch_reference(pass::Any, width::Integer, precision::Real)::NamedTuple
-    logits = zeros(width)
+    level_root(pass, logits, precision)
+
+The root of `pass` at fixed `precision` that `Float64` Newton reaches from `logits`; an `ErrorException` when 50 steps do not settle.
+"""
+function level_root(pass::Any, logits::AbstractVector, precision::Real)::AbstractVector
+    root, level = float.(collect(logits)) .* float(1), precision * float(1)
+    for _ in 1:50
+        if settled_root(pass, root, level, max(level, one(level)))
+            return root
+        end
+        gains = evaluated(pass, root, level)
+        root = root .- (one(gains.logit_slope) .- gains.logit_slope) \ (root .- gains.response)
+    end
+    error("level_root: Newton did not settle at precision $level")
+end
+
+"""
+    branch_reference(pass, width, precision; start, start_precision)
+
+`(; reached, logits, first_choices)`: an independent reference for the branch of `pass` at `precision`, by natural
+continuation in `Float64` from the root `level_root` reaches from `start` at `start_precision` (default: zero logits at
+zero precision, the principal branch). Each step runs Newton from the last point and halves until Newton converges with
+no logit moving more than `1/1000`, so it creeps through the sharp turn of an unfolded pitchfork. A branch that folds
+back in precision has no next point, and the reference stops short (`reached = false`).
+"""
+function branch_reference(
+    pass::Any,
+    width::Integer,
+    precision::Real;
+    start::AbstractVector = zeros(width),
+    start_precision::Real = 0,
+)::NamedTuple
+    logits = level_root(pass, start, start_precision)
     # `float(1)` widens a 32-bit precision, which no Float64 literal names.
     target = precision * float(1)
-    level, step = zero(target), inv(float(1000))
+    level, step = start_precision * float(1), inv(float(1000))
     while level < target && step > eps(target)
         next = min(level + step, target)
         candidate = copy(logits)
@@ -239,8 +268,7 @@ function branch_reference(pass::Any, width::Integer, precision::Real)::NamedTupl
             gains = evaluated(pass, candidate, next)
             candidate = candidate .- (one(gains.logit_slope) .- gains.logit_slope) \ (candidate .- gains.response)
         end
-        settled = residual_norm(pass, candidate, next) <= 10^4 * eps(target) * (1 + maximum(abs, candidate))
-        if settled && maximum(abs, candidate .- logits) <= inv(float(1000))
+        if settled_root(pass, candidate, next, target) && maximum(abs, candidate .- logits) <= inv(float(1000))
             logits, level, step = candidate, next, min(2 * step, inv(float(100)))
         else
             step /= 2
@@ -249,3 +277,51 @@ function branch_reference(pass::Any, width::Integer, precision::Real)::NamedTupl
     return (; reached = level == target, logits, first_choices = inv.(1 .+ exp.(-logits)))
 end
 
+"""
+    MapSwap(before, after, precision, swap_level, width)
+
+A trace over `width` logits to `precision` whose game changes from `before` to `after` once the trace reaches relative
+precision `swap_level`: a redraw of the map at an accepted point.
+"""
+struct MapSwap{B, A, E <: Real}
+    before::B
+    after::A
+    precision::E
+    swap_level::E
+    width::Int
+end
+
+# The swap moves a two-player branch by under a tenth: a redraw a fixed-precision correction absorbs.
+const NEAR_SWAP = MapSwap(
+    LinearGainPass([0 0.8f0; 0.6f0 0], [0.3f0, -0.2f0]),
+    LinearGainPass([0 0.8f0; 0.6f0 0], [0.34f0, -0.23f0]),
+    4.0f0, 0.5f0, 2,
+)
+
+# The swap removes the low branch at precision 1/2: the only root there is the high one, about 3.5 logits away.
+const FAR_SWAP = MapSwap(ThresholdPass(8.0f0, 4.0f0), ThresholdPass(8.0f0, 1.5f0), 1.0f0, 0.5f0, 1)
+
+"""
+    SwapAt(game, swap_level)
+
+A `redraw` hook that returns `game` at every accepted point from relative precision `swap_level` on, and `nothing`
+before: the trace swaps once, since returning its current game swaps nothing.
+"""
+struct SwapAt{G, E <: Real}
+    game::G
+    swap_level::E
+end
+
+function (hook::SwapAt{G})(::AbstractVector, relative_precision::Real)::Union{Nothing, G} where {G}
+    if relative_precision >= hook.swap_level
+        return hook.game
+    end
+    return nothing
+end
+
+"""A `keep_going` hook that stops the trace at its first accepted point at or past `swap_level`."""
+struct StopAt{E <: Real}
+    swap_level::E
+end
+
+(hook::StopAt)(::AbstractVector, relative_precision::Real)::Bool = relative_precision < hook.swap_level

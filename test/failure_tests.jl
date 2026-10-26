@@ -142,9 +142,8 @@ end
     result = GameTracing.reached_state(
         progress,
         (; step_length = 0.0f0, exception = "Stopping continuation."),
-        1.0f0,
-        10,
-        TARGET_PRECISION,
+        LogitGame(GAME, TARGET_PRECISION),
+        TraceSettings{Float32}(; max_steps = 10),
         (;),
     )
     @test is_error(result)
@@ -158,15 +157,15 @@ end
     @test progress(moved, tangent, 1, nothing)
     @test !progress.unmoved
     outcome = (; step_length = 0.0f0, exception = nothing)
-    @test unwrap_error(GameTracing.reached_state(progress, outcome, 1.0f0, 2, TARGET_PRECISION, (;))).cause == GameTracing.TraceStuck
+    @test unwrap_error(GameTracing.reached_state(progress, outcome, LogitGame(GAME, TARGET_PRECISION), TraceSettings{Float32}(; max_steps = 2), (;))).cause == GameTracing.TraceStuck
     @test !progress(moved, tangent, 2, nothing)
     @test progress.unmoved
     # A stall that spends the step budget is still a stall; moving points that spend it are not.
-    stalled = unwrap_error(GameTracing.reached_state(progress, outcome, 1.0f0, 2, TARGET_PRECISION, (;)))
+    stalled = unwrap_error(GameTracing.reached_state(progress, outcome, LogitGame(GAME, TARGET_PRECISION), TraceSettings{Float32}(; max_steps = 2), (;)))
     @test stalled.cause == GameTracing.TraceStuck
     @test stalled.context.unmoved
     progress.unmoved = false
-    @test unwrap_error(GameTracing.reached_state(progress, outcome, 1.0f0, 2, TARGET_PRECISION, (;))).cause == GameTracing.NoConvergence
+    @test unwrap_error(GameTracing.reached_state(progress, outcome, LogitGame(GAME, TARGET_PRECISION), TraceSettings{Float32}(; max_steps = 2), (;))).cause == GameTracing.NoConvergence
     # A change in the precision alone, or in the logits alone, is progress.
     precision_only = (; u = moved.u, p = 0.6f0)
     @test progress(precision_only, tangent, 3, nothing)
