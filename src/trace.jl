@@ -1,8 +1,5 @@
 using BifurcationKit: BifurcationKit
 using ErrorTypes: Err, Ok
-"""How PALC finds the tangent at each point: `BorderedTangent` solves the bordered Jacobian system, `SecantTangent` extrapolates the last two points."""
-@enum TangentMethod BorderedTangent SecantTangent
-
 """
     StepControl{E}(; distance_limit, contraction_limit, growth_limit, contraction_offset)
 
@@ -47,12 +44,15 @@ Step sizes are arclength in PALC's norm `sqrt(θ ‖du‖² / k + (1 - θ) dρ²
 - `state_weight`: the logits' weight against the relative precision's in the arclength norm. `first_tangent_divisor`:
   the first tangent is the secant to a solve at `first_step / first_tangent_divisor`.
 - `max_steps`: continuation steps before the trace fails as `NoConvergence`.
-- `tangent`: a `TangentMethod`. `bordered_solver`: a `BorderedSolver`.
+- `tangent`: BifurcationKit's tangent algorithm, passed to PALC as is. `Bordered()` (the default) solves the bordered
+  Jacobian system. `Secant()` extrapolates the last two points: it can cross onto another arm near a pitchfork that a
+  payoff perturbation unfolds, so avoid it there (the test "a pitchfork unfolded by a payoff perturbation").
+- `bordered_solver`: a `BorderedSolver`.
 - `step_control`: a `StepControl`, or `nothing` for none.
 - `orientation_check` orients a bordered tangent by the determinant of the bordered matrix. It takes effect only with
   `MatrixSolve`, the one solver that has a determinant.
 """
-Base.@kwdef struct TraceSettings{E <: Real}
+Base.@kwdef struct TraceSettings{E <: Real, T <: BifurcationKit.AbstractTangentComputation}
     first_step::E = 0.05f0
     min_step::E = 1.1754944f-38
     max_step::E = 1000.0f0
@@ -61,10 +61,17 @@ Base.@kwdef struct TraceSettings{E <: Real}
     first_tangent_divisor::E = 150.0f0
     corrector::CorrectorSettings{E} = CorrectorSettings{E}()
     max_steps::Int = 2_000
-    tangent::TangentMethod = BorderedTangent
+    tangent::T = BifurcationKit.Bordered()
     bordered_solver::BorderedSolver = MatrixSolve
     step_control::Union{Nothing, StepControl{E}} = StepControl{E}()
     orientation_check::Bool = true
+end
+
+function TraceSettings{E}(;
+    tangent::T = BifurcationKit.Bordered(),
+    keywords...,
+)::TraceSettings{E, T} where {E <: Real, T <: BifurcationKit.AbstractTangentComputation}
+    return TraceSettings{E, T}(; tangent, keywords...)
 end
 
 """`limit * scale`, or `nothing` where the threshold is off (`limit` is `nothing`)."""
@@ -87,21 +94,13 @@ function corrector_quality(
     )
 end
 
-"""The tangent predictor that PALC uses for `method`."""
-function tangent_predictor(method::TangentMethod)::BifurcationKit.AbstractTangentComputation
-    if method == BorderedTangent
-        return BifurcationKit.Bordered()
-    end
-    return BifurcationKit.Secant()
-end
-
 """BifurcationKit's PALC for `settings` over a trace of `width` logits."""
 function palc_algorithm(
     settings::TraceSettings{E},
     width::Integer,
 )::BifurcationKit.AbstractContinuationAlgorithm where {E <: Real}
     return BifurcationKit.PALC(;
-        tangent = tangent_predictor(settings.tangent),
+        tangent = settings.tangent,
         θ = augmented_theta(settings.state_weight, width),
         bls = bordered_linear_solver(settings.bordered_solver, width + 1, E),
         step_control = corrector_quality(

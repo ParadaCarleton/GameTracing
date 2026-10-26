@@ -1,3 +1,4 @@
+using BifurcationKit: BifurcationKit
 using ErrorTypes: is_error, unwrap, unwrap_error
 using Random: RandomDevice, Xoshiro
 
@@ -24,7 +25,7 @@ end
         reference = picard_equilibrium(pass, width, precision, 400)
         for settings in (
                 TraceSettings{Float32}(),
-                TraceSettings{Float32}(tangent = SecantTangent),
+                TraceSettings{Float32}(tangent = BifurcationKit.Secant()),
                 TraceSettings{Float32}(bordered_solver = BorderingSolve),
             )
             traced = trace_endpoint(LogitGame(pass, precision), width, settings)
