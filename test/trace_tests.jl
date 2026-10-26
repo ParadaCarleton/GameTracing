@@ -1,3 +1,4 @@
+using ErrorTypes: is_error, unwrap, unwrap_error
 using Random: Random
 
 @testset "trace reaches a fixed point of the logit map" begin
@@ -6,13 +7,13 @@ using Random: Random
         WIDTH,
         TraceSettings{Float32}(),
     )
-    @test result isa Traced
-    @test residual_norm(GAME, result.logits, TARGET_PRECISION) < 1.0f-4
+    @test !is_error(result)
+    @test residual_norm(GAME, unwrap(result).logits, TARGET_PRECISION) < 1.0f-4
 end
 
 @testset "tangent and bordered solver choices reach the same unique equilibrium" begin
     game = LogitGame(GAME, TARGET_PRECISION)
-    reference = trace_endpoint(game, WIDTH, TraceSettings{Float32}()).logits
+    reference = unwrap(trace_endpoint(game, WIDTH, TraceSettings{Float32}())).logits
     for settings in (
             TraceSettings{Float32}(tangent = SecantTangent),
             TraceSettings{Float32}(bordered_solver = BorderingSolve),
@@ -23,8 +24,8 @@ end
             )),
         )
         traced = trace_endpoint(game, WIDTH, settings)
-        @test traced isa Traced
-        @test maximum(abs, traced.logits .- reference) < 1.0f-3
+        @test !is_error(traced)
+        @test maximum(abs, unwrap(traced).logits .- reference) < 1.0f-3
     end
 end
 
@@ -34,8 +35,8 @@ end
         WIDTH,
         TraceSettings{Float32}(max_steps = 1, first_step = 0.005f0, max_step = 0.01f0),
     )
-    @test result isa TraceFailure
-    @test result.cause in (GameTracing.NoConvergence, GameTracing.TraceStuck)
+    @test is_error(result)
+    @test unwrap_error(result).cause in (GameTracing.NoConvergence, GameTracing.TraceStuck)
 end
 
 @testset "a refusing keep_going callback stops the trace" begin
@@ -46,12 +47,12 @@ end
         TraceSettings{Float32}();
         keep_going = refuse_all,
     )
-    @test result.cause == GameTracing.TraceStuck
-    @test result.context.relative_precision < 1
+    @test unwrap_error(result).cause == GameTracing.TraceStuck
+    @test unwrap_error(result).context.relative_precision < 1
     @test residual_norm(
         GAME,
-        result.context.logits,
-        TARGET_PRECISION * result.context.relative_precision,
+        unwrap_error(result).context.logits,
+        TARGET_PRECISION * unwrap_error(result).context.relative_precision,
     ) <
         1.0f-4
 end
@@ -81,8 +82,8 @@ end
         TraceSettings{Float32}();
         keep_going = StopPast(0.75f0),
     )
-    @test result.cause == GameTracing.TraceStuck
-    (; logits, logit_tangent, tangent_precision, relative_precision) = result.context
+    @test unwrap_error(result).cause == GameTracing.TraceStuck
+    (; logits, logit_tangent, tangent_precision, relative_precision) = unwrap_error(result).context
     # A step `h` along the branch's tangent leaves a residual of order h², far under h ‖dz‖.
     step = 1.0f-2
     moved = residual_norm(GAME, logits .+ step .* logit_tangent, TARGET_PRECISION * (relative_precision + step * tangent_precision))
@@ -96,7 +97,7 @@ end
         TraceSettings{Float32}();
         keep_going = OnTheBranch(GAME, TARGET_PRECISION),
     )
-    @test result isa Traced
+    @test !is_error(result)
 end
 
 @testset "a non-finite game fails at the start" begin
@@ -107,8 +108,8 @@ end
         TraceSettings{Float32}();
         context = (; label = :broken),
     )
-    @test result.cause == GameTracing.NotFinite
-    @test result.context.label == :broken
+    @test unwrap_error(result).cause == GameTracing.NotFinite
+    @test unwrap_error(result).context.label == :broken
 end
 
 @testset "augmented_theta rejects a trace PALC cannot weight" begin

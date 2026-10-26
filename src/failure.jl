@@ -1,3 +1,4 @@
+using ErrorTypes: Result
 using LinearAlgebra: LAPACKException, SingularException
 """Why a trace stopped short of its target precision."""
 @enum TraceCause NoConvergence TraceStuck NotFinite Singular
@@ -23,8 +24,12 @@ struct Traced{E <: Real}
     logits::Vector{E}
 end
 
-"""A trace's outcome: `Traced`, or the `TraceFailure` that stopped it, whose context holds the last accepted `logits`."""
-const TraceResult{E <: Real} = Union{Traced{E}, TraceFailure}
+"""
+A trace's outcome, an ErrorTypes `Result`: `Ok(Traced)`, or `Err(TraceFailure)` whose context holds the last
+accepted `logits`. A caller reaches the logits through `unwrap`, `@?` or a check of `is_error`, never by field
+access on the result; `unwrap` on a failure throws at the caller.
+"""
+const TraceResult{E <: Real} = Result{Traced{E}, TraceFailure}
 
 """
     uncorrected_start(exception)

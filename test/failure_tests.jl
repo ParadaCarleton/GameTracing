@@ -1,3 +1,4 @@
+using ErrorTypes: is_error, unwrap_error
 using LinearAlgebra: LAPACKException, SingularException
 
 const FAILURE_SETTINGS = TraceSettings{Float32}(first_step = 0.01f0, max_step = 0.05f0)
@@ -8,9 +9,9 @@ const FAILURE_SETTINGS = TraceSettings{Float32}(first_step = 0.01f0, max_step = 
         WIDTH,
         FAILURE_SETTINGS,
     )
-    @test result isa TraceFailure
-    @test result.cause == GameTracing.TraceStuck
-    @test TARGET_PRECISION * result.context.relative_precision <= 1.0f0
+    @test is_error(result)
+    @test unwrap_error(result).cause == GameTracing.TraceStuck
+    @test TARGET_PRECISION * unwrap_error(result).context.relative_precision <= 1.0f0
 end
 
 @testset "a non-finite Jacobian is a failure value" begin
@@ -19,8 +20,8 @@ end
         WIDTH,
         FAILURE_SETTINGS,
     )
-    @test result isa TraceFailure
-    @test result.cause in (GameTracing.Singular, GameTracing.TraceStuck)
+    @test is_error(result)
+    @test unwrap_error(result).cause in (GameTracing.Singular, GameTracing.TraceStuck)
 end
 
 @testset "a caller's exception propagates" begin
@@ -42,8 +43,8 @@ struct RefuseConverged end
         FAILURE_SETTINGS;
         accept_corrected = RefuseConverged(),
     )
-    @test result isa TraceFailure
-    @test result.cause == GameTracing.TraceStuck
+    @test is_error(result)
+    @test unwrap_error(result).cause == GameTracing.TraceStuck
 end
 
 @testset "a corrector reach too short to hold any step ends the trace" begin
@@ -54,8 +55,8 @@ end
         max_step = 0.1f0,
     );
     )
-    @test result isa TraceFailure
-    @test result.cause in (GameTracing.TraceStuck, GameTracing.NoConvergence)
+    @test is_error(result)
+    @test unwrap_error(result).cause in (GameTracing.TraceStuck, GameTracing.NoConvergence)
 end
 
 @testset "exceptions BifurcationKit and LAPACK throw are told apart from a caller's" begin
@@ -122,9 +123,9 @@ end
         WIDTH,
         FAILURE_SETTINGS,
     )
-    @test result isa TraceFailure
-    @test result.cause == GameTracing.TraceStuck
-    @test result.context.steps == 0
+    @test is_error(result)
+    @test unwrap_error(result).cause == GameTracing.TraceStuck
+    @test unwrap_error(result).context.steps == 0
 end
 
 @testset "BifurcationKit's report of an uncorrectable start is a stuck trace" begin
@@ -146,8 +147,8 @@ end
         TARGET_PRECISION,
         (;),
     )
-    @test result isa TraceFailure
-    @test result.cause == GameTracing.TraceStuck
+    @test is_error(result)
+    @test unwrap_error(result).cause == GameTracing.TraceStuck
 end
 
 @testset "an accepted point equal to the last one stops the trace as a stall" begin
@@ -157,15 +158,15 @@ end
     @test progress(moved, tangent, 1, nothing)
     @test !progress.unmoved
     outcome = (; step_length = 0.0f0, exception = nothing)
-    @test GameTracing.reached_state(progress, outcome, 1.0f0, 2, TARGET_PRECISION, (;)).cause == GameTracing.TraceStuck
+    @test unwrap_error(GameTracing.reached_state(progress, outcome, 1.0f0, 2, TARGET_PRECISION, (;))).cause == GameTracing.TraceStuck
     @test !progress(moved, tangent, 2, nothing)
     @test progress.unmoved
     # A stall that spends the step budget is still a stall; moving points that spend it are not.
-    stalled = GameTracing.reached_state(progress, outcome, 1.0f0, 2, TARGET_PRECISION, (;))
+    stalled = unwrap_error(GameTracing.reached_state(progress, outcome, 1.0f0, 2, TARGET_PRECISION, (;)))
     @test stalled.cause == GameTracing.TraceStuck
     @test stalled.context.unmoved
     progress.unmoved = false
-    @test GameTracing.reached_state(progress, outcome, 1.0f0, 2, TARGET_PRECISION, (;)).cause == GameTracing.NoConvergence
+    @test unwrap_error(GameTracing.reached_state(progress, outcome, 1.0f0, 2, TARGET_PRECISION, (;))).cause == GameTracing.NoConvergence
     # A change in the precision alone, or in the logits alone, is progress.
     precision_only = (; u = moved.u, p = 0.6f0)
     @test progress(precision_only, tangent, 3, nothing)
