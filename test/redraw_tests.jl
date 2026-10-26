@@ -1,4 +1,5 @@
-const REDRAW_SETTINGS = TraceSettings{Float32}()
+# State weight 0.4, as the fold tests use: a one-logit trace needs it below 1/2 (`augmented_theta`).
+const REDRAW_SETTINGS = TraceSettings{Float32}(state_weight = 0.4f0)
 
 """The trace of `swap` that redraws its game from `before` to `after` at `swap.swap_level`."""
 function swapped_trace(swap::MapSwap)::TraceResult{Float32}
@@ -106,7 +107,7 @@ end
     last_step = trace_endpoint(
         LogitGame(NEAR_SWAP.before, NEAR_SWAP.precision),
         NEAR_SWAP.width,
-        TraceSettings{Float32}(; max_steps = budget);
+        TraceSettings{Float32}(; state_weight = REDRAW_SETTINGS.state_weight, max_steps = budget);
         redraw = SwapAt(LogitGame(NEAR_SWAP.after, NEAR_SWAP.precision), 1.0f0),
     )
     @test !is_error(last_step)
