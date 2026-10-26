@@ -87,7 +87,7 @@ end
     settings = TraceSettings{Float32}()
     @test_throws DomainError branch_projection(game, Float32[-1], 0.1f0, settings)
     # Near the branch z = λ² the same game projects to a positive relative precision.
-    @test branch_projection(game, Float32[0.26], 0.5f0, settings).relative_precision > 0
+    @test branch_projection(game, Float32[0.26f0], 0.5f0, settings).relative_precision > 0
 end
 
 @testset "projection_step refuses a point with no payoff gaps, at a relative precision of zero or not finite" begin

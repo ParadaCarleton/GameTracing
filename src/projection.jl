@@ -44,7 +44,7 @@ function branch_projection(
 )::NamedTuple{(:logits, :relative_precision), Tuple{Vector{E}, E}} where {E <: Real}
     step = projection_step(game, logits, relative_precision, settings.state_weight)
     moved = [logits ./ E(relative_precision); E(relative_precision)] .+ step
-    if !(0 < last(moved) < Inf)
+    if !(last(moved) > 0 && isfinite(last(moved)))
         throw(DomainError(last(moved), "the projection left the positive relative precisions"))
     end
     return (; logits = logits_at(moved), relative_precision = last(moved))
