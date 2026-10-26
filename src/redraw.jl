@@ -53,7 +53,7 @@ struct LevelSystem{G <: LogitGame, E <: Real}
 end
 
 """`system.workspace` filled at the gaps `gaps` and `system`'s relative precision."""
-function level_system!(system::LevelSystem, gaps::AbstractVector{E})::BranchWorkspace{E} where {E <: Real}
+function level_system!(system::LevelSystem, gaps::AbstractVector{E})::typeof(system.workspace) where {E <: Real}
     point = [gaps; system.relative_precision]
     return branch_system!(system.workspace, system.game, point, system.relative_precision)
 end
@@ -124,7 +124,7 @@ function restart_tangent(
     point::AbstractVector{E},
     old_tangent::AbstractVector{E},
     theta::E,
-)::Vector{E} where {E <: Real}
+)::AbstractVector{E} where {E <: Real}
     width = length(point) - 1
     jacobian = branch_system!(BranchWorkspace(point), game, point, last(point)).jacobian
     border = theta .* old_tangent ./ length(point)

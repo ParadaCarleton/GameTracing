@@ -229,7 +229,7 @@ end
 
 The root of `pass` at fixed `precision` that `Float64` Newton reaches from `logits`; an `ErrorException` when 50 steps do not settle.
 """
-function level_root(pass::Any, logits::AbstractVector, precision::Real)::Vector{Float64}
+function level_root(pass::Any, logits::AbstractVector, precision::Real)::AbstractVector
     root, level = float.(collect(logits)) .* float(1), precision * float(1)
     for _ in 1:50
         if settled_root(pass, root, level, max(level, one(level)))
@@ -293,8 +293,8 @@ end
 
 # The swap moves a two-player branch by under a tenth: a redraw a fixed-precision correction absorbs.
 const NEAR_SWAP = MapSwap(
-    LinearGainPass(Float32[0 0.8; 0.6 0], Float32[0.3, -0.2]),
-    LinearGainPass(Float32[0 0.8; 0.6 0], Float32[0.34, -0.23]),
+    LinearGainPass([0 0.8f0; 0.6f0 0], [0.3f0, -0.2f0]),
+    LinearGainPass([0 0.8f0; 0.6f0 0], [0.34f0, -0.23f0]),
     4.0f0, 0.5f0, 2,
 )
 
