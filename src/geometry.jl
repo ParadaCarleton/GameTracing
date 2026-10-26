@@ -128,3 +128,29 @@ function palc_geometry(geometry::TraceGeometry{E}, width::Integer)::NamedTuple w
     weighted = BifurcationKit.PointWeightedDot(FisherWeights(), ones(E, width + 1))
     return (; theta, dot = BifurcationKit.DotTheta(weighted))
 end
+
+"""PALC's product `θ ⟨x, y⟩ + (1 - θ) ρₓ ρ_y` of two branch vectors `[x; ρ]` under the trace's `dot` at state weight `theta`."""
+function palc_product(
+    dot::BifurcationKit.DotTheta,
+    theta::E,
+    left::AbstractVector{E},
+    right::AbstractVector{E},
+)::E where {E <: Real}
+    return dot(left, right, last(left), last(right), theta)
+end
+
+"""`vector` under the in-place operator `A` of a `DotTheta`, `⟨x, y⟩ = xᵀ A y`; `nothing` is the identity."""
+function applied_operator(::Nothing, vector::AbstractVector{E})::AbstractVector{E} where {E <: Real}
+    return vector
+end
+
+function applied_operator(apply::Any, vector::AbstractVector{E})::AbstractVector{E} where {E <: Real}
+    return apply(vector)
+end
+
+"""The row `b` with `b ⋅ τ = palc_product(dot, theta, vector, τ)` for every branch vector `τ`."""
+function palc_border(dot::BifurcationKit.DotTheta, theta::E, vector::AbstractVector{E})::Vector{E} where {E <: Real}
+    border = theta .* applied_operator(BifurcationKit._get_apply_dot(dot), copy(vector))
+    border[end] += (one(E) - theta) * last(vector)
+    return border
+end

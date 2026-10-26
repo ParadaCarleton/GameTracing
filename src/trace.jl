@@ -211,9 +211,11 @@ function opened_continuation!(
     corrector::CorrectorReach,
 )::Nothing where {E <: Real}
     start = BifurcationKit.getu0(problem)
-    theta = augmented_theta(corrector.theta, length(start) - 1)
-    tangent = restart_tangent(finalise.slot.game, start, old_tangent, theta)
-    length_in_norm = sqrt(theta * sum(abs2, tangent) / length(tangent) + (1 - theta) * abs2(last(tangent)))
+    dot, theta = BifurcationKit.getdot(algorithm), E(BifurcationKit.getθ(algorithm))
+    # A Fisher trace's weights are those of the point it restarts from.
+    BifurcationKit.reweight!(dot, BifurcationKit.BorderedArray(start, last(start)))
+    tangent = restart_tangent(finalise.slot.game, start, old_tangent, dot, theta)
+    length_in_norm = sqrt(palc_product(dot, theta, tangent, tangent))
     # The corrected point's tangent is the new map's; a restart that fails before a step reports it.
     copyto!(finalise.progress.gap_tangent, 1, tangent, 1, length(finalise.progress.gap_tangent))
     finalise.progress.tangent_precision = last(tangent) / length_in_norm

@@ -132,3 +132,15 @@ end
         end
     end
 end
+
+@testset "the redraw restart's border row gives PALC's product with the old tangent, in every distance" begin
+    rng = fresh_rng()
+    for distance in instances(StepDistance), _ in 1:5
+        palc = GameTracing.palc_geometry(TraceGeometry{Float32}(; distance, state_weight = 0.3f0), 2)
+        point = randn(rng, Float32, 3)
+        GameTracing.BifurcationKit.reweight!(palc.dot, GameTracing.BifurcationKit.BorderedArray(point, last(point)))
+        old_tangent, tangent = randn(rng, Float32, 3), randn(rng, Float32, 3)
+        border = GameTracing.palc_border(palc.dot, palc.theta, old_tangent)
+        @test border' * tangent ≈ GameTracing.palc_product(palc.dot, palc.theta, old_tangent, tangent) rtol = 1.0f-4
+    end
+end
