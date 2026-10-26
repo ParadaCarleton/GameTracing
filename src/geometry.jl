@@ -101,17 +101,28 @@ function (::FisherWeights)(weights::AbstractVector{E}, point::BifurcationKit.Bor
     return weights
 end
 
+"""`weights!` of an `AveragedDistance` trace's `PointWeightedDot`: its weights stay those it was built with."""
+struct FixedWeights end
+
+(::FixedWeights)(weights::AbstractVector{E}, ::BifurcationKit.BorderedArray)::AbstractVector{E} where {E <: Real} = weights
+
 """
-PALC's `θ` and `dotθ` for `geometry` over a trace of `width` gaps: `augmented_theta` and BifurcationKit's averaged
-`DotTheta()`, or the state weight itself with the plain sum `dot` or the Fisher `PointWeightedDot`, whose
-`θ ‖Δx‖² + (1 - θ) Δρ²` over `x = [w; ρ]` is `θ ‖Δw‖² + Δρ²`, valid for every `θ` in (0, 1).
+PALC's `θ` and `dotθ` for `geometry` over a trace of `width` gaps. PALC's norm of `[Δx; Δρ]`, `x = [w; ρ]`, is
+`θ ⟨Δx, Δx⟩ + (1 - θ) Δρ²` at the state weight `θ`: the inner product weighs each gap by `1/k` and `ρ` by zero
+(averaged), every coordinate by one (summed), or each gap by its Fisher weight and `ρ` by one (Fisher). Every `θ` in
+(0, 1) is valid, at every width; another throws an `ArgumentError`.
 """
 function palc_geometry(geometry::TraceGeometry{E}, width::Integer)::NamedTuple where {E <: Real}
+    theta = geometry.state_weight
+    if !(zero(E) < theta < one(E))
+        throw(ArgumentError("the state weight $theta lies outside (0, 1), where PALC weights the gaps and the precision"))
+    end
     if geometry.distance == AveragedDistance
-        return (; theta = augmented_theta(geometry.state_weight, width), dot = BifurcationKit.DotTheta())
+        weights = [fill(inv(E(width)), width); zero(E)]
+        return (; theta, dot = BifurcationKit.DotTheta(BifurcationKit.PointWeightedDot(FixedWeights(), weights)))
     elseif geometry.distance == SummedDistance
-        return (; theta = geometry.state_weight, dot = BifurcationKit.DotTheta(dot))
+        return (; theta, dot = BifurcationKit.DotTheta(dot))
     end
     weighted = BifurcationKit.PointWeightedDot(FisherWeights(), ones(E, width + 1))
-    return (; theta = geometry.state_weight, dot = BifurcationKit.DotTheta(weighted))
+    return (; theta, dot = BifurcationKit.DotTheta(weighted))
 end

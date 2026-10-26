@@ -49,7 +49,6 @@ end
 
 @testset "a corrector reach too short to hold any step ends the trace" begin
     result = trace_endpoint(LogitGame(FOLD_GAME, 2.0f0), 1, TraceSettings{Float32}(
-        geometry = TraceGeometry{Float32}(state_weight = 0.4f0),
         corrector = CorrectorSettings{Float32}(reach = 1.0f-6),
         first_step = 0.05f0,
         max_step = 0.1f0,

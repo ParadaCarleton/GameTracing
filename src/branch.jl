@@ -194,20 +194,3 @@ function branch_problem(
         record_from_solution,
     )
 end
-
-"""
-    augmented_theta(state_weight, count)
-
-The state weight for a branch of `count` state coordinates: PALC's arclength product `θ ⟨Δx, τx⟩ / length(x) + (1 - θ) Δρ τρ`
-over the `count + 1` coordinates, equal to the original at `state_weight` over `count`. It must stay below 1: at 1
-PALC weights the relative precision by zero, and its secant start divides by that zero.
-"""
-function augmented_theta(state_weight::T, count::Integer)::T where {T <: Real}
-    augmented = state_weight * (count + 1) / count
-    if !(augmented < 1)
-        throw(ArgumentError(
-            "a trace of width $count at state weight $state_weight has augmented θ = $augmented, which PALC needs below 1",
-        ))
-    end
-    return augmented
-end

@@ -113,9 +113,17 @@ end
     @test unwrap_error(result).context.label == :broken
 end
 
-@testset "augmented_theta rejects a trace PALC cannot weight" begin
-    @test GameTracing.augmented_theta(0.5f0, 3) ≈ 0.5f0 * 4 / 3
-    @test_throws ArgumentError GameTracing.augmented_theta(0.9f0, 3)
+@testset "every state weight in (0, 1) traces, a one-logit game at the default settings included" begin
+    for state_weight in (0.1f0, 0.5f0, 0.9f0), distance in instances(StepDistance)
+        geometry = TraceGeometry{Float32}(; distance, state_weight)
+        @test GameTracing.palc_geometry(geometry, 1).theta == state_weight
+    end
+    for state_weight in (0.0f0, 1.0f0, -0.5f0, NaN32)
+        @test_throws ArgumentError GameTracing.palc_geometry(TraceGeometry{Float32}(; state_weight), 1)
+    end
+    result = trace_endpoint(LogitGame(FOLD_GAME, 2.0f0), 1, TraceSettings{Float32}())
+    @test !is_error(result)
+    @test residual_norm(FOLD_GAME, unwrap(result).logits, 2.0f0) < 1.0f-3
 end
 
 @testset "an element type LAPACK cannot factor gets BifurcationKit's matrix solver" begin
