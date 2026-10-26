@@ -26,8 +26,8 @@ end
 
 """
 A trace's outcome, an ErrorTypes `Result`: `Ok(Traced)`, or `Err(TraceFailure)` whose context holds the last
-accepted `logits`. A caller reaches the logits only through `unwrap`, `@?` or a check of `is_error`, so a failure
-cannot pass unseen; `unwrap` on a failure throws at the caller.
+accepted `logits`. A caller reaches the logits through `unwrap`, `@?` or a check of `is_error`, never by field
+access on the result; `unwrap` on a failure throws at the caller.
 """
 const TraceResult{E <: Real} = Result{Traced{E}, TraceFailure}
 
