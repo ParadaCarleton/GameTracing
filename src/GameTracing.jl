@@ -22,12 +22,15 @@ export LogitGame,
     BorderedSolver,
     MatrixSolve,
     BorderingSolve,
-    trace_endpoint
+    trace_endpoint,
+    refresh_kl,
+    refresh_verdict
 
 include("failure.jl")
 include("bordered.jl")
 include("branch.jl")
 include("callbacks.jl")
 include("trace.jl")
+include("refresh.jl")
 
 end
