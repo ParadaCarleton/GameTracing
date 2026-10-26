@@ -82,6 +82,44 @@ residual_norm(pass::Any, logits::AbstractVector, precision::Real) = maximum(
     logits .- pass(logits, precision).response,
 )
 
+"""
+Logit response of a normal-form game in which every player has two actions: `z_p = precision (U_p(1, π) - U_p(2, π))`,
+each rival `q` playing its first action with probability `logistic(z_q)`. `payoffs[p][profile]` is player `p`'s payoff.
+"""
+struct NormalFormPass{N, E <: Real}
+    payoffs::NTuple{N, Array{E, N}}
+end
+
+"""The probability that a player whose first action has probability `first_choice` plays `action`."""
+function action_probability(first_choice::E, action::Integer)::E where {E <: Real}
+    return ifelse(action == 1, first_choice, 1 - first_choice)
+end
+
+"""`+1` for a player's first action, `-1` for its second: the sign it carries in a payoff gain."""
+action_sign(action::Integer)::Int = 3 - 2 * action
+
+function (pass::NormalFormPass{N, E})(logits::AbstractVector{E}, precision::Real) where {N, E <: Real}
+    first_choices = inv.(one(E) .+ exp.(-logits))
+    gains = zeros(E, N)
+    gain_slopes = zeros(E, N, N)
+    for profile in CartesianIndices(first(pass.payoffs)), (player, payoff) in pairs(pass.payoffs)
+        signed = action_sign(profile[player]) * payoff[profile]
+        chances = [action_probability(first_choices[rival], profile[rival]) for rival in 1:N]
+        gains[player] += signed * prod((chances[rival] for rival in 1:N if rival != player); init = one(E))
+        for rival in 1:N
+            if rival != player
+                others = prod((chances[other] for other in 1:N if other != player && other != rival); init = one(E))
+                gain_slopes[player, rival] += signed * action_sign(profile[rival]) * others
+            end
+        end
+    end
+    return (;
+        response = precision .* gains,
+        logit_slope = precision .* gain_slopes .* transpose(first_choices .* (one(E) .- first_choices)),
+        precision_slope = gains,
+    )
+end
+
 """Picard iterates of `logits -> T(logits, precision)` from the flat start: the equilibrium when `T` contracts."""
 function picard_equilibrium(
     pass::Any,
