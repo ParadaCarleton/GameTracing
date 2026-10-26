@@ -77,16 +77,18 @@ end
 
 """Whether `settings` traces `payoffs` to the fine Float64 reference at `precision`, or to an equilibrium where the branch folds back."""
 function reaches_reference(payoffs::Tuple, precision::Real, settings::TraceSettings{Float32})::Bool
-    result = traced_result(payoffs, Float32(precision), settings)
+    pass = NormalFormPass(map(table -> Float32.(table), payoffs))
+    result = trace_endpoint(LogitGame(pass, Float32(precision)), length(payoffs), settings)
     if is_error(result)
         return false
     end
     logits = unwrap(result).logits
     reference = branch_reference(NormalFormPass(map(float, payoffs)), length(payoffs), precision)
     if reference.reached
-        return agreeing(first_choices(logits), reference.first_choices)
+        # First-action probabilities to 1e-3, as the LogitNash cross-check compares them.
+        return maximum(abs, inv.(1 .+ exp.(.-logits)) .- reference.first_choices) < 1.0f-3
     end
-    return residual_norm(NormalFormPass(map(table -> Float32.(table), payoffs)), logits, Float32(precision)) < 1.0f-3
+    return residual_norm(pass, logits, Float32(precision)) < 1.0f-3
 end
 
 @testset "every arm reaches the reference equilibrium on LogitNash's games, the overshot game and random games" begin
