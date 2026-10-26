@@ -1,3 +1,4 @@
+using BifurcationKit: BifurcationKit
 using GameTracing
 using Test
 

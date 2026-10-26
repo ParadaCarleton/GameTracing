@@ -15,7 +15,7 @@ end
     game = LogitGame(GAME, TARGET_PRECISION)
     reference = unwrap(trace_endpoint(game, WIDTH, TraceSettings{Float32}())).logits
     for settings in (
-            TraceSettings{Float32}(tangent = SecantTangent),
+            TraceSettings{Float32}(tangent = BifurcationKit.Secant()),
             TraceSettings{Float32}(bordered_solver = BorderingSolve),
             TraceSettings{Float32}(step_control = nothing),
             TraceSettings{Float32}(step_control = StepControl{Float32}(
