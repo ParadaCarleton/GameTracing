@@ -30,20 +30,35 @@ Base.@kwdef struct CorrectorSettings{E <: Real}
 end
 
 """
-    TraceSettings{E}(; first_step, min_step, max_step, aggressiveness, state_weight, first_tangent_divisor,
-                     corrector, max_steps, tangent, bordered_solver, step_control, orientation_check, coordinates)
+    StepSizes{E}(; first_step, min_step, max_step, aggressiveness, first_tangent_divisor)
 
-BifurcationKit PALC controls for `trace_endpoint`, in `(u, ρ)` with `u` the state coordinates of the logits and `ρ` the
-relative precision.
-Step sizes are arclength in PALC's norm `sqrt(θ ‖du‖² / k + (1 - θ) dρ²)`, `θ` the `state_weight` and `k` the number of logits.
+PALC's arclength step sizes, in the norm of `TraceSettings`.
 
 - `first_step`, `min_step`, `max_step`: first, smallest and largest arclength step. A step whose corrector fails
   halves; the trace ends as `TraceStuck` once the step reaches `min_step`.
 - `aggressiveness` (BifurcationKit's `a`): a step grows by `1 + a ((N - n) / N)²` after a corrector of `n` of
   its `N = corrector.newton_iterations` iterations.
+- `first_tangent_divisor`: the first tangent is the secant to a solve at `first_step / first_tangent_divisor`.
+"""
+Base.@kwdef struct StepSizes{E <: Real}
+    first_step::E = 0.05f0
+    min_step::E = 1.1754944f-38
+    max_step::E = 1000.0f0
+    aggressiveness::E = 0.5f0
+    first_tangent_divisor::E = 150.0f0
+end
+
+"""
+    TraceSettings{E}(; steps, state_weight, corrector, max_steps, tangent, bordered_solver, step_control,
+                     orientation_check, coordinates)
+
+BifurcationKit PALC controls for `trace_endpoint`, in `(u, ρ)` with `u` the state coordinates of the logits and `ρ` the
+relative precision.
+Step sizes are arclength in PALC's norm `sqrt(θ ‖du‖² / k + (1 - θ) dρ²)`, `θ` the `state_weight` and `k` the number of logits.
+
+- `steps`: a `StepSizes`.
 - `corrector`: a `CorrectorSettings`.
-- `state_weight`: the logits' weight against the relative precision's in the arclength norm. `first_tangent_divisor`:
-  the first tangent is the secant to a solve at `first_step / first_tangent_divisor`.
+- `state_weight`: the logits' weight against the relative precision's in the arclength norm.
 - `max_steps`: continuation steps before the trace fails as `NoConvergence`.
 - `tangent`: BifurcationKit's tangent algorithm, passed to PALC as is. `Bordered()` (the default) solves the bordered
   Jacobian system. `Secant()` extrapolates the last two points: it can cross onto another arm near a pitchfork that a
@@ -60,12 +75,8 @@ Base.@kwdef struct TraceSettings{
     T <: BifurcationKit.AbstractTangentComputation,
     C <: LogitCoordinates,
 }
-    first_step::E = 0.05f0
-    min_step::E = 1.1754944f-38
-    max_step::E = 1000.0f0
-    aggressiveness::E = 0.5f0
+    steps::StepSizes{E} = StepSizes{E}()
     state_weight::E = 0.5f0
-    first_tangent_divisor::E = 150.0f0
     corrector::CorrectorSettings{E} = CorrectorSettings{E}()
     max_steps::Int = 2_000
     tangent::T = BifurcationKit.Bordered()
@@ -131,11 +142,11 @@ function continuation_options(
     settings::TraceSettings{E},
 )::BifurcationKit.ContinuationPar where {E <: Real}
     return BifurcationKit.ContinuationPar(;
-        ds = settings.first_step,
-        dsmin = settings.min_step,
-        dsmax = settings.max_step,
-        a = settings.aggressiveness,
-        η = settings.first_tangent_divisor,
+        ds = settings.steps.first_step,
+        dsmin = settings.steps.min_step,
+        dsmax = settings.steps.max_step,
+        a = settings.steps.aggressiveness,
+        η = settings.steps.first_tangent_divisor,
         p_min = zero(E),
         p_max = one(E),
         max_steps = settings.max_steps,

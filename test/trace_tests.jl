@@ -37,11 +37,11 @@ end
         state = GameTracing.states_at(coordinates, logits)
         @test GameTracing.logits_at(coordinates, state) ≈ logits rtol = 8 * eps(Float32)
         @test GameTracing.logits_at(coordinates, state) isa Vector{Float32}
-        # A centered difference in Float64 checks dz/du.
-        for coordinate in Float64[-3, -1 // 10, 0, 1 // 2, 4]
-            step = 1.0e-6
+        # A centered difference checks dz/du: truncation h²/6 plus rounding eps/h, both under 1e-3 here.
+        for coordinate in Float32[-3, -1 // 10, 0, 1 // 2, 4]
+            step = 1.0f-2
             slope = (GameTracing.logit_at(coordinates, coordinate + step) - GameTracing.logit_at(coordinates, coordinate - step)) / 2step
-            @test GameTracing.logit_rate(coordinates, coordinate) ≈ slope rtol = 1.0e-8
+            @test GameTracing.logit_rate(coordinates, coordinate) ≈ slope rtol = 1.0f-3
         end
     end
 end
@@ -50,7 +50,7 @@ end
     result = trace_endpoint(
         LogitGame(GAME, TARGET_PRECISION),
         WIDTH,
-        TraceSettings{Float32}(max_steps = 1, first_step = 0.005f0, max_step = 0.01f0),
+        TraceSettings{Float32}(max_steps = 1, steps = StepSizes{Float32}(first_step = 0.005f0, max_step = 0.01f0)),
     )
     @test is_error(result)
     @test unwrap_error(result).cause in (GameTracing.NoConvergence, GameTracing.TraceStuck)
@@ -154,11 +154,13 @@ end
     rng = Random.Xoshiro(7)
     for _ in 1:20
         settings = TraceSettings{Float32}(
-            first_step = rand(rng, Float32),
-            min_step = 1.0f-6 * rand(rng, Float32),
-            max_step = 1 + rand(rng, Float32),
-            aggressiveness = rand(rng, Float32),
-            first_tangent_divisor = 1 + 100 * rand(rng, Float32),
+            steps = StepSizes{Float32}(
+                first_step = rand(rng, Float32),
+                min_step = 1.0f-6 * rand(rng, Float32),
+                max_step = 1 + rand(rng, Float32),
+                aggressiveness = rand(rng, Float32),
+                first_tangent_divisor = 1 + 100 * rand(rng, Float32),
+            ),
             max_steps = rand(rng, 1:50),
             corrector = CorrectorSettings{Float32}(
                 residual_tolerance = 1.0f-3 * rand(rng, Float32),
@@ -168,11 +170,11 @@ end
         options = GameTracing.continuation_options(settings)
         @test (options.ds, options.dsmin, options.dsmax, options.a, options.η) ==
             (
-                settings.first_step,
-                settings.min_step,
-                settings.max_step,
-                settings.aggressiveness,
-                settings.first_tangent_divisor,
+                settings.steps.first_step,
+                settings.steps.min_step,
+                settings.steps.max_step,
+                settings.steps.aggressiveness,
+                settings.steps.first_tangent_divisor,
             )
         @test (options.p_min, options.p_max) == (0, 1)
         @test options.max_steps == settings.max_steps

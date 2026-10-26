@@ -11,39 +11,39 @@ struct AsinhLogits <: LogitCoordinates end
 """State coordinates equal to the logits."""
 struct PlainLogits <: LogitCoordinates end
 
-"""The logit at state coordinate `u`."""
-function logit_at(::AsinhLogits, u::R)::R where {R <: Real}
-    return sinh(u)
+"""The logit at state coordinate `coordinate`."""
+function logit_at(::AsinhLogits, coordinate::R)::R where {R <: Real}
+    return sinh(coordinate)
 end
 
-function logit_at(::PlainLogits, u::R)::R where {R <: Real}
-    return u
+function logit_at(::PlainLogits, coordinate::R)::R where {R <: Real}
+    return coordinate
 end
 
-"""`dz/du`, the logit's rate of change in its state coordinate `u`."""
-function logit_rate(::AsinhLogits, u::R)::R where {R <: Real}
-    return cosh(u)
+"""`dz/du`, the logit's rate of change in its state coordinate, at `coordinate`."""
+function logit_rate(::AsinhLogits, coordinate::R)::R where {R <: Real}
+    return cosh(coordinate)
 end
 
-function logit_rate(::PlainLogits, u::R)::R where {R <: Real}
-    return one(u)
+function logit_rate(::PlainLogits, coordinate::R)::R where {R <: Real}
+    return one(coordinate)
 end
 
-"""The state coordinate of logit `z`."""
-function state_at(::AsinhLogits, z::R)::R where {R <: Real}
-    return asinh(z)
+"""The state coordinate of `logit`."""
+function state_at(::AsinhLogits, logit::R)::R where {R <: Real}
+    return asinh(logit)
 end
 
-function state_at(::PlainLogits, z::R)::R where {R <: Real}
-    return z
+function state_at(::PlainLogits, logit::R)::R where {R <: Real}
+    return logit
 end
 
 """The logits at state coordinates `state`."""
 function logits_at(coordinates::LogitCoordinates, state::AbstractVector{R})::AbstractVector{R} where {R <: Real}
-    return [logit_at(coordinates, entry) for entry in state]
+    return logit_at.((coordinates,), state)
 end
 
 """The state coordinates of `logits`."""
 function states_at(coordinates::LogitCoordinates, logits::AbstractVector{R})::AbstractVector{R} where {R <: Real}
-    return [state_at(coordinates, entry) for entry in logits]
+    return state_at.((coordinates,), logits)
 end
