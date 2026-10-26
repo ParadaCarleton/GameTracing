@@ -12,13 +12,12 @@ using Random: Random
     @test residual_norm(GAME, unwrap(result).logits, TARGET_PRECISION) < 1.0f-4
 end
 
-@testset "tangent, bordered solver and coordinate choices reach the same unique equilibrium" begin
+@testset "tangent and bordered solver choices reach the same unique equilibrium" begin
     game = LogitGame(GAME, TARGET_PRECISION)
     reference = unwrap(trace_endpoint(game, WIDTH, TraceSettings{Float32}())).logits
     for settings in (
             TraceSettings{Float32}(tangent = BifurcationKit.Secant()),
             TraceSettings{Float32}(bordered_solver = BorderingSolve),
-            TraceSettings{Float32}(coordinates = PlainLogits()),
             TraceSettings{Float32}(step_control = nothing),
             TraceSettings{Float32}(step_control = StepControl{Float32}(
                 distance_limit = nothing,
@@ -31,26 +30,11 @@ end
     end
 end
 
-@testset "each coordinate map inverts its state map and has its derivative" begin
-    logits = Float32[-30, -1, -1 // 1000, 0, 1 // 1000, 2, 30]
-    for coordinates in (AsinhLogits(), PlainLogits())
-        state = GameTracing.states_at(coordinates, logits)
-        @test GameTracing.logits_at(coordinates, state) ≈ logits rtol = 8 * eps(Float32)
-        @test GameTracing.logits_at(coordinates, state) isa Vector{Float32}
-        # A centered difference checks dz/du: truncation h²/6 plus rounding eps/h, both under 1e-3 here.
-        for coordinate in Float32[-3, -1 // 10, 0, 1 // 2, 4]
-            step = 1.0f-2
-            slope = (GameTracing.logit_at(coordinates, coordinate + step) - GameTracing.logit_at(coordinates, coordinate - step)) / 2step
-            @test GameTracing.logit_rate(coordinates, coordinate) ≈ slope rtol = 1.0f-3
-        end
-    end
-end
-
 @testset "a spent step budget is a failure value" begin
     result = trace_endpoint(
         LogitGame(GAME, TARGET_PRECISION),
         WIDTH,
-        TraceSettings{Float32}(max_steps = 1, steps = StepSizes{Float32}(first_step = 0.005f0, max_step = 0.01f0)),
+        TraceSettings{Float32}(max_steps = 1, first_step = 0.005f0, max_step = 0.01f0),
     )
     @test is_error(result)
     @test unwrap_error(result).cause in (GameTracing.NoConvergence, GameTracing.TraceStuck)
@@ -154,13 +138,11 @@ end
     rng = Random.Xoshiro(7)
     for _ in 1:20
         settings = TraceSettings{Float32}(
-            steps = StepSizes{Float32}(
-                first_step = rand(rng, Float32),
-                min_step = 1.0f-6 * rand(rng, Float32),
-                max_step = 1 + rand(rng, Float32),
-                aggressiveness = rand(rng, Float32),
-                first_tangent_divisor = 1 + 100 * rand(rng, Float32),
-            ),
+            first_step = rand(rng, Float32),
+            min_step = 1.0f-6 * rand(rng, Float32),
+            max_step = 1 + rand(rng, Float32),
+            aggressiveness = rand(rng, Float32),
+            first_tangent_divisor = 1 + 100 * rand(rng, Float32),
             max_steps = rand(rng, 1:50),
             corrector = CorrectorSettings{Float32}(
                 residual_tolerance = 1.0f-3 * rand(rng, Float32),
@@ -170,11 +152,11 @@ end
         options = GameTracing.continuation_options(settings)
         @test (options.ds, options.dsmin, options.dsmax, options.a, options.η) ==
             (
-                settings.steps.first_step,
-                settings.steps.min_step,
-                settings.steps.max_step,
-                settings.steps.aggressiveness,
-                settings.steps.first_tangent_divisor,
+                settings.first_step,
+                settings.min_step,
+                settings.max_step,
+                settings.aggressiveness,
+                settings.first_tangent_divisor,
             )
         @test (options.p_min, options.p_max) == (0, 1)
         @test options.max_steps == settings.max_steps
@@ -190,21 +172,35 @@ end
     game = LogitGame(GAME, TARGET_PRECISION)
     point = Float32[0.3f0, -0.2f0, 0.6f0]
     workspace = GameTracing.BranchWorkspace(point)
-    system = GameTracing.GameSystem(game, AsinhLogits(), workspace)
+    system = GameTracing.GameSystem(game, workspace)
     first_residual, first_jacobian = system(point, 0.5f0)
     second_residual, second_jacobian = system(point .+ 0.1f0, 0.5f0)
     @test first_residual === second_residual === workspace.residual
     @test first_jacobian === second_jacobian === workspace.jacobian
     residual, jacobian = system(point, 0.5f0)
-    @test residual == GameTracing.GameResidual(game, AsinhLogits())(point, 0.5f0)
-    @test jacobian == GameTracing.GameJacobian(game, AsinhLogits(), GameTracing.BranchWorkspace(point))(point, 0.5f0)
+    @test residual == GameTracing.GameResidual(game)(point, 0.5f0)
+    @test jacobian == GameTracing.GameJacobian(game, GameTracing.BranchWorkspace(point))(point, 0.5f0)
     # A forward difference in each coordinate checks the Jacobian the pass formed in place.
     for (column, step) in pairs(Float32[1.0f-3, 1.0f-3, 1.0f-3])
         moved = copy(point)
         moved[column] += step
-        slope = (GameTracing.GameResidual(game, AsinhLogits())(moved, 0.5f0) .- GameTracing.GameResidual(game, AsinhLogits())(point, 0.5f0)) ./ step
+        slope = (GameTracing.GameResidual(game)(moved, 0.5f0) .- GameTracing.GameResidual(game)(point, 0.5f0)) ./ step
         @test maximum(abs, slope .- jacobian[:, column]) < 1.0f-2
     end
+end
+
+@testset "the trace starts at the gaps the flat logits face, where the system is regular" begin
+    pass = ThresholdPass(6.0f0, 3.0f0)
+    game = LogitGame(pass, 2.0f0)
+    start = GameTracing.trace_start(game, 1, Float32)
+    gains = evaluated(pass, zeros(Float32, 1), 1.0f0).precision_slope
+    @test GameTracing.state_of(start) ≈ 2.0f0 .* gains
+    @test last(start) == 0
+    residual, jacobian = GameTracing.GameSystem(game, GameTracing.BranchWorkspace(start))(start, 0.0f0)
+    @test maximum(abs, residual) <= 4 * eps(Float32) * maximum(abs, start)
+    # At zero precision the gaps decouple from the logits: ∂F/∂w is the identity.
+    @test jacobian[1, 1] == 1
+    @test GameTracing.logits_at(start) == zeros(Float32, 1)
 end
 
 @testset "a Jacobian call leaves the residual the fused system returned" begin
@@ -212,7 +208,6 @@ end
     point = Float32[0.3f0, -0.2f0, 0.6f0]
     problem = GameTracing.branch_problem(
         LogitGame(GAME, TARGET_PRECISION),
-        AsinhLogits(),
         point,
         0.5f0;
         record_from_solution = GameTracing.trace_record_precision,

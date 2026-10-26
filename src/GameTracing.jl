@@ -15,19 +15,14 @@ export LogitGame,
     Traced,
     TraceResult,
     StepControl,
-    StepSizes,
     CorrectorSettings,
     BorderedSolver,
     MatrixSolve,
     BorderingSolve,
-    LogitCoordinates,
-    AsinhLogits,
-    PlainLogits,
     trace_endpoint,
     branch_projection
 
 include("failure.jl")
-include("coordinates.jl")
 include("bordered.jl")
 include("branch.jl")
 include("callbacks.jl")

@@ -30,35 +30,19 @@ Base.@kwdef struct CorrectorSettings{E <: Real}
 end
 
 """
-    StepSizes{E}(; first_step, min_step, max_step, aggressiveness, first_tangent_divisor)
+    TraceSettings{E}(; first_step, min_step, max_step, aggressiveness, state_weight, first_tangent_divisor,
+                     corrector, max_steps, tangent, bordered_solver, step_control, orientation_check)
 
-PALC's arclength step sizes, in the norm of `TraceSettings`.
+BifurcationKit PALC controls for `trace_endpoint`, in `(w, ρ)` with `w = logits / ρ` the payoff gaps and `ρ` the
+relative precision. Step sizes are arclength in PALC's norm `sqrt(θ ‖dw‖² / k + (1 - θ) dρ²)`, `θ` the `state_weight` and `k` the number of logits.
 
 - `first_step`, `min_step`, `max_step`: first, smallest and largest arclength step. A step whose corrector fails
   halves; the trace ends as `TraceStuck` once the step reaches `min_step`.
 - `aggressiveness` (BifurcationKit's `a`): a step grows by `1 + a ((N - n) / N)²` after a corrector of `n` of
   its `N = corrector.newton_iterations` iterations.
-- `first_tangent_divisor`: the first tangent is the secant to a solve at `first_step / first_tangent_divisor`.
-"""
-Base.@kwdef struct StepSizes{E <: Real}
-    first_step::E = 0.05f0
-    min_step::E = 1.1754944f-38
-    max_step::E = 1000.0f0
-    aggressiveness::E = 0.5f0
-    first_tangent_divisor::E = 150.0f0
-end
-
-"""
-    TraceSettings{E}(; steps, state_weight, corrector, max_steps, tangent, bordered_solver, step_control,
-                     orientation_check, coordinates)
-
-BifurcationKit PALC controls for `trace_endpoint`, in `(u, ρ)` with `u` the state coordinates of the logits and `ρ` the
-relative precision.
-Step sizes are arclength in PALC's norm `sqrt(θ ‖du‖² / k + (1 - θ) dρ²)`, `θ` the `state_weight` and `k` the number of logits.
-
-- `steps`: a `StepSizes`.
 - `corrector`: a `CorrectorSettings`.
-- `state_weight`: the logits' weight against the relative precision's in the arclength norm.
+- `state_weight`: the logits' weight against the relative precision's in the arclength norm. `first_tangent_divisor`:
+  the first tangent is the secant to a solve at `first_step / first_tangent_divisor`.
 - `max_steps`: continuation steps before the trace fails as `NoConvergence`.
 - `tangent`: BifurcationKit's tangent algorithm, passed to PALC as is. `Bordered()` (the default) solves the bordered
   Jacobian system. `Secant()` extrapolates the last two points: it can cross onto another arm near a pitchfork that a
@@ -67,31 +51,27 @@ Step sizes are arclength in PALC's norm `sqrt(θ ‖du‖² / k + (1 - θ) dρ²
 - `step_control`: a `StepControl`, or `nothing` for none.
 - `orientation_check` orients a bordered tangent by the determinant of the bordered matrix. It takes effect only with
   `MatrixSolve`, the one solver that has a determinant.
-- `coordinates`: the `LogitCoordinates` that map the state `u` to logits, `AsinhLogits()` (the default) or `PlainLogits()`.
-  Step sizes, `state_weight` and the corrector's reach are measured in `u`.
 """
-Base.@kwdef struct TraceSettings{
-    E <: Real,
-    T <: BifurcationKit.AbstractTangentComputation,
-    C <: LogitCoordinates,
-}
-    steps::StepSizes{E} = StepSizes{E}()
+Base.@kwdef struct TraceSettings{E <: Real, T <: BifurcationKit.AbstractTangentComputation}
+    first_step::E = 0.05f0
+    min_step::E = 1.1754944f-38
+    max_step::E = 1000.0f0
+    aggressiveness::E = 0.5f0
     state_weight::E = 0.5f0
+    first_tangent_divisor::E = 150.0f0
     corrector::CorrectorSettings{E} = CorrectorSettings{E}()
     max_steps::Int = 2_000
     tangent::T = BifurcationKit.Bordered()
     bordered_solver::BorderedSolver = MatrixSolve
     step_control::Union{Nothing, StepControl{E}} = StepControl{E}()
     orientation_check::Bool = true
-    coordinates::C = AsinhLogits()
 end
 
 function TraceSettings{E}(;
     tangent::T = BifurcationKit.Bordered(),
-    coordinates::C = AsinhLogits(),
     keywords...,
-)::TraceSettings{E, T, C} where {E <: Real, T <: BifurcationKit.AbstractTangentComputation, C <: LogitCoordinates}
-    return TraceSettings{E, T, C}(; tangent, coordinates, keywords...)
+)::TraceSettings{E, T} where {E <: Real, T <: BifurcationKit.AbstractTangentComputation}
+    return TraceSettings{E, T}(; tangent, keywords...)
 end
 
 """`limit * scale`, or `nothing` where the threshold is off (`limit` is `nothing`)."""
@@ -142,11 +122,11 @@ function continuation_options(
     settings::TraceSettings{E},
 )::BifurcationKit.ContinuationPar where {E <: Real}
     return BifurcationKit.ContinuationPar(;
-        ds = settings.steps.first_step,
-        dsmin = settings.steps.min_step,
-        dsmax = settings.steps.max_step,
-        a = settings.steps.aggressiveness,
-        η = settings.steps.first_tangent_divisor,
+        ds = settings.first_step,
+        dsmin = settings.min_step,
+        dsmax = settings.max_step,
+        a = settings.aggressiveness,
+        η = settings.first_tangent_divisor,
         p_min = zero(E),
         p_max = one(E),
         max_steps = settings.max_steps,
@@ -169,7 +149,7 @@ end
 """
     continue_trace(game, traced_start, settings, finalise, accept_corrected)
 
-Runs the PALC continuation of `game`'s branch from `traced_start = [u; 0]` toward relative precision one, with `finalise` at
+Runs the PALC continuation of `game`'s branch from `traced_start = [w; 0]` toward relative precision one, with `finalise` at
 each accepted point and `accept_corrected` at each corrector, and returns the step length its last corrector tried.
 BifurcationKit's constructors are not inferable, so each is built in its own function and passed on without a
 named local; it runs once per trace, whose steps dominate it.
@@ -183,7 +163,6 @@ function continue_trace(
 )::E where {E <: Real}
     corrector = CorrectorReach(
         accept_corrected,
-        settings.coordinates,
         settings.corrector.reach,
         settings.state_weight,
         settings.corrector.residual_tolerance,
@@ -194,7 +173,6 @@ function continue_trace(
     BifurcationKit.continuation(
         branch_problem(
             game,
-            settings.coordinates,
             traced_start,
             zero(E);
             record_from_solution = trace_record_precision,
@@ -231,16 +209,16 @@ function trace_endpoint(
     context::NamedTuple = (;),
 )::TraceResult{E} where {E <: Real}
     flat = zeros(E, width)
-    traced_start = [flat; zero(E)]
-    # The start is a root of the map for every finite game; a non-finite payoff shows in its residual.
-    if !all(isfinite, GameResidual(game, settings.coordinates)(traced_start, zero(E)))
+    traced_start = trace_start(game, width, E)
+    # The start is a root for every finite game; a non-finite gain shows in its gaps.
+    if !all(isfinite, traced_start)
         return Err(TraceFailure(
             NotFinite,
             (; context..., logits = flat, relative_precision = zero(E)),
         ))
     end
     progress = TraceProgress(
-        copy(flat),
+        state_of(traced_start)[:],
         zero(E),
         0,
         zero(E),
@@ -255,13 +233,12 @@ function trace_endpoint(
             game,
             traced_start,
             settings,
-            TraceFinalise(progress, keep_going, settings.coordinates),
+            TraceFinalise(progress, keep_going),
             accept_corrected,
         ),
         one(E),
         settings.max_steps,
         game.target_precision,
-        settings.coordinates,
         context,
     )
 end
@@ -300,10 +277,10 @@ function guarded_trace(
 end
 
 """
-    reached_state(progress, outcome, target, step_limit, target_precision, coordinates, context)
+    reached_state(progress, outcome, target, step_limit, target_precision, context)
 
 The `TraceResult` (`Ok(Traced)` or `Err(TraceFailure)`) of a trace whose `progress` holds the last accepted point and whose `outcome` is the last
-corrector's step length or the BifurcationKit exception that ended it. `coordinates` reads the logits from the state.
+corrector's step length or the BifurcationKit exception that ended it.
 """
 function reached_state(
     progress::TraceProgress{E},
@@ -311,10 +288,9 @@ function reached_state(
     target::E,
     step_limit::Integer,
     target_precision::Real,
-    coordinates::LogitCoordinates,
     context::NamedTuple,
 )::TraceResult{E} where {E <: Real}
-    logits = logits_at(coordinates, progress.state)
+    logits = progress.relative_precision .* progress.gaps
     if isnothing(outcome.exception) && progress.relative_precision == target
         return Ok(Traced(logits))
     end
@@ -334,7 +310,8 @@ function reached_state(
             precision = target_precision * progress.relative_precision,
             progress.precision_min, progress.precision_max, progress.unmoved,
             logits, progress.relative_precision, step_length = E(outcome.step_length),
-            logit_tangent = logit_rate.((coordinates,), progress.state) .* progress.state_tangent, progress.tangent_precision,
+            logit_tangent = progress.relative_precision .* progress.gap_tangent .+ progress.tangent_precision .* progress.gaps,
+            progress.tangent_precision,
             outcome.exception,
         ),
     ))

@@ -113,7 +113,6 @@ end
     start = zeros(Float32, WIDTH + 1)
     problem = GameTracing.branch_problem(
         LogitGame(GAME, TARGET_PRECISION),
-        settings.coordinates,
         start,
         0.0f0;
         record_from_solution = GameTracing.trace_record_precision,

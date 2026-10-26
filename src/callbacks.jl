@@ -1,6 +1,6 @@
 using BifurcationKit: BifurcationKit
 using Logging: @debug
-"""The distance from `from` to `to`, both `[u; t]`, in PALC's norm `sqrt(θ ‖Δu‖² / k + (1 - θ) Δt²)`."""
+"""The distance from `from` to `to`, both `[w; ρ]`, in PALC's norm `sqrt(θ ‖Δw‖² / k + (1 - θ) Δρ²)`."""
 function arclength_distance(
     from::AbstractVector{E},
     to::AbstractVector{E},
@@ -14,18 +14,17 @@ function arclength_distance(
 end
 
 """
-    corrector_tolerance(tolerance, floor_ulps, coordinates, x)
+    corrector_tolerance(tolerance, floor_ulps, x)
 
-The residual under which the corrector accepts `x = [u; t]`: `tolerance`, or the rounding floor of
-`z - T(z)` at the logits `z` of `u` in `coordinates`, `floor_ulps` ulps of the largest.
+The residual under which the corrector accepts `x = [w; ρ]`: `tolerance`, or the rounding floor of the
+gap residual `w - P G`, `floor_ulps` ulps of the largest payoff gap.
 """
 function corrector_tolerance(
     tolerance::T,
     floor_ulps::Real,
-    coordinates::LogitCoordinates,
     point::AbstractVector,
 )::T where {T <: Real}
-    largest = maximum(abs, logits_at(coordinates, state_of(point)))
+    largest = maximum(abs, state_of(point))
     return max(tolerance, convert(T, floor_ulps * eps(typeof(largest)) * largest))
 end
 
@@ -36,7 +35,7 @@ struct AcceptAll end
 (::AcceptAll)(::AbstractVector, ::Real, ::Bool)::Bool = true
 
 """
-    CorrectorReach(accept_corrected, coordinates, reach, theta, tolerance, floor_ulps, predicted, step_length)
+    CorrectorReach(accept_corrected, reach, theta, tolerance, floor_ulps, predicted, step_length)
 
 The trace's BifurcationKit `callback_newton`, which also decides the corrector's convergence: an iterate
 under `corrector_tolerance` ends Newton's method converged (`NewtonConverged`). A non-finite residual stops
@@ -44,14 +43,13 @@ the corrector, and so does any iterate further from the step's predictor than `r
 own step, in PALC's norm (`arclength_distance`); the step then halves. A converged closing point beyond that
 distance is refused the same way. On a smooth branch the distance is the branch's curvature times `ds² / 2`,
 so halving brings any step under it, while an iterate that diverges or lands on another branch is far from it.
-A predictor that did not move has no reach to compare. `accept_corrected(logits, t, converged)` then sees every
-other closing point, its logits read from `u` in `coordinates`. `predicted` and `step_length` hold the current step's predictor.
+A predictor that did not move has no reach to compare. `accept_corrected(logits, ρ, converged)` then sees every other
+closing point. `predicted` and `step_length` hold the current step's predictor.
 """
-mutable struct CorrectorReach{A, C <: LogitCoordinates, E <: Real}
+mutable struct CorrectorReach{C, E <: Real}
     # Mutable because BifurcationKit shows the predictor only to a corrector's first callback and the
     # accept_corrected point only to its last, and returns neither.
-    accept_corrected::A
-    coordinates::C
+    accept_corrected::C
     reach::E
     theta::E
     tolerance::E
@@ -88,7 +86,7 @@ function (check::CorrectorReach)(iterate::I;
         return newton_verdict(check, iterate, reached)
     end
     converged = isfinite(iterate.residual) &&
-        iterate.residual < corrector_tolerance(check.tolerance, check.floor_ulps, check.coordinates, iterate.x)
+        iterate.residual < corrector_tolerance(check.tolerance, check.floor_ulps, iterate.x)
     @debug "corrector closed" _group = :trace step = iterate.step residual = iterate.residual converged step_length = check.step_length
     if converged && !within_reach(check, iterate.x)
         @debug "corrector reach refused" _group = :trace step_length = check.step_length distance = arclength_distance(
@@ -98,7 +96,7 @@ function (check::CorrectorReach)(iterate::I;
         )
         return false
     end
-    if !check.accept_corrected(logits_at(check.coordinates, state_of(iterate.x)), iterate.p, converged)
+    if !check.accept_corrected(logits_at(iterate.x), iterate.p, converged)
         return false
     end
     return newton_verdict(check, iterate, true)
@@ -116,7 +114,7 @@ function newton_verdict(check::CorrectorReach, iterate::NamedTuple, proceed::T):
 } where {T <: Bool}
     if proceed &&
             iterate.residual <
-                corrector_tolerance(check.tolerance, check.floor_ulps, check.coordinates, iterate.x)
+                corrector_tolerance(check.tolerance, check.floor_ulps, iterate.x)
         return BifurcationKit.NewtonConverged()
     end
     return proceed
@@ -132,20 +130,20 @@ function within_reach(check::CorrectorReach, point::AbstractVector)::Bool
 end
 
 """
-    TraceProgress(state, relative_precision, steps, precision_min, precision_max, state_tangent, tangent_precision, unmoved)
+    TraceProgress(gaps, relative_precision, steps, precision_min, precision_max, gap_tangent, tangent_precision, unmoved)
 
-The last accepted point `(state, relative_precision)` of a trace, its step count, the range of the relative precision
-over accepted points and the tangent there (both in the trace's state coordinates): BifurcationKit's `finalise_solution`
+The last accepted point `(gaps, relative_precision)` of a trace, its step count, the range of the relative precision
+over accepted points and the tangent there (both in payoff gaps): BifurcationKit's `finalise_solution`
 callback. An accepted point bitwise equal to the one before it (a step below the point's rounding) sets `unmoved` and
 stops the trace, a stall. `JULIA_DEBUG=trace` lists every point.
 """
 mutable struct TraceProgress{E <: Real}
-    state::Vector{E}
+    gaps::Vector{E}
     relative_precision::E
     steps::Int
     precision_min::E
     precision_max::E
-    state_tangent::Vector{E}
+    gap_tangent::Vector{E}
     tangent_precision::E
     unmoved::Bool
 end
@@ -158,27 +156,26 @@ function (progress::TraceProgress)(point::P, tangent::T, step::S, ::Any;
         point.u,
     ) tangent = copy(tangent.u)
     progress.unmoved = point.p == progress.relative_precision &&
-        view(point.u, eachindex(progress.state)) == progress.state
-    copyto!(progress.state, 1, point.u, 1, length(progress.state))
+        view(point.u, eachindex(progress.gaps)) == progress.gaps
+    copyto!(progress.gaps, 1, point.u, 1, length(progress.gaps))
     progress.relative_precision = point.p
     progress.steps = step
     progress.precision_min = min(progress.precision_min, point.p)
     progress.precision_max = max(progress.precision_max, point.p)
-    copyto!(progress.state_tangent, 1, tangent.u, 1, length(progress.state_tangent))
+    copyto!(progress.gap_tangent, 1, tangent.u, 1, length(progress.gap_tangent))
     progress.tangent_precision = tangent.p
     return !progress.unmoved
 end
 
 """
-    TraceFinalise(progress, keep_going, coordinates)
+    TraceFinalise(progress, keep_going)
 
 BifurcationKit's `finalise_solution` of a trace: `progress` records the point, and the trace goes on
-while `keep_going(logits, relative_precision)` holds, the logits read from the state in `coordinates`.
+while `keep_going(logits, relative_precision)` holds.
 """
-struct TraceFinalise{R <: TraceProgress, A, C <: LogitCoordinates}
+struct TraceFinalise{R <: TraceProgress, A}
     progress::R
     keep_going::A
-    coordinates::C
 end
 
 function (finalise::TraceFinalise)(point::P, tangent::T, step::S, result::Any;
@@ -186,7 +183,7 @@ function (finalise::TraceFinalise)(point::P, tangent::T, step::S, result::Any;
     keywords...,
 )::Bool where {P, T, S <: Integer}
     recorded = finalise.progress(point, tangent, step, result)
-    return recorded && finalise.keep_going(logits_at(finalise.coordinates, state_of(point.u)), point.p)
+    return recorded && finalise.keep_going(logits_at(point.u), point.p)
 end
 
 """One scalar per step for BifurcationKit's branch record, the relative_precision: `TraceProgress` keeps the point."""
