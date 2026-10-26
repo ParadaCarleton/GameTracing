@@ -1,4 +1,4 @@
-using GameTracing: BranchWorkspace, branch_projection, branch_system!, projection_step
+using GameTracing: BranchWorkspace, branch_projection, branch_system!, logits_at, projection_step
 using ErrorTypes: unwrap
 using LinearAlgebra: Diagonal, dot, norm, normalize, nullspace
 using Random: RandomDevice, Xoshiro
@@ -8,7 +8,7 @@ function palc_weights(width::Integer, state_weight::E)::Diagonal{E} where {E <: 
     return Diagonal([fill(state_weight / width, width); 1 - state_weight])
 end
 
-"""`game`'s residual `F` and its Jacobian `J` in `[asinh(logits); ρ]` at `point`."""
+"""`game`'s residual `F` and its Jacobian `J` in payoff gaps `[logits / ρ; ρ]` at `point`."""
 function branch_equations(game::LogitGame, point::AbstractVector{E})::NamedTuple where {E <: Real}
     width = length(point) - 1
     system = branch_system!(BranchWorkspace(point), game, point, last(point))
@@ -27,7 +27,7 @@ end
             logits = randn(rng, width) ./ 10
             relative_precision = 1 // 2 + 2 * rand(rng) / 5
             step = projection_step(game, logits, relative_precision, state_weight)
-            start = branch_equations(game, [asinh.(logits); relative_precision])
+            start = branch_equations(game, [logits ./ relative_precision; relative_precision])
             # Newton's linearized equation holds, and no part of the step runs along the branch's tangent.
             @test norm(start.jacobian * step .+ start.residual) <= inv(float(10^10)) * (1 + norm(start.residual))
             tangent = vec(nullspace(start.jacobian))
@@ -45,7 +45,7 @@ function projected_residual(
     settings::TraceSettings,
 )::typeof(float(offset))
     projected = branch_projection(game, on_branch.logits .+ offset .* direction, on_branch.relative_precision, settings)
-    return norm(branch_equations(game, [asinh.(projected.logits); projected.relative_precision]).residual)
+    return norm(branch_equations(game, [projected.logits ./ projected.relative_precision; projected.relative_precision]).residual)
 end
 
 @testset "branch_projection converges quadratically onto the branch" begin
@@ -56,7 +56,7 @@ end
     for _ in 1:10
         on_branch = branch_projection(game, on_branch.logits, on_branch.relative_precision, settings)
     end
-    @test norm(branch_equations(game, [asinh.(on_branch.logits); on_branch.relative_precision]).residual) < inv(float(10^12))
+    @test norm(branch_equations(game, [on_branch.logits ./ on_branch.relative_precision; on_branch.relative_precision]).residual) < inv(float(10^12))
     direction = normalize(randn(rng, 3))
     # Quadratic convergence drops the residual left a hundredfold per decade of offset; linear, tenfold.
     coarse = projected_residual(game, on_branch, inv(float(100)), direction, settings)
@@ -70,7 +70,7 @@ end
     logits, relative_precision = Float32[1 // 10, -1 // 5], 3.0f0 / 4
     step = projection_step(game, logits, relative_precision, settings.state_weight)
     projected = branch_projection(game, logits, relative_precision, settings)
-    @test projected.logits == sinh.(asinh.(logits) .+ step[1:WIDTH])
+    @test projected.logits == logits_at([logits ./ relative_precision; relative_precision] .+ step)
     @test projected.relative_precision == relative_precision + last(step)
     @test projected.logits isa Vector{Float32}
 end
@@ -78,6 +78,21 @@ end
 @testset "projection_step rejects a state weight outside (0, 1)" begin
     for state_weight in (0.0f0, 1.0f0, -0.5f0, 1.5f0, NaN32)
         @test_throws ArgumentError projection_step(LogitGame(GAME, TARGET_PRECISION), zeros(Float32, WIDTH), 0.5f0, state_weight)
+    end
+end
+
+@testset "a projection that would leave the positive relative precisions throws" begin
+    # From far off the branch of G = λ the Gauss–Newton step overshoots ρ = 0, to ρ = -4.95.
+    game = LogitGame(PrecisionGainPass(), 1.0f0)
+    settings = TraceSettings{Float32}()
+    @test_throws DomainError branch_projection(game, Float32[-1], 0.1f0, settings)
+    # Near the branch z = λ² the same game projects to a positive relative precision.
+    @test branch_projection(game, Float32[0.26f0], 0.5f0, settings).relative_precision > 0
+end
+
+@testset "projection_step refuses a point with no payoff gaps, at a relative precision of zero or not finite" begin
+    for relative_precision in (0.0f0, -0.0f0, NaN32, Inf32)
+        @test_throws ArgumentError projection_step(LogitGame(GAME, TARGET_PRECISION), zeros(Float32, WIDTH), relative_precision, 0.5f0)
     end
 end
 
@@ -105,7 +120,7 @@ end
     fold_precision = fold / (amplitude * sigmoid(fold - threshold)) / target
     game = LogitGame(ThresholdPass(amplitude, threshold), target)
     # At the fold the derivative in the logit vanishes, so Newton at fixed precision has no step.
-    at_fold = branch_equations(game, [asinh(fold); fold_precision])
+    at_fold = branch_equations(game, [fold / fold_precision; fold_precision])
     @test abs(only(at_fold.residual)) <= inv(float(10^10))
     @test abs(first(at_fold.jacobian)) <= inv(float(10^8)) * norm(at_fold.jacobian)
     # Newton at fixed precision meets a double root here and converges only linearly; the projection stays quadratic.

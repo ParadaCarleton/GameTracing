@@ -33,8 +33,8 @@ end
     TraceSettings{E}(; first_step, min_step, max_step, aggressiveness, state_weight, first_tangent_divisor,
                      corrector, max_steps, tangent, bordered_solver, step_control, orientation_check)
 
-BifurcationKit PALC controls for `trace_endpoint`, in `(u, ρ)` with `u = asinh(logits)` and `ρ` the relative precision.
-Step sizes are arclength in PALC's norm `sqrt(θ ‖du‖² / k + (1 - θ) dρ²)`, `θ` the `state_weight` and `k` the number of logits.
+BifurcationKit PALC controls for `trace_endpoint`, in `(w, ρ)` with `w = logits / ρ` the payoff gaps and `ρ` the
+relative precision. Step sizes are arclength in PALC's norm `sqrt(θ ‖dw‖² / k + (1 - θ) dρ²)`, `θ` the `state_weight` and `k` the number of logits.
 
 - `first_step`, `min_step`, `max_step`: first, smallest and largest arclength step. A step whose corrector fails
   halves; the trace ends as `TraceStuck` once the step reaches `min_step`.
@@ -149,7 +149,7 @@ end
 """
     continue_trace(game, traced_start, settings, finalise, accept_corrected)
 
-Runs the PALC continuation of `game`'s branch from `traced_start = [u; 0]` toward relative precision one, with `finalise` at
+Runs the PALC continuation of `game`'s branch from `traced_start = [w; 0]` toward relative precision one, with `finalise` at
 each accepted point and `accept_corrected` at each corrector, and returns the step length its last corrector tried.
 BifurcationKit's constructors are not inferable, so each is built in its own function and passed on without a
 named local; it runs once per trace, whose steps dominate it.
@@ -209,16 +209,16 @@ function trace_endpoint(
     context::NamedTuple = (;),
 )::TraceResult{E} where {E <: Real}
     flat = zeros(E, width)
-    traced_start = [flat; zero(E)]
-    # The start is a root of the map for every finite game; a non-finite payoff shows in its residual.
-    if !all(isfinite, GameResidual(game)(traced_start, zero(E)))
+    traced_start = trace_start(game, flat)
+    # The start is a root for every finite game; a non-finite gain shows in its gaps.
+    if !all(isfinite, traced_start)
         return Err(TraceFailure(
             NotFinite,
             (; context..., logits = flat, relative_precision = zero(E)),
         ))
     end
     progress = TraceProgress(
-        copy(flat),
+        state_of(traced_start)[:],
         zero(E),
         0,
         zero(E),
@@ -290,7 +290,7 @@ function reached_state(
     target_precision::Real,
     context::NamedTuple,
 )::TraceResult{E} where {E <: Real}
-    logits = sinh.(progress.asinh_logits)
+    logits = progress.relative_precision .* progress.gaps
     if isnothing(outcome.exception) && progress.relative_precision == target
         return Ok(Traced(logits))
     end
@@ -310,7 +310,8 @@ function reached_state(
             precision = target_precision * progress.relative_precision,
             progress.precision_min, progress.precision_max, progress.unmoved,
             logits, progress.relative_precision, step_length = E(outcome.step_length),
-            logit_tangent = cosh.(progress.asinh_logits) .* progress.asinh_tangent, progress.tangent_precision,
+            logit_tangent = progress.relative_precision .* progress.gap_tangent .+ progress.tangent_precision .* progress.gaps,
+            progress.tangent_precision,
             outcome.exception,
         ),
     ))

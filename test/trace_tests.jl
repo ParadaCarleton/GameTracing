@@ -189,6 +189,38 @@ end
     end
 end
 
+@testset "the trace starts at the gaps the flat logits face, where the system is regular" begin
+    pass = ThresholdPass(6.0f0, 3.0f0)
+    game = LogitGame(pass, 2.0f0)
+    start = GameTracing.trace_start(game, zeros(Float32, 1))
+    gains = evaluated(pass, zeros(Float32, 1), 1.0f0).precision_slope
+    @test GameTracing.state_of(start) ≈ 2.0f0 .* gains
+    @test last(start) == 0
+    residual, jacobian = GameTracing.GameSystem(game, GameTracing.BranchWorkspace(start))(start, 0.0f0)
+    @test maximum(abs, residual) <= 4 * eps(Float32) * maximum(abs, start)
+    # At zero precision the gaps decouple from the logits: ∂F/∂w is the identity.
+    @test jacobian[1, 1] == 1
+    @test GameTracing.logits_at(start) == zeros(Float32, 1)
+end
+
+@testset "the gap system's Jacobian matches central differences where the gains move with the precision" begin
+    pass = DampedGainPass(LinearGainPass(Float32[1 -2; 0.5f0 1], Float32[0.5f0, -0.25f0]), 0.8f0)
+    game = LogitGame(pass, 3.0f0)
+    for point in (Float32[0.4f0, -0.7f0, 0], Float32[0.3f0, -0.2f0, 0.6f0], Float32[-1.5f0, 2, 1])
+        _, jacobian = GameTracing.GameSystem(game, GameTracing.BranchWorkspace(point))(point, last(point))
+        for column in eachindex(point)
+            step = 1.0f-2
+            nudge = setindex!(zeros(Float32, length(point)), step, column)
+            upper = GameTracing.GameResidual(game)(point .+ nudge, last(point))
+            lower = GameTracing.GameResidual(game)(point .- nudge, last(point))
+            # Truncation h² M₃ / 6 and rounding eps / h each stay under 1e-3 of the Jacobian's scale here.
+            @test maximum(abs, (upper .- lower) ./ 2step .- jacobian[:, column]) < 1.0f-3 * (1 + maximum(abs, jacobian))
+        end
+    end
+    traced = unwrap(trace_endpoint(game, 2, TraceSettings{Float32}()))
+    @test residual_norm(pass, traced.logits, 3.0f0) < 1.0f-4
+end
+
 @testset "a Jacobian call leaves the residual the fused system returned" begin
     bifurcation_kit = GameTracing.BifurcationKit
     point = Float32[0.3f0, -0.2f0, 0.6f0]
