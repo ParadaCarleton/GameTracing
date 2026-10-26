@@ -186,3 +186,18 @@ end
         @test maximum(abs, slope .- jacobian[:, column]) < 1.0f-2
     end
 end
+
+@testset "a Jacobian call leaves the residual the fused system returned" begin
+    bifurcation_kit = GameTracing.BifurcationKit
+    point = Float32[0.3f0, -0.2f0, 0.6f0]
+    problem = GameTracing.branch_problem(
+        LogitGame(GAME, TARGET_PRECISION),
+        point,
+        0.5f0;
+        record_from_solution = GameTracing.trace_record_precision,
+    )
+    residual, _ = bifurcation_kit.residual_and_jacobian(problem, point, 0.5f0)
+    kept = copy(residual)
+    bifurcation_kit.jacobian(problem, point .+ 0.1f0, 0.5f0)
+    @test residual == kept
+end

@@ -24,9 +24,9 @@ end
 """
     BranchWorkspace(point)
 
-One trace's residual, Jacobian and logits for branch points like `point = [u; ρ]`. BifurcationKit copies a
-residual into its own before the next call and consumes a Jacobian (a bordered solve copies it) before the next is
-built, so one of each serves every step.
+A residual, Jacobian and logits for branch points like `point = [u; ρ]`, refilled by every call of the one
+callable that owns it. BifurcationKit consumes each result before calling that callable again, so the fused system
+and the Jacobian each own one workspace per trace; a shared one would let `J` overwrite a residual `FJ` returned.
 """
 struct BranchWorkspace{E <: Real}
     residual::Vector{E}
@@ -157,7 +157,7 @@ end
     branch_problem(game, start, pin; record_from_solution)
 
 BifurcationKit's problem for `game`'s branch from `start = [u; ρ]` at `pin`, with the fused system and
-exact `∂F/∂pin` supplied. The system and Jacobian share one `BranchWorkspace`.
+exact `∂F/∂pin` supplied. The system and Jacobian each own a `BranchWorkspace`.
 """
 function branch_problem(
     game::LogitGame,
@@ -165,13 +165,12 @@ function branch_problem(
     pin::Real;
     record_from_solution::Any,
 )::BifurcationKit.AbstractBifurcationProblem where {E <: Real}
-    workspace = BranchWorkspace(start)
     return BifurcationKit.BifurcationProblem(
         GameResidual(game),
         start,
         pin;
-        J = GameJacobian(game, workspace),
-        FJ = GameSystem(game, workspace),
+        J = GameJacobian(game, BranchWorkspace(start)),
+        FJ = GameSystem(game, BranchWorkspace(start)),
         delta = one(E),
         inplace = false,
         R01 = PinSlope(start),
