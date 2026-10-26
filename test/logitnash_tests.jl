@@ -46,13 +46,26 @@ end
 agreeing(left::AbstractVector, right::AbstractVector)::Bool = maximum(abs, left .- right) < 1.0f-3
 
 """
+Whether `logits` solve `payoffs` at `precision` to the corrector's tolerance there: at relative precision one the
+gap residual the corrector bounds is the logit residual, and twice the tolerance covers recomputing it.
+"""
+function settled_endpoint(payoffs::Tuple, logits::AbstractVector{E}, precision::Real, settings::TraceSettings{E})::Bool where {E <: Real}
+    tolerance = GameTracing.corrector_tolerance(
+        settings.corrector.residual_tolerance,
+        settings.corrector.tolerance_floor_ulps,
+        [logits; one(E)],
+    )
+    return residual_norm(NormalFormPass(map(table -> E.(table), payoffs)), logits, precision) < 2 * tolerance
+end
+
+"""
     cross_checked!(payoffs, precision, settings)
 
 Trace `payoffs` to LogitNash's stopping precision past `precision` and test the endpoint against `branch_reference`.
 LogitNash is a cross-check: a disagreement with it fails only when the reference sides with LogitNash. Near an
 unfolded pitchfork LogitNash crosses onto the symmetric arm (5 of 400 battle-of-the-sexes games perturbed by 0.05 to
 0.1, and most at 1e-4); the reference and the bordered trace did not. A branch that folds back in precision has no
-natural-continuation reference, so its endpoint must solve the map instead.
+natural-continuation reference; every endpoint must also solve the map to the corrector's tolerance.
 """
 function cross_checked!(payoffs::Tuple, precision::Real, settings::TraceSettings{Float32})::Nothing
     cross = logitnash_equilibrium(payoffs, precision)
@@ -67,9 +80,8 @@ function cross_checked!(payoffs::Tuple, precision::Real, settings::TraceSettings
     reference = branch_reference(NormalFormPass(map(float, payoffs)), length(payoffs), cross.precision)
     if reference.reached
         @test agreeing(traced, reference.first_choices)
-    else
-        @test residual_norm(NormalFormPass(map(table -> Float32.(table), payoffs)), logits, cross.precision) < 1.0f-3
     end
+    @test settled_endpoint(payoffs, logits, cross.precision, settings)
     if !agreeing(traced, cross.first_choices) && reference.reached
         @test !agreeing(reference.first_choices, cross.first_choices)
     end
@@ -121,7 +133,10 @@ end
         result = trace_endpoint(LogitGame(pass, 4.0f0), length(pass.payoffs), TraceSettings{Float32}(; tangent))
         # Step halving can bisect onto the branch point itself, where the bordered system is exactly singular.
         if is_error(result)
-            @test unwrap_error(result).cause == GameTracing.Singular
+            failure = unwrap_error(result)
+            @test failure.cause == GameTracing.Singular
+            # A trace that broke at its start never reached the pitchfork.
+            @test failure.context.relative_precision > 0
         else
             @test residual_norm(pass, unwrap(result).logits, 4.0f0) < 1.0f-4
         end
@@ -147,8 +162,15 @@ const OVERSHOT_GAME = (
 )
 
 @testset "a step past the target precision lands where the branch first reaches it" begin
-    for precision in (3, 31 // 10)
-        cross_checked!(OVERSHOT_GAME, precision, TraceSettings{Float32}())
+    # Traced at the requested precisions themselves, both short of the fold, so the reference must reach them.
+    settings = TraceSettings{Float32}()
+    for precision in (3.0f0, 3.1f0)
+        result = traced_result(OVERSHOT_GAME, precision, settings)
+        @test !is_error(result)
+        reference = branch_reference(NormalFormPass(map(float, OVERSHOT_GAME)), length(OVERSHOT_GAME), precision)
+        @test reference.reached
+        @test agreeing(first_choices(unwrap(result).logits), reference.first_choices)
+        @test settled_endpoint(OVERSHOT_GAME, unwrap(result).logits, precision, settings)
     end
 end
 

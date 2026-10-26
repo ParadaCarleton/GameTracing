@@ -1,5 +1,6 @@
 using BifurcationKit: BifurcationKit
 using ErrorTypes: Err, Ok
+using NonlinearSolveFirstOrder: NewtonRaphson
 """
     StepControl{E}(; distance_limit, contraction_limit, growth_limit, contraction_offset)
 
@@ -15,18 +16,23 @@ Base.@kwdef struct StepControl{E <: Real}
 end
 
 """
-    CorrectorSettings{E}(; reach, residual_tolerance, tolerance_floor_ulps, newton_iterations)
+    CorrectorSettings{E}(; reach, residual_tolerance, tolerance_floor_ulps, newton_iterations, redraw_reach)
 
 The corrector's controls. `reach`: a corrector further than this times its step from its predictor is refused
 (`CorrectorReach`). `residual_tolerance`, `tolerance_floor_ulps`: the corrector's sup-norm residual, or
 `tolerance_floor_ulps` ulps of the largest logit where that is larger (`corrector_tolerance`).
-`newton_iterations`: Newton iterations per corrector.
+`newton_iterations`: Newton iterations per corrector. `redraw_reach`: the largest Euclidean distance in logits that a
+redraw's fixed-precision correction may move the accepted point (`level_correction`); a farther root is taken for
+another branch, and the trace fails `TraceStuck`. The default 0.4 is `StepControl`'s `distance_limit`, Gambit's bound
+on one Newton step: a redraw may move the point as far as one corrector step may, and one that moves it farther
+changed the branch, not the sample. The test swaps bracket it: the near one moves under 0.2, the far one about 3.5.
 """
 Base.@kwdef struct CorrectorSettings{E <: Real}
     reach::E = 2.0f0
     residual_tolerance::E = 1.0f-5
     tolerance_floor_ulps::E = 32.0f0
     newton_iterations::Int = 10
+    redraw_reach::E = 0.4f0
 end
 
 """
@@ -115,21 +121,24 @@ function palc_algorithm(
 end
 
 """
-BifurcationKit's continuation parameters for `settings`, from relative precision zero to one. Eigenvalues,
-fold and bifurcation detection serve bifurcation diagrams; the trace reads only its endpoint.
+BifurcationKit's continuation parameters for `settings`, from relative precision zero to one, with first step
+`step_length` and at most `max_steps` steps. Eigenvalues, fold and bifurcation detection serve bifurcation diagrams;
+the trace reads only its endpoint.
 """
 function continuation_options(
     settings::TraceSettings{E},
+    step_length::E,
+    max_steps::Integer,
 )::BifurcationKit.ContinuationPar where {E <: Real}
     return BifurcationKit.ContinuationPar(;
-        ds = settings.first_step,
+        ds = step_length,
         dsmin = settings.min_step,
         dsmax = settings.max_step,
         a = settings.aggressiveness,
         η = settings.first_tangent_divisor,
         p_min = zero(E),
         p_max = one(E),
-        max_steps = settings.max_steps,
+        max_steps,
         newton_options = BifurcationKit.NewtonPar(;
             tol = settings.corrector.residual_tolerance,
             max_iterations = settings.corrector.newton_iterations,
@@ -147,19 +156,23 @@ function continuation_options(
 end
 
 """
-    continue_trace(game, traced_start, settings, finalise, accept_corrected)
+    continue_trace(game, start, old_tangent, settings, finalise, accept_corrected, step_length, max_steps)
 
-Runs the PALC continuation of `game`'s branch from `traced_start = [w; 0]` toward relative precision one, with `finalise` at
+Runs the PALC continuation of `game`'s branch from `start = [w; ρ]` toward relative precision one, with `finalise` at
 each accepted point and `accept_corrected` at each corrector, and returns the step length its last corrector tried.
-BifurcationKit's constructors are not inferable, so each is built in its own function and passed on without a
-named local; it runs once per trace, whose steps dominate it.
+From the flat start (`old_tangent` is `nothing`) the first tangent is BifurcationKit's secant; a restart after a
+redraw opens along `restart_tangent`, oriented by the trace's `old_tangent`. BifurcationKit's constructors are not
+inferable, so each is built in its own function and passed on without a named local; it runs once per segment.
 """
 function continue_trace(
     game::LogitGame,
-    traced_start::AbstractVector{E},
+    start::AbstractVector{E},
+    old_tangent::Union{Nothing, AbstractVector{E}},
     settings::TraceSettings{E},
     finalise::TraceFinalise,
     accept_corrected::Any,
+    step_length::E,
+    max_steps::Integer,
 )::E where {E <: Real}
     corrector = CorrectorReach(
         accept_corrected,
@@ -167,28 +180,84 @@ function continue_trace(
         settings.state_weight,
         settings.corrector.residual_tolerance,
         settings.corrector.tolerance_floor_ulps,
-        similar(traced_start),
+        similar(start),
         zero(E),
     )
-    BifurcationKit.continuation(
-        branch_problem(
-            game,
-            traced_start,
-            zero(E);
-            record_from_solution = trace_record_precision,
-        ),
-        palc_algorithm(settings, length(traced_start) - 1),
-        continuation_options(settings);
-        normC = BifurcationKit.norminf,
-        verbosity = 0,
-        finalise_solution = finalise,
-        callback_newton = corrector,
+    opened_continuation!(
+        branch_problem(game, start, last(start); record_from_solution = trace_record_precision),
+        palc_algorithm(settings, length(start) - 1),
+        continuation_options(settings, step_length, max_steps),
+        old_tangent,
+        finalise,
+        corrector,
     )
     return corrector.step_length
 end
 
 """
-    trace_endpoint(game, width, settings; keep_going, accept_corrected, context)
+    opened_continuation!(problem, algorithm, options, old_tangent, finalise, corrector)
+
+Runs BifurcationKit's continuation of `problem`. From the flat start (`old_tangent` is `nothing`) the first tangent
+is BifurcationKit's secant to a second solve. After a redraw, the run opens through BifurcationKit's two-point start
+toward a point `options.ds` along `restart_tangent`, whose secant is that tangent.
+"""
+function opened_continuation!(
+    problem::BifurcationKit.AbstractBifurcationProblem,
+    algorithm::BifurcationKit.AbstractContinuationAlgorithm,
+    options::BifurcationKit.ContinuationPar,
+    ::Nothing,
+    finalise::TraceFinalise,
+    corrector::CorrectorReach,
+)::Nothing
+    BifurcationKit.continuation(
+        problem,
+        algorithm,
+        options;
+        normC = BifurcationKit.norminf,
+        verbosity = 0,
+        finalise_solution = finalise,
+        callback_newton = corrector,
+    )
+    return nothing
+end
+
+function opened_continuation!(
+    problem::BifurcationKit.AbstractBifurcationProblem,
+    algorithm::BifurcationKit.AbstractContinuationAlgorithm,
+    options::BifurcationKit.ContinuationPar,
+    old_tangent::AbstractVector{E},
+    finalise::TraceFinalise,
+    corrector::CorrectorReach,
+)::Nothing where {E <: Real}
+    start = BifurcationKit.getu0(problem)
+    theta = augmented_theta(corrector.theta, length(start) - 1)
+    tangent = restart_tangent(finalise.slot.game, start, old_tangent, theta)
+    length_in_norm = sqrt(theta * sum(abs2, tangent) / length(tangent) + (1 - theta) * abs2(last(tangent)))
+    # The corrected point's tangent is the new map's; a restart that fails before a step reports it.
+    copyto!(finalise.progress.gap_tangent, 1, tangent, 1, length(finalise.progress.gap_tangent))
+    finalise.progress.tangent_precision = last(tangent) / length_in_norm
+    finalise.progress.gap_tangent ./= length_in_norm
+    opening = start .+ (options.ds / length_in_norm) .* tangent
+    BifurcationKit.continuation(
+        BifurcationKit.ContIterable(
+            problem,
+            BifurcationKit.update(algorithm, options, nothing),
+            options;
+            normC = BifurcationKit.norminf,
+            verbosity = 0,
+            finalise_solution = finalise,
+            callback_newton = corrector,
+        ),
+        start,
+        last(start),
+        opening,
+        last(opening),
+    )
+    return nothing
+end
+
+"""
+    trace_endpoint(game, width, settings; keep_going, accept_corrected, redraw, level_solver, context)
 
 Follow `game`'s branch of `width` logits from the flat start (zero logits, the only root at precision zero) to
 `game.target_precision`, and return `Ok(Traced)` logits there or `Err(TraceFailure)` for the failure that stopped short (a `TraceResult`).
@@ -199,6 +268,11 @@ The relative precision `ρ` is the precision in units of the target.
 halves the step. A trace that stops short fails with `NoConvergence` when it spends `settings.max_steps` and `TraceStuck` otherwise (a step below `min_step`, an unchanged accepted point, or a
 refusal); a non-finite start or a broken linear solve fails `NotFinite` or `Singular`. `context` rides on
 every failure.
+
+`redraw(logits, ρ)` runs at each accepted point that `keep_going` passes, and returns `nothing` or a new game of the
+same type and target precision. A new game replaces the map at that point: the point is corrected onto it at fixed
+`ρ` by NonlinearSolve's `level_solver` (`level_correction`), and the trace restarts there along the new branch's
+tangent, oriented by the old one, with the step it held. A correction that misses fails `TraceStuck` with `projected = true`.
 """
 function trace_endpoint(
     game::LogitGame,
@@ -206,6 +280,8 @@ function trace_endpoint(
     settings::TraceSettings{E};
     keep_going::Any = AcceptAll(),
     accept_corrected::Any = AcceptAll(),
+    redraw::Any = NoRedraw(),
+    level_solver::Any = NewtonRaphson(),
     context::NamedTuple = (;),
 )::TraceResult{E} where {E <: Real}
     flat = zeros(E, width)
@@ -227,32 +303,77 @@ function trace_endpoint(
         zero(E),
         false,
     )
-    return reached_state(
-        progress,
-        guarded_trace(
-            game,
-            traced_start,
-            settings,
-            TraceFinalise(progress, keep_going),
-            accept_corrected,
-        ),
-        one(E),
-        settings.max_steps,
-        game.target_precision,
+    finalise = TraceFinalise(progress, keep_going, redraw, RedrawSlot(game, false, settings.first_step), 0)
+    return redrawn_trace(
+        guarded_trace(traced_start, nothing, settings, finalise, accept_corrected),
+        finalise,
+        settings,
+        accept_corrected,
+        level_solver,
         context,
     )
 end
 
 """
-    guarded_trace(game, traced_start, settings, finalise, accept_corrected)
+    redrawn_trace(outcome, finalise, settings, accept_corrected, level_solver, context)
 
-`(; step_length, exception)` of `continue_trace`: the exception is `nothing` for a trace that ran, else the
-third-party failure it ended on. BifurcationKit throws a `String` when Newton misses its first point and an
-`ErrorException` at its second; a non-finite Jacobian reaches LAPACK. Any other exception propagates.
+The `TraceResult` of a trace segment that ended with `outcome`. When `redraw` swapped the game there, the last
+accepted point is corrected onto the new game (`level_correction`) and the trace restarts from it, a new segment
+counted on from `finalise.progress.steps`; a correction that misses fails `TraceStuck` with `projected = true`.
+"""
+function redrawn_trace(
+    outcome::NamedTuple,
+    finalise::TraceFinalise,
+    settings::TraceSettings{E},
+    accept_corrected::Any,
+    level_solver::Any,
+    context::NamedTuple,
+)::TraceResult{E} where {E <: Real}
+    (; progress, slot) = finalise
+    target_precision = slot.game.target_precision
+    # A pending swap is corrected first: the correction takes no continuation step, and skipping it would report
+    # a root of the old game.
+    if !isnothing(outcome.exception) || !slot.pending
+        return reached_state(progress, outcome, slot.game, settings, context)
+    end
+    slot.pending = false
+    correction = level_correction(slot.game, [progress.gaps; progress.relative_precision], settings, level_solver)
+    if !correction.corrected
+        # The context's logits are the accepted point, a root of the game before the swap.
+        return Err(TraceFailure(
+            TraceStuck,
+            (;
+                stopped_context(progress, outcome, target_precision, context)..., projected = true,
+                correction.residual, correction.distance, correction.retcode,
+            ),
+        ))
+    end
+    copyto!(progress.gaps, state_of(correction.point))
+    if progress.relative_precision == one(E) || progress.steps >= settings.max_steps
+        return reached_state(progress, outcome, slot.game, settings, context)
+    end
+    next = TraceFinalise(progress, finalise.keep_going, finalise.redraw, slot, progress.steps)
+    return redrawn_trace(
+        guarded_trace(correction.point, [progress.gap_tangent; progress.tangent_precision], settings, next, accept_corrected),
+        next,
+        settings,
+        accept_corrected,
+        level_solver,
+        context,
+    )
+end
+
+"""
+    guarded_trace(start, old_tangent, settings, finalise, accept_corrected)
+
+`(; step_length, exception)` of `continue_trace` on `finalise.slot`'s game for the steps `settings.max_steps` leaves:
+the exception is `nothing` for a trace that ran, else the third-party failure it ended on. BifurcationKit throws a
+`String` when Newton misses its first point and an `ErrorException` at its second; a non-finite Jacobian reaches
+LAPACK, and so does a singular restart tangent. Any other exception propagates.
 """
 function guarded_trace(
-    game::LogitGame,
-    traced_start::AbstractVector{E},
+    start::AbstractVector{E},
+    old_tangent::Union{Nothing, AbstractVector{E}},
     settings::TraceSettings{E},
     finalise::TraceFinalise,
     accept_corrected::Any,
@@ -260,11 +381,14 @@ function guarded_trace(
     try
         return (;
             step_length = continue_trace(
-                game,
-                traced_start,
+                finalise.slot.game,
+                start,
+                old_tangent,
                 settings,
                 finalise,
                 accept_corrected,
+                finalise.slot.step_length,
+                settings.max_steps - finalise.step_offset,
             ),
             exception = nothing,
         )
@@ -277,42 +401,65 @@ function guarded_trace(
 end
 
 """
-    reached_state(progress, outcome, target, step_limit, target_precision, context)
+    reached_state(progress, outcome, game, settings, context)
 
-The `TraceResult` (`Ok(Traced)` or `Err(TraceFailure)`) of a trace whose `progress` holds the last accepted point and whose `outcome` is the last
-corrector's step length or the BifurcationKit exception that ended it.
+The `TraceResult` (`Ok(Traced)` or `Err(TraceFailure)`) of a trace whose `progress` holds the last accepted point and
+whose `outcome` is the last corrector's step length or the BifurcationKit exception that ended it. An endpoint at
+the target is checked on `game`, the game in effect there: one whose residual misses the corrector tolerance fails
+`OffMap`, so no trace returns a root of a game it no longer runs.
 """
 function reached_state(
     progress::TraceProgress{E},
     outcome::NamedTuple,
-    target::E,
-    step_limit::Integer,
-    target_precision::Real,
+    game::LogitGame,
+    settings::TraceSettings{E},
     context::NamedTuple,
 )::TraceResult{E} where {E <: Real}
-    logits = progress.relative_precision .* progress.gaps
-    if isnothing(outcome.exception) && progress.relative_precision == target
-        return Ok(Traced(logits))
+    target_precision = game.target_precision
+    if isnothing(outcome.exception) && progress.relative_precision == one(E)
+        point = [progress.gaps; one(E)]
+        residual = maximum(abs, branch_system!(BranchWorkspace(point), game, point, one(E)).residual)
+        tolerance = corrector_tolerance(settings.corrector.residual_tolerance, settings.corrector.tolerance_floor_ulps, point)
+        if residual < tolerance
+            return Ok(Traced(copy(progress.gaps), progress.steps))
+        end
+        return Err(TraceFailure(
+            OffMap,
+            (; stopped_context(progress, outcome, target_precision, context)..., residual, tolerance),
+        ))
     end
     cause = if uncorrected_start(outcome.exception)
         TraceStuck
     elseif !isnothing(outcome.exception)
         Singular
-    elseif progress.steps >= step_limit && !progress.unmoved
+    elseif progress.steps >= settings.max_steps && !progress.unmoved
         NoConvergence
     else
         TraceStuck
     end
-    return Err(TraceFailure(
-        cause,
-        (;
-            context..., progress.steps,
-            precision = target_precision * progress.relative_precision,
-            progress.precision_min, progress.precision_max, progress.unmoved,
-            logits, progress.relative_precision, step_length = E(outcome.step_length),
-            logit_tangent = progress.relative_precision .* progress.gap_tangent .+ progress.tangent_precision .* progress.gaps,
-            progress.tangent_precision,
-            outcome.exception,
-        ),
-    ))
+    return Err(TraceFailure(cause, stopped_context(progress, outcome, target_precision, context)))
+end
+
+"""
+    stopped_context(progress, outcome, target_precision, context)
+
+The context of a trace that stopped at `progress`'s last accepted point after `outcome`: `context`, the steps, the
+precision and its range, the logits, the step held, the tangent in logits and the exception.
+"""
+function stopped_context(
+    progress::TraceProgress{E},
+    outcome::NamedTuple,
+    target_precision::Real,
+    context::NamedTuple,
+)::NamedTuple where {E <: Real}
+    return (;
+        context..., progress.steps,
+        precision = target_precision * progress.relative_precision,
+        progress.precision_min, progress.precision_max, progress.unmoved,
+        logits = progress.relative_precision .* progress.gaps, progress.relative_precision,
+        step_length = E(outcome.step_length),
+        logit_tangent = progress.relative_precision .* progress.gap_tangent .+ progress.tangent_precision .* progress.gaps,
+        progress.tangent_precision,
+        outcome.exception,
+    )
 end

@@ -32,6 +32,7 @@ include("branch.jl")
 include("normal_form.jl")
 include("callbacks.jl")
 include("trace.jl")
+include("redraw.jl")
 include("projection.jl")
 
 end

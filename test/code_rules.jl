@@ -33,7 +33,7 @@ const STRUCT_FIELD_LIMIT = 12
 const FILE_LINE_LIMIT = 1500
 # `TraceResult{E}` is `ErrorTypes.Result{Traced{E}, TraceFailure}`: generic in `E`, but Corset reads any
 # `Result{…}` as a fixed concrete type, and ErrorTypes has no abstract supertype to name instead.
-const GENERIC_RESULTS = ("trace.jl trace_endpoint", "trace.jl reached_state")
+const GENERIC_RESULTS = ("trace.jl trace_endpoint", "trace.jl reached_state", "trace.jl redrawn_trace")
 const SOURCE_DIRECTORIES = ("src", "test")
 
 const REPOSITORY = Repository(dirname(@__DIR__); baseline = joinpath(@__DIR__, "no_baseline.toml"))
