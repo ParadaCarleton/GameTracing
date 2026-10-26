@@ -149,7 +149,7 @@ function applied_operator(apply::Any, vector::AbstractVector{E})::AbstractVector
 end
 
 """The row `b` with `b ⋅ τ = palc_product(dot, theta, vector, τ)` for every branch vector `τ`."""
-function palc_border(dot::BifurcationKit.DotTheta, theta::E, vector::AbstractVector{E})::Vector{E} where {E <: Real}
+function palc_border(dot::BifurcationKit.DotTheta, theta::E, vector::AbstractVector{E})::AbstractVector{E} where {E <: Real}
     border = theta .* applied_operator(BifurcationKit._get_apply_dot(dot), copy(vector))
     border[end] += (one(E) - theta) * last(vector)
     return border
