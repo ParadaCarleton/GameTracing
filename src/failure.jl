@@ -8,7 +8,7 @@ using LinearAlgebra: LAPACKException, SingularException
 
 A trace that did not reach its target: `cause` names why and `context` carries the last accepted `logits`
 and relative precision. A trace that left its start also carries the tangent there in logits (`logit_tangent`,
-`dz = cosh(u) du`) and the step it held; a non-finite start has neither.
+`dz = (dz/du) du` in the trace's coordinates) and the step it held; a non-finite start has neither.
 """
 struct TraceFailure{C <: NamedTuple}
     cause::TraceCause
