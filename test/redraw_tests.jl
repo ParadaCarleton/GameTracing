@@ -80,6 +80,51 @@ end
     @test residual_norm(swap.before, logits, swap.precision) > 100 * tolerance
 end
 
+"""Whether the logits of `result` solve `pass` at `precision` to twice the corrector tolerance at `ρ = 1`."""
+function on_map(result::TraceResult{Float32}, pass::Any, precision::Real)::Bool
+    logits = unwrap(result).logits
+    tolerance = GameTracing.corrector_tolerance(
+        REDRAW_SETTINGS.corrector.residual_tolerance,
+        REDRAW_SETTINGS.corrector.tolerance_floor_ulps,
+        [logits; 1.0f0],
+    )
+    return residual_norm(pass, logits, precision) < 2 * tolerance
+end
+
+@testset "every endpoint solves the map in effect at the target, whatever the swap level" begin
+    rng = fresh_rng()
+    levels = [rand(rng, Float32, 8); 1.0f0]
+    for level in levels
+        swap = MapSwap(NEAR_SWAP.before, NEAR_SWAP.after, NEAR_SWAP.precision, level, NEAR_SWAP.width)
+        result = swapped_trace(swap)
+        @test !is_error(result)
+        @test on_map(result, swap.after, swap.precision)
+    end
+    # A swap on the target point when that point spends the step budget: the budget the unswapped trace took.
+    budget = unwrap(trace_endpoint(LogitGame(NEAR_SWAP.before, NEAR_SWAP.precision), NEAR_SWAP.width, REDRAW_SETTINGS)).steps
+    @test budget > 0
+    last_step = trace_endpoint(
+        LogitGame(NEAR_SWAP.before, NEAR_SWAP.precision),
+        NEAR_SWAP.width,
+        TraceSettings{Float32}(; max_steps = budget);
+        redraw = SwapAt(LogitGame(NEAR_SWAP.after, NEAR_SWAP.precision), 1.0f0),
+    )
+    @test !is_error(last_step)
+    @test on_map(last_step, NEAR_SWAP.after, NEAR_SWAP.precision)
+end
+
+@testset "an endpoint at the target that misses its game's tolerance fails OffMap" begin
+    game = LogitGame(GAME, TARGET_PRECISION)
+    traced = unwrap(trace_endpoint(game, WIDTH, REDRAW_SETTINGS))
+    progress = GameTracing.TraceProgress(copy(traced.logits), 1.0f0, 3, 0.0f0, 1.0f0, zeros(Float32, WIDTH), 0.0f0, false)
+    outcome = (; step_length = 0.1f0, exception = nothing)
+    @test unwrap(GameTracing.reached_state(progress, outcome, game, REDRAW_SETTINGS, (;))).steps == 3
+    moved = LogitGame(LinearGainPass(GAME.interaction, -GAME.stand_alone), TARGET_PRECISION)
+    failure = unwrap_error(GameTracing.reached_state(progress, outcome, moved, REDRAW_SETTINGS, (;)))
+    @test failure.cause == GameTracing.OffMap
+    @test failure.context.residual >= failure.context.tolerance
+end
+
 @testset "a redrawn game must keep the trace's target precision" begin
     slot = GameTracing.RedrawSlot(LogitGame(GAME, TARGET_PRECISION), false, 0.1f0)
     @test !GameTracing.swapped!(slot, nothing)

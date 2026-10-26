@@ -334,7 +334,7 @@ function redrawn_trace(
     # A pending swap is corrected first: the correction takes no continuation step, and skipping it would report
     # a root of the old game.
     if !isnothing(outcome.exception) || !slot.pending
-        return reached_state(progress, outcome, one(E), settings.max_steps, target_precision, context)
+        return reached_state(progress, outcome, slot.game, settings, context)
     end
     slot.pending = false
     correction = level_correction(slot.game, [progress.gaps; progress.relative_precision], settings, level_solver)
@@ -350,7 +350,7 @@ function redrawn_trace(
     end
     copyto!(progress.gaps, state_of(correction.point))
     if progress.relative_precision == one(E) || progress.steps >= settings.max_steps
-        return reached_state(progress, outcome, one(E), settings.max_steps, target_precision, context)
+        return reached_state(progress, outcome, slot.game, settings, context)
     end
     next = TraceFinalise(progress, finalise.keep_going, finalise.redraw, slot, progress.steps)
     return redrawn_trace(
@@ -401,28 +401,38 @@ function guarded_trace(
 end
 
 """
-    reached_state(progress, outcome, target, step_limit, target_precision, context)
+    reached_state(progress, outcome, game, settings, context)
 
-The `TraceResult` (`Ok(Traced)` or `Err(TraceFailure)`) of a trace whose `progress` holds the last accepted point and whose `outcome` is the last
-corrector's step length or the BifurcationKit exception that ended it.
+The `TraceResult` (`Ok(Traced)` or `Err(TraceFailure)`) of a trace whose `progress` holds the last accepted point and
+whose `outcome` is the last corrector's step length or the BifurcationKit exception that ended it. An endpoint at
+the target is checked on `game`, the game in effect there: one whose residual misses the corrector tolerance fails
+`OffMap`, so no trace returns a root of a game it no longer runs.
 """
 function reached_state(
     progress::TraceProgress{E},
     outcome::NamedTuple,
-    target::E,
-    step_limit::Integer,
-    target_precision::Real,
+    game::LogitGame,
+    settings::TraceSettings{E},
     context::NamedTuple,
 )::TraceResult{E} where {E <: Real}
-    logits = progress.relative_precision .* progress.gaps
-    if isnothing(outcome.exception) && progress.relative_precision == target
-        return Ok(Traced(logits))
+    target_precision = game.target_precision
+    if isnothing(outcome.exception) && progress.relative_precision == one(E)
+        point = [progress.gaps; one(E)]
+        residual = maximum(abs, branch_system!(BranchWorkspace(point), game, point, one(E)).residual)
+        tolerance = corrector_tolerance(settings.corrector.residual_tolerance, settings.corrector.tolerance_floor_ulps, point)
+        if residual < tolerance
+            return Ok(Traced(copy(progress.gaps), progress.steps))
+        end
+        return Err(TraceFailure(
+            OffMap,
+            (; stopped_context(progress, outcome, target_precision, context)..., residual, tolerance),
+        ))
     end
     cause = if uncorrected_start(outcome.exception)
         TraceStuck
     elseif !isnothing(outcome.exception)
         Singular
-    elseif progress.steps >= step_limit && !progress.unmoved
+    elseif progress.steps >= settings.max_steps && !progress.unmoved
         NoConvergence
     else
         TraceStuck
