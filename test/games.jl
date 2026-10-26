@@ -231,7 +231,7 @@ end
 
 The root of `pass` at fixed `precision` that `Float64` Newton reaches from `logits`; an `ErrorException` when 50 steps do not settle.
 """
-function level_root(pass::Any, logits::AbstractVector, precision::Real)::Vector{Float64}
+function level_root(pass::Any, logits::AbstractVector, precision::Real)::Vector{typeof(float(1))}
     root, level = float.(collect(logits)) .* float(1), precision * float(1)
     for _ in 1:50
         if settled_root(pass, root, level, max(level, one(level)))

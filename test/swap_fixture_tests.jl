@@ -8,7 +8,7 @@ end
 @testset "map swap fixtures: the near swap moves the branch a little, the far swap leaves only a distant root" begin
     near = swap_points(NEAR_SWAP)
     @test near.before.reached
-    @test 1.0e-3 < maximum(abs, near.after .- near.before.logits) < 0.2
+    @test 1.0f-3 < maximum(abs, near.after .- near.before.logits) < 0.2f0
     far = swap_points(FAR_SWAP)
     @test far.before.reached
     @test maximum(abs, far.after .- far.before.logits) > 2

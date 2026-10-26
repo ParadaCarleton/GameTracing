@@ -34,8 +34,8 @@ const FOLD_GAME = ThresholdPass(6.0f0, 3.0f0)
 
 # The swap moves a two-player branch by under a tenth: a redraw a projection and a fixed-level correction absorb.
 const NEAR_SWAP = MapSwap(
-    LinearGainPass(Float32[0 0.8; 0.6 0], Float32[0.3, -0.2]),
-    LinearGainPass(Float32[0 0.8; 0.6 0], Float32[0.34, -0.23]),
+    LinearGainPass(Float32[0 0.8f0; 0.6f0 0], Float32[0.3f0, -0.2f0]),
+    LinearGainPass(Float32[0 0.8f0; 0.6f0 0], Float32[0.34f0, -0.23f0]),
     4.0f0, 0.5f0, 2,
 )
 
