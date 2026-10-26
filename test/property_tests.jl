@@ -1,3 +1,4 @@
+using ErrorTypes: is_error, unwrap, unwrap_error
 using Random: RandomDevice, Xoshiro
 
 """A random game of `width` logits whose map contracts at `precision`: the equilibrium is unique."""
@@ -27,12 +28,12 @@ end
                 TraceSettings{Float32}(bordered_solver = BorderingSolve),
             )
             traced = trace_endpoint(LogitGame(pass, precision), width, settings)
-            @test traced isa Traced
-            if traced isa Traced
-                @test residual_norm(pass, traced.logits, precision) < 1.0f-3
-                @test maximum(abs, traced.logits .- reference) < 1.0f-2
+            @test !is_error(traced)
+            if !is_error(traced)
+                @test residual_norm(pass, unwrap(traced).logits, precision) < 1.0f-3
+                @test maximum(abs, unwrap(traced).logits .- reference) < 1.0f-2
             else
-                @info "trace failed" seed trial width precision traced.cause
+                @info "trace failed" seed trial width precision unwrap_error(traced).cause
             end
         end
     end

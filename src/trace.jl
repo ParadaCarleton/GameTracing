@@ -1,4 +1,5 @@
 using BifurcationKit: BifurcationKit
+using ErrorTypes: Err, Ok
 """How PALC finds the tangent at each point: `BorderedTangent` solves the bordered Jacobian system, `SecantTangent` extrapolates the last two points."""
 @enum TangentMethod BorderedTangent SecantTangent
 
@@ -191,7 +192,7 @@ end
     trace_endpoint(game, width, settings; keep_going, accept_corrected, context)
 
 Follow `game`'s branch of `width` logits from the flat start (zero logits, the only root at precision zero) to
-`game.target_precision`, and return `Traced` logits there or the `TraceFailure` that stopped short (a `TraceResult`).
+`game.target_precision`, and return `Ok(Traced)` logits there or `Err(TraceFailure)` for the failure that stopped short (a `TraceResult`).
 The relative precision `ρ` is the precision in units of the target.
 
 `keep_going(logits, ρ)` runs at each accepted point before the next step's corrector, and `false` stops the trace.
@@ -212,10 +213,10 @@ function trace_endpoint(
     traced_start = [flat; zero(E)]
     # The start is a root of the map for every finite game; a non-finite payoff shows in its residual.
     if !all(isfinite, GameResidual(game)(traced_start, zero(E)))
-        return TraceFailure(
+        return Err(TraceFailure(
             NotFinite,
             (; context..., logits = flat, relative_precision = zero(E)),
-        )
+        ))
     end
     progress = TraceProgress(
         copy(flat),
@@ -279,7 +280,7 @@ end
 """
     reached_state(progress, outcome, target, step_limit, target_precision, context)
 
-The `TraceResult` (`Traced` or `TraceFailure`) of a trace whose `progress` holds the last accepted point and whose `outcome` is the last
+The `TraceResult` (`Ok(Traced)` or `Err(TraceFailure)`) of a trace whose `progress` holds the last accepted point and whose `outcome` is the last
 corrector's step length or the BifurcationKit exception that ended it.
 """
 function reached_state(
@@ -292,7 +293,7 @@ function reached_state(
 )::TraceResult{E} where {E <: Real}
     logits = sinh.(progress.asinh_logits)
     if isnothing(outcome.exception) && progress.relative_precision == target
-        return Traced(logits)
+        return Ok(Traced(logits))
     end
     cause = if uncorrected_start(outcome.exception)
         TraceStuck
@@ -303,7 +304,7 @@ function reached_state(
     else
         TraceStuck
     end
-    return TraceFailure(
+    return Err(TraceFailure(
         cause,
         (;
             context..., progress.steps,
@@ -313,5 +314,5 @@ function reached_state(
             logit_tangent = cosh.(progress.asinh_logits) .* progress.asinh_tangent, progress.tangent_precision,
             outcome.exception,
         ),
-    )
+    ))
 end
