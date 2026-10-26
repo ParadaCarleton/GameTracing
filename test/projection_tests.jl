@@ -91,7 +91,7 @@ end
 @testset "near a fold, where a correction at fixed precision is singular, the projection converges quadratically" begin
     # On ThresholdPass(a, t) the branch is precision = z / (a σ(z - t)); it folds where z (1 - σ(z - t)) = 1.
     amplitude, threshold, target = float(6), float(3), float(2)
-    sigmoid(x::Real) = inv(1 + exp(-x))
+    sigmoid(logit::Real) = inv(1 + exp(-logit))
     low, high = float(1), float(2)
     for _ in 1:60
         middle = (low + high) / 2

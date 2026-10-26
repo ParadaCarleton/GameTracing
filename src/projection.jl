@@ -13,7 +13,7 @@ function projection_step(
     logits::AbstractVector{E},
     relative_precision::Real,
     state_weight::Real,
-)::Vector{E} where {E <: Real}
+)::AbstractVector{E} where {E <: Real}
     if !(0 < state_weight < 1)
         throw(ArgumentError("state_weight must lie in (0, 1); got $state_weight"))
     end
