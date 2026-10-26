@@ -1,8 +1,13 @@
 name: CI
 on:
   push:
-    branches: [main]
+    branches: ['**']
   pull_request:
+  workflow_dispatch:
+# A branch's push run and its pull-request run share a group, so only the newest one runs.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
 jobs:
   test:
     runs-on: ubuntu-latest
