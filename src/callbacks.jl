@@ -168,22 +168,33 @@ function (progress::TraceProgress)(point::P, tangent::T, step::S, ::Any;
 end
 
 """
-    TraceFinalise(progress, keep_going)
+    TraceFinalise(progress, keep_going, redraw, slot, step_offset)
 
-BifurcationKit's `finalise_solution` of a trace: `progress` records the point, and the trace goes on
-while `keep_going(logits, relative_precision)` holds.
+BifurcationKit's `finalise_solution` of one trace segment: `progress` records the point (its step counted from
+`step_offset`, the steps of earlier segments), and the trace goes on while `keep_going(logits, relative_precision)`
+holds. Then `redraw(logits, relative_precision)` may return a new game: `slot` takes it and the segment stops, for
+`trace_endpoint` to correct the point onto it and restart. A `redraw` that returns `nothing` or the current game swaps nothing.
 """
-struct TraceFinalise{R <: TraceProgress, A}
+struct TraceFinalise{R <: TraceProgress, A, D, S}
     progress::R
     keep_going::A
+    redraw::D
+    slot::S
+    step_offset::Int
 end
 
 function (finalise::TraceFinalise)(point::P, tangent::T, step::S, result::Any;
+    state::Any,
     # fatou-ignore unused-argument: BifurcationKit passes keyword arguments this callback ignores
     keywords...,
 )::Bool where {P, T, S <: Integer}
-    recorded = finalise.progress(point, tangent, step, result)
-    return recorded && finalise.keep_going(logits_at(point.u), point.p)
+    recorded = finalise.progress(point, tangent, finalise.step_offset + step, result)
+    logits = logits_at(point.u)
+    if !(recorded && finalise.keep_going(logits, point.p))
+        return false
+    end
+    finalise.slot.step_length = abs(state.ds)
+    return !swapped!(finalise.slot, finalise.redraw(logits, point.p))
 end
 
 """One scalar per step for BifurcationKit's branch record, the relative_precision: `TraceProgress` keeps the point."""
