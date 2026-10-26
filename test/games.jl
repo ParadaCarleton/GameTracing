@@ -211,3 +211,28 @@ function branch_reference(pass::Any, width::Integer, precision::Real)::NamedTupl
     end
     return (; reached = level == target, logits, first_choices = inv.(1 .+ exp.(-logits)))
 end
+
+"""
+A pass that follows `before` up to precision `swap` and `after` past it: a map that jumps there, as a game whose
+payoffs are a sample redrawn mid-trace does.
+"""
+struct SwappedPass{B, A, E <: Real}
+    before::B
+    after::A
+    swap::E
+end
+
+function (pass::SwappedPass)(
+    gain::AbstractVector,
+    gain_slope::AbstractMatrix,
+    gain_precision_slope::AbstractVector,
+    logits::AbstractVector,
+    precision::Real,
+)::Nothing
+    if precision > pass.swap
+        pass.after(gain, gain_slope, gain_precision_slope, logits, precision)
+    else
+        pass.before(gain, gain_slope, gain_precision_slope, logits, precision)
+    end
+    return nothing
+end

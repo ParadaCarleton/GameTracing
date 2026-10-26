@@ -15,25 +15,6 @@ Base.@kwdef struct StepControl{E <: Real}
 end
 
 """
-    CorrectorSettings{E}(; reach, max_kl, max_angle, residual_tolerance, tolerance_floor_ulps, newton_iterations)
-
-The corrector's controls (`CorrectorReach`); `nothing` switches a limit off. `reach`: a corrector further than this
-times its step from its predictor is refused. `max_kl`: a corrected point whose largest per-logit probability KL from
-the predictor passes this is refused. `max_angle`: so is one whose chord turns past this many radians from the
-predictor's direction. `residual_tolerance`, `tolerance_floor_ulps`: the corrector's sup-norm residual, or
-`tolerance_floor_ulps` ulps of the residual's largest operand where that is larger (`corrector_tolerance`).
-`newton_iterations`: Newton iterations per corrector.
-"""
-Base.@kwdef struct CorrectorSettings{E <: Real}
-    reach::Union{Nothing, E} = 2.0f0
-    max_kl::Union{Nothing, E} = nothing
-    max_angle::Union{Nothing, E} = nothing
-    residual_tolerance::E = 1.0f-5
-    tolerance_floor_ulps::E = 32.0f0
-    newton_iterations::Int = 10
-end
-
-"""
     TraceSettings{E}(; first_step, min_step, max_step, aggressiveness, geometry, first_tangent_divisor,
                      corrector, max_steps, tangent, bordered_solver, step_control, orientation_check)
 

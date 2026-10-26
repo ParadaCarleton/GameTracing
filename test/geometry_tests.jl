@@ -1,6 +1,4 @@
-using BifurcationKit: BifurcationKit
 using ErrorTypes: is_error, unwrap
-using LinearAlgebra: Diagonal, dot
 
 @testset "bernoulli_kl is the Bernoulli KL, zero only at equal logits, finite where probabilities round" begin
     rng = fresh_rng()
