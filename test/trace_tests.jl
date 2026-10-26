@@ -192,7 +192,7 @@ end
 @testset "the trace starts at the gaps the flat logits face, where the system is regular" begin
     pass = ThresholdPass(6.0f0, 3.0f0)
     game = LogitGame(pass, 2.0f0)
-    start = GameTracing.trace_start(game, 1, Float32)
+    start = GameTracing.trace_start(game, zeros(Float32, 1))
     gains = evaluated(pass, zeros(Float32, 1), 1.0f0).precision_slope
     @test GameTracing.state_of(start) ≈ 2.0f0 .* gains
     @test last(start) == 0

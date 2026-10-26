@@ -95,7 +95,7 @@ state_of(point::AbstractVector)::AbstractVector = view(
 )
 
 """The logits `z = ρ w` of a branch point `x = [w; ρ]`."""
-function logits_at(point::AbstractVector{E})::Vector{E} where {E <: Real}
+function logits_at(point::AbstractVector{E})::AbstractVector{E} where {E <: Real}
     return last(point) .* state_of(point)
 end
 
@@ -140,12 +140,12 @@ function branch_system!(
 end
 
 """
-    trace_start(game, width, element)
+    trace_start(game, flat)
 
-The branch's start `[w; 0]` at zero precision: the gaps `P G(0, 0)` the flat logits face, in `element`.
+The branch's start `[w; 0]` at zero precision: the gaps `P G(0, 0)` that the `flat` logits (all zero) face.
 """
-function trace_start(game::LogitGame, width::Integer, ::Type{E})::Vector{E} where {E <: Real}
-    start = zeros(E, width + 1)
+function trace_start(game::LogitGame, flat::AbstractVector{E})::AbstractVector{E} where {E <: Real}
+    start = [flat; zero(E)]
     state_of(start) .= .-state_of(branch_system!(BranchWorkspace(start), game, start, zero(E)).residual)
     return start
 end
