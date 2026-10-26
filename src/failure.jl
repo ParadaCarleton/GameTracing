@@ -6,7 +6,7 @@ using LinearAlgebra: LAPACKException, SingularException
     TraceFailure(cause, context)
 
 A trace that did not reach its target: `cause` names why and `context` carries the last accepted `logits`
-and relative precision, the tangent there (in PALC's `asinh` coordinates) and the step the trace held.
+and relative precision, the tangent there in logits (`logit_tangent`, `dz = cosh(u) du`) and the step the trace held.
 """
 struct TraceFailure{C <: NamedTuple}
     cause::TraceCause
