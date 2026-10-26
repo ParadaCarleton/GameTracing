@@ -1,3 +1,6 @@
+"""How PALC solves its bordered linear system: `MatrixSolve` factors the whole bordered matrix, `BorderingSolve` the Jacobian alone."""
+@enum BorderedSolver MatrixSolve BorderingSolve
+
 """
     InPlaceMatrixBLS(matrix, pivots, solver)
 
@@ -111,12 +114,16 @@ end
 """
     bordered_linear_solver(name, width, element)
 
-PALC's bordered linear solver: `:bordering` factors the Jacobian alone (`BorderingBLS`), any other
-name factors the whole bordered matrix (`InPlaceMatrixBLS`, or BifurcationKit's `MatrixBLS` for an
-element type LAPACK does not factor).
+PALC's bordered linear solver: `BorderingSolve` factors the Jacobian alone (`BorderingBLS`), `MatrixSolve`
+factors the whole bordered matrix (`InPlaceMatrixBLS`, or BifurcationKit's `MatrixBLS` for an element type
+LAPACK does not factor).
 """
-function bordered_linear_solver(name::Symbol, width::Integer, ::Type{E}) where {E <: Real}
-    if name === :bordering
+function bordered_linear_solver(
+    solver::BorderedSolver,
+    width::Integer,
+    ::Type{E},
+) where {E <: Real}
+    if solver == BorderingSolve
         return BifurcationKit.BorderingBLS(BifurcationKit.DefaultLS())
     end
     return matrix_bls(width, E)
