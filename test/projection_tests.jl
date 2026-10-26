@@ -81,8 +81,17 @@ end
     end
 end
 
-@testset "projection_step refuses a point with no payoff gaps, at a relative precision of zero or below" begin
-    for relative_precision in (0.0f0, -0.25f0)
+@testset "a projection that would leave the positive relative precisions throws" begin
+    # From far off the branch of G = λ the Gauss–Newton step overshoots ρ = 0, to ρ = -4.95.
+    game = LogitGame(PrecisionGainPass(), 1.0f0)
+    settings = TraceSettings{Float32}()
+    @test_throws DomainError branch_projection(game, Float32[-1], 0.1f0, settings)
+    # Near the branch z = λ² the same game projects to a positive relative precision.
+    @test branch_projection(game, Float32[0.26f0], 0.5f0, settings).relative_precision > 0
+end
+
+@testset "projection_step refuses a point with no payoff gaps, at a relative precision of zero or not finite" begin
+    for relative_precision in (0.0f0, -0.0f0, NaN32, Inf32)
         @test_throws ArgumentError projection_step(LogitGame(GAME, TARGET_PRECISION), zeros(Float32, WIDTH), relative_precision, TraceGeometry{Float32}())
     end
 end

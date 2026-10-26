@@ -47,6 +47,43 @@ function (pass::ThresholdPass)(
     return nothing
 end
 
+"""A `LinearGainPass` whose gains shrink with the precision: `G = (A p + b) / sqrt(1 + (λ s)²)`, so `∂G/∂λ ≠ 0`."""
+struct DampedGainPass{E <: Real}
+    pass::LinearGainPass{E}
+    spread::E
+end
+
+function (pass::DampedGainPass)(
+    gain::AbstractVector,
+    gain_slope::AbstractMatrix,
+    gain_precision_slope::AbstractVector,
+    logits::AbstractVector{E},
+    precision::Real,
+)::Nothing where {E <: Real}
+    pass.pass(gain, gain_slope, gain_precision_slope, logits, precision)
+    damping = inv(sqrt(1 + (precision * pass.spread)^2))
+    gain_precision_slope .= -precision * pass.spread^2 * damping^2 .* damping .* gain
+    gain .*= damping
+    gain_slope .*= damping
+    return nothing
+end
+
+"""One logit whose gain is the precision itself, `G = λ`: the branch `z = λ²`."""
+struct PrecisionGainPass end
+
+function (::PrecisionGainPass)(
+    gain::AbstractVector,
+    gain_slope::AbstractMatrix,
+    gain_precision_slope::AbstractVector,
+    ::AbstractVector{E},
+    precision::Real,
+)::Nothing where {E <: Real}
+    fill!(gain, E(precision))
+    fill!(gain_slope, zero(E))
+    fill!(gain_precision_slope, one(E))
+    return nothing
+end
+
 """A pass whose gain and slopes are NaN once the precision passes `poison`, as a game that overflows there is."""
 struct PoisonedPass{P, E <: Real}
     pass::P
