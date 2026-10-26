@@ -233,6 +233,10 @@ function opened_continuation!(
     theta = augmented_theta(corrector.theta, length(start) - 1)
     tangent = restart_tangent(finalise.slot.game, start, old_tangent, theta)
     length_in_norm = sqrt(theta * sum(abs2, tangent) / length(tangent) + (1 - theta) * abs2(last(tangent)))
+    # The corrected point's tangent is the new map's; a restart that fails before a step reports it.
+    copyto!(finalise.progress.gap_tangent, 1, tangent, 1, length(finalise.progress.gap_tangent))
+    finalise.progress.tangent_precision = last(tangent) / length_in_norm
+    finalise.progress.gap_tangent ./= length_in_norm
     opening = start .+ (options.ds / length_in_norm) .* tangent
     BifurcationKit.continuation(
         BifurcationKit.ContIterable(
@@ -327,23 +331,25 @@ function redrawn_trace(
 )::TraceResult{E} where {E <: Real}
     (; progress, slot) = finalise
     target_precision = slot.game.target_precision
-    if !isnothing(outcome.exception) || !slot.pending || progress.steps >= settings.max_steps
+    # A pending swap is corrected first: the correction takes no continuation step, and skipping it would report
+    # a root of the old game.
+    if !isnothing(outcome.exception) || !slot.pending
         return reached_state(progress, outcome, one(E), settings.max_steps, target_precision, context)
     end
     slot.pending = false
     correction = level_correction(slot.game, [progress.gaps; progress.relative_precision], settings, level_solver)
     if !correction.corrected
+        # The context's logits are the accepted point, a root of the game before the swap.
         return Err(TraceFailure(
             TraceStuck,
             (;
-                context..., progress.steps, progress.relative_precision, projected = true,
-                logits = progress.relative_precision .* progress.gaps,
+                stopped_context(progress, outcome, target_precision, context)..., projected = true,
                 correction.residual, correction.distance, correction.retcode,
             ),
         ))
     end
     copyto!(progress.gaps, state_of(correction.point))
-    if progress.relative_precision == one(E)
+    if progress.relative_precision == one(E) || progress.steps >= settings.max_steps
         return reached_state(progress, outcome, one(E), settings.max_steps, target_precision, context)
     end
     next = TraceFinalise(progress, finalise.keep_going, finalise.redraw, slot, progress.steps)
@@ -421,16 +427,29 @@ function reached_state(
     else
         TraceStuck
     end
-    return Err(TraceFailure(
-        cause,
-        (;
-            context..., progress.steps,
-            precision = target_precision * progress.relative_precision,
-            progress.precision_min, progress.precision_max, progress.unmoved,
-            logits, progress.relative_precision, step_length = E(outcome.step_length),
-            logit_tangent = progress.relative_precision .* progress.gap_tangent .+ progress.tangent_precision .* progress.gaps,
-            progress.tangent_precision,
-            outcome.exception,
-        ),
-    ))
+    return Err(TraceFailure(cause, stopped_context(progress, outcome, target_precision, context)))
+end
+
+"""
+    stopped_context(progress, outcome, target_precision, context)
+
+The context of a trace that stopped at `progress`'s last accepted point after `outcome`: `context`, the steps, the
+precision and its range, the logits, the step held, the tangent in logits and the exception.
+"""
+function stopped_context(
+    progress::TraceProgress{E},
+    outcome::NamedTuple,
+    target_precision::Real,
+    context::NamedTuple,
+)::NamedTuple where {E <: Real}
+    return (;
+        context..., progress.steps,
+        precision = target_precision * progress.relative_precision,
+        progress.precision_min, progress.precision_max, progress.unmoved,
+        logits = progress.relative_precision .* progress.gaps, progress.relative_precision,
+        step_length = E(outcome.step_length),
+        logit_tangent = progress.relative_precision .* progress.gap_tangent .+ progress.tangent_precision .* progress.gaps,
+        progress.tangent_precision,
+        outcome.exception,
+    )
 end

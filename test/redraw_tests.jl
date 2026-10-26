@@ -59,9 +59,25 @@ end
     @test failure.cause == GameTracing.TraceStuck
     @test failure.context.projected
     @test failure.context.relative_precision >= FAR_SWAP.swap_level
+    @test failure.context.precision == failure.context.relative_precision * FAR_SWAP.precision
+    @test failure.context.step_length > 0
     # The failure keeps the accepted point on the old map, not a root of the new one.
     @test residual_norm(FAR_SWAP.before, failure.context.logits, failure.context.relative_precision * FAR_SWAP.precision) <
         1.0f-3
+end
+
+@testset "a redraw at the target precision ends on a root of the new map" begin
+    swap = MapSwap(NEAR_SWAP.before, NEAR_SWAP.after, NEAR_SWAP.precision, 1.0f0, NEAR_SWAP.width)
+    result = swapped_trace(swap)
+    @test !is_error(result)
+    logits = unwrap(result).logits
+    tolerance = GameTracing.corrector_tolerance(
+        REDRAW_SETTINGS.corrector.residual_tolerance,
+        REDRAW_SETTINGS.corrector.tolerance_floor_ulps,
+        [logits; 1.0f0],
+    )
+    @test residual_norm(swap.after, logits, swap.precision) < 2 * tolerance
+    @test residual_norm(swap.before, logits, swap.precision) > 100 * tolerance
 end
 
 @testset "a redrawn game must keep the trace's target precision" begin
