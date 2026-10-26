@@ -5,7 +5,8 @@ using LinearAlgebra: Diagonal
 
 One minimum-norm Gauss–Newton step from `x = [asinh(logits); ρ]` onto `game`'s branch `F(x) = 0`, in PALC's norm
 `θ ‖du‖² / k + (1 - θ) dρ²` (`θ` the `state_weight`, `k` the number of logits): `dx = -W⁻¹ Jᵀ (J W⁻¹ Jᵀ)⁻¹ F`.
-The step moves `ρ` as well, so it stays defined at a fold, where a correction at fixed `ρ` is singular.
+It is the minimum-norm solution of `(J W^-½) y = -F` by pivoted QR, scaled back by `W^-½`; the normal matrix is never
+formed. The step moves `ρ` as well, so it stays defined at a fold, where a correction at fixed `ρ` is singular.
 """
 function projection_step(
     game::LogitGame,
@@ -20,9 +21,8 @@ function projection_step(
     point = [asinh.(logits); E(relative_precision)]
     system = branch_system!(BranchWorkspace(point), game, point, relative_precision)
     jacobian = system.jacobian[1:width, :]
-    inverse_weight = Diagonal([fill(E(width / state_weight), width); E(1 / (1 - state_weight))])
-    weighted = inverse_weight * transpose(jacobian)
-    return -(weighted * ((jacobian * weighted) \ system.residual[1:width]))
+    scale = Diagonal([fill(E(sqrt(width / state_weight)), width); E(sqrt(1 / (1 - state_weight)))])
+    return -(scale * ((jacobian * scale) \ system.residual[1:width]))
 end
 
 """

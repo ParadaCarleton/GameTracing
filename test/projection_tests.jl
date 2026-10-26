@@ -1,6 +1,6 @@
 using GameTracing: BranchWorkspace, branch_projection, branch_system!, projection_step
 using ErrorTypes: unwrap
-using LinearAlgebra: Diagonal, dot, norm, nullspace
+using LinearAlgebra: Diagonal, dot, norm, normalize, nullspace
 using Random: RandomDevice, Xoshiro
 
 """PALC's weights `[θ / k … θ / k, 1 - θ]` over a branch point of `width` logits."""
@@ -32,11 +32,36 @@ end
             @test norm(start.jacobian * step .+ start.residual) <= inv(float(10^10)) * (1 + norm(start.residual))
             tangent = vec(nullspace(start.jacobian))
             @test abs(dot(palc_weights(width, state_weight) * step, tangent)) <= inv(float(10^10)) * (1 + norm(step))
-            # A Newton step: the residual it leaves is second order in the one it started from.
-            moved = [asinh.(logits); relative_precision] .+ step
-            @test norm(branch_equations(game, moved).residual) <= 100 * norm(start.residual)^2
         end
     end
+end
+
+"""The residual `branch_projection` leaves from `on_branch`'s logits moved `offset` along `direction`."""
+function projected_residual(
+    game::LogitGame,
+    on_branch::NamedTuple,
+    offset::Real,
+    direction::AbstractVector,
+    settings::TraceSettings,
+)::typeof(float(offset))
+    projected = branch_projection(game, on_branch.logits .+ offset .* direction, on_branch.relative_precision, settings)
+    return norm(branch_equations(game, [asinh.(projected.logits); projected.relative_precision]).residual)
+end
+
+@testset "branch_projection converges quadratically onto the branch" begin
+    rng = Xoshiro(rand(RandomDevice(), UInt))
+    game = LogitGame(LinearGainPass(randn(rng, 3, 3), randn(rng, 3)), float(2))
+    settings = TraceSettings{typeof(float(1))}()
+    on_branch = (; logits = zeros(3), relative_precision = float(1 // 2))
+    for _ in 1:10
+        on_branch = branch_projection(game, on_branch.logits, on_branch.relative_precision, settings)
+    end
+    @test norm(branch_equations(game, [asinh.(on_branch.logits); on_branch.relative_precision]).residual) < inv(float(10^12))
+    direction = normalize(randn(rng, 3))
+    # Quadratic convergence drops the residual left a hundredfold per decade of offset; linear, tenfold.
+    coarse = projected_residual(game, on_branch, inv(float(100)), direction, settings)
+    fine = projected_residual(game, on_branch, inv(float(1000)), direction, settings)
+    @test fine <= coarse / 30
 end
 
 @testset "branch_projection applies one projection_step in the trace's norm" begin
@@ -83,12 +108,12 @@ end
     at_fold = branch_equations(game, [asinh(fold); fold_precision])
     @test abs(only(at_fold.residual)) <= inv(float(10^10))
     @test abs(first(at_fold.jacobian)) <= inv(float(10^8)) * norm(at_fold.jacobian)
-    for offset in (-1, 1) .* inv(float(20))
-        logits, relative_precision = [fold], fold_precision + offset
-        start = branch_equations(game, [asinh.(logits); relative_precision])
-        step = projection_step(game, logits, relative_precision, float(2 // 5))
-        moved = [asinh.(logits); relative_precision] .+ step
-        @test norm(branch_equations(game, moved).residual) <= 100 * norm(start.residual)^2
-        @test norm(step) <= 10 * norm(start.residual)
+    # Newton at fixed precision meets a double root here and converges only linearly; the projection stays quadratic.
+    settings = TraceSettings{typeof(float(1))}(state_weight = 2 // 5)
+    on_branch = (; logits = [fold], relative_precision = fold_precision)
+    for direction in ([-one(fold)], [one(fold)])
+        coarse = projected_residual(game, on_branch, inv(float(100)), direction, settings)
+        fine = projected_residual(game, on_branch, inv(float(1000)), direction, settings)
+        @test fine <= coarse / 30
     end
 end
