@@ -150,3 +150,28 @@ end
     @test is_error(result)
     @test unwrap_error(result).cause == GameTracing.TraceStuck
 end
+
+@testset "an accepted point equal to the last one stops the trace as a stall" begin
+    tangent = (; u = Float32[0, 0, 1], p = 1.0f0)
+    progress = GameTracing.TraceProgress(zeros(Float32, 2), 0.0f0, 0, 0.0f0, 0.0f0, zeros(Float32, 2), 0.0f0, false)
+    moved = (; u = Float32[0.1f0, 0.2f0, 0.5f0], p = 0.5f0)
+    @test progress(moved, tangent, 1, nothing)
+    @test !progress.unmoved
+    outcome = (; step_length = 0.0f0, exception = nothing)
+    @test GameTracing.reached_state(progress, outcome, 1.0f0, 2, TARGET_PRECISION, (;)).cause == GameTracing.TraceStuck
+    @test !progress(moved, tangent, 2, nothing)
+    @test progress.unmoved
+    # A stall that spends the step budget is still a stall; moving points that spend it are not.
+    stalled = GameTracing.reached_state(progress, outcome, 1.0f0, 2, TARGET_PRECISION, (;))
+    @test stalled.cause == GameTracing.TraceStuck
+    @test stalled.context.unmoved
+    progress.unmoved = false
+    @test GameTracing.reached_state(progress, outcome, 1.0f0, 2, TARGET_PRECISION, (;)).cause == GameTracing.NoConvergence
+    # A change in the precision alone, or in the logits alone, is progress.
+    precision_only = (; u = moved.u, p = 0.6f0)
+    @test progress(precision_only, tangent, 3, nothing)
+    @test !progress.unmoved
+    logits_only = (; u = Float32[0.3f0, 0.2f0, 0.6f0], p = 0.6f0)
+    @test progress(logits_only, tangent, 4, nothing)
+    @test !progress.unmoved
+end
