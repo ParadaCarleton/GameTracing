@@ -47,7 +47,7 @@ function (pass::ThresholdPass)(
     return nothing
 end
 
-"""A pass whose gain is NaN once the precision passes `poison`."""
+"""A pass whose gain and slopes are NaN once the precision passes `poison`, as a game that overflows there is."""
 struct PoisonedPass{P, E <: Real}
     pass::P
     poison::E
@@ -63,6 +63,8 @@ function (pass::PoisonedPass)(
     pass.pass(gain, gain_slope, gain_precision_slope, logits, precision)
     if precision > pass.poison
         fill!(gain, NaN32)
+        fill!(gain_slope, NaN32)
+        fill!(gain_precision_slope, NaN32)
     end
     return nothing
 end
