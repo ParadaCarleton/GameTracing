@@ -1,4 +1,4 @@
-using ErrorTypes: is_error, unwrap
+using ErrorTypes: is_error, unwrap, unwrap_error
 
 @testset "bernoulli_kl is the Bernoulli KL, zero only at equal logits, finite where probabilities round" begin
     rng = fresh_rng()
@@ -118,6 +118,17 @@ end
         if !is_error(result)
             @test residual_norm(FOLD_GAME, unwrap(result).logits, 2.0f0) < 1.0f-3
             @test only(unwrap(result).logits) > 3
+        end
+    end
+end
+
+@testset "every arm stops short of a non-finite game as a stuck trace" begin
+    for (label, settings) in arm_variants()
+        result = trace_endpoint(LogitGame(PoisonedPass(GAME, 1.0f0), TARGET_PRECISION), WIDTH, settings)
+        @test is_error(result)
+        @test unwrap_error(result).cause == GameTracing.TraceStuck
+        if !is_error(result) || unwrap_error(result).cause != GameTracing.TraceStuck
+            @info "arm did not stop as stuck" label
         end
     end
 end
