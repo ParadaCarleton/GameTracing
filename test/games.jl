@@ -231,7 +231,7 @@ end
 
 The root of `pass` at fixed `precision` that `Float64` Newton reaches from `logits`; an `ErrorException` when 50 steps do not settle.
 """
-function level_root(pass::Any, logits::AbstractVector, precision::Real)::Vector{typeof(float(1))}
+function level_root(pass::Any, logits::AbstractVector, precision::Real)::AbstractVector
     root, level = float.(collect(logits)) .* float(1), precision * float(1)
     for _ in 1:50
         if settled_root(pass, root, level, max(level, one(level)))
@@ -282,9 +282,8 @@ end
 """
     MapSwap(before, after, precision, swap_level, width)
 
-A game whose map changes from `before` to `after` once a trace to target `precision` reaches relative precision
-`swap_level`, over `width` logits: a redraw of the map at an accepted point. Called as a pass, it follows `before` up
-to precision `precision * swap_level` and `after` past it, so a trace without a redraw hook meets the jump there.
+A trace over `width` logits to `precision` whose game changes from `before` to `after` once the trace reaches relative
+precision `swap_level`: a redraw of the map at an accepted point.
 """
 struct MapSwap{B, A, E <: Real}
     before::B
@@ -294,28 +293,37 @@ struct MapSwap{B, A, E <: Real}
     width::Int
 end
 
-function (swap::MapSwap)(
-    gain::AbstractVector,
-    gain_slope::AbstractMatrix,
-    gain_precision_slope::AbstractVector,
-    logits::AbstractVector,
-    precision::Real,
-)::Nothing
-    if precision > swap.precision * swap.swap_level
-        swap.after(gain, gain_slope, gain_precision_slope, logits, precision)
-    else
-        swap.before(gain, gain_slope, gain_precision_slope, logits, precision)
+# The swap moves a two-player branch by under a tenth: a redraw a fixed-precision correction absorbs.
+const NEAR_SWAP = MapSwap(
+    LinearGainPass([0 0.8f0; 0.6f0 0], [0.3f0, -0.2f0]),
+    LinearGainPass([0 0.8f0; 0.6f0 0], [0.34f0, -0.23f0]),
+    4.0f0, 0.5f0, 2,
+)
+
+# The swap removes the low branch at precision 1/2: the only root there is the high one, about 3.5 logits away.
+const FAR_SWAP = MapSwap(ThresholdPass(8.0f0, 4.0f0), ThresholdPass(8.0f0, 1.5f0), 1.0f0, 0.5f0, 1)
+
+"""
+    SwapAt(game, swap_level)
+
+A `redraw` hook that returns `game` at every accepted point from relative precision `swap_level` on, and `nothing`
+before: the trace swaps once, since returning its current game swaps nothing.
+"""
+struct SwapAt{G, E <: Real}
+    game::G
+    swap_level::E
+end
+
+function (hook::SwapAt{G})(::AbstractVector, relative_precision::Real)::Union{Nothing, G} where {G}
+    if relative_precision >= hook.swap_level
+        return hook.game
     end
     return nothing
 end
 
-"""
-`swap`'s reference at its target: `before`'s branch to the swap, the root `level_root` reaches from there on `after`,
-and `after`'s branch on from that root (`branch_reference`).
-"""
-function swap_reference(swap::MapSwap)::NamedTuple
-    level = swap.precision * swap.swap_level
-    before = branch_reference(swap.before, swap.width, level)
-    root = level_root(swap.after, before.logits, level)
-    return branch_reference(swap.after, swap.width, swap.precision; start = root, start_precision = level)
+"""A `keep_going` hook that stops the trace at its first accepted point at or past `swap_level`."""
+struct StopAt{E <: Real}
+    swap_level::E
 end
+
+(hook::StopAt)(::AbstractVector, relative_precision::Real)::Bool = relative_precision < hook.swap_level

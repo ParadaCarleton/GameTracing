@@ -33,6 +33,7 @@ include("geometry.jl")
 include("branch.jl")
 include("callbacks.jl")
 include("trace.jl")
+include("redraw.jl")
 include("projection.jl")
 
 end

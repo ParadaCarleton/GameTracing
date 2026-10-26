@@ -1,14 +1,18 @@
 using BifurcationKit: BifurcationKit
 using Logging: @debug
 """
-    CorrectorSettings{E}(; reach, max_kl, max_angle, residual_tolerance, tolerance_floor_ulps, newton_iterations)
+    CorrectorSettings{E}(; reach, max_kl, max_angle, residual_tolerance, tolerance_floor_ulps, newton_iterations, redraw_reach)
 
 The corrector's controls (`CorrectorReach`); `nothing` switches a limit off. `reach`: a corrector further than this
 times its step from its predictor is refused. `max_kl`: a corrected point whose largest per-logit probability KL from
 the predictor passes this is refused. `max_angle`: so is one whose chord turns past this many radians from the
 predictor's direction. `residual_tolerance`, `tolerance_floor_ulps`: the corrector's sup-norm residual, or
 `tolerance_floor_ulps` ulps of the largest payoff gap where that is larger (`corrector_tolerance`).
-`newton_iterations`: Newton iterations per corrector.
+`newton_iterations`: Newton iterations per corrector. `redraw_reach`: the largest Euclidean distance in logits that a
+redraw's fixed-precision correction may move the accepted point (`level_correction`); a farther root is taken for
+another branch, and the trace fails `TraceStuck`. The default 0.4 is `StepControl`'s `distance_limit`, Gambit's bound
+on one Newton step: a redraw may move the point as far as one corrector step may, and one that moves it farther
+changed the branch, not the sample. The test swaps bracket it: the near one moves under 0.2, the far one about 3.5.
 """
 Base.@kwdef struct CorrectorSettings{E <: Real}
     reach::Union{Nothing, E} = 2.0f0
@@ -17,6 +21,7 @@ Base.@kwdef struct CorrectorSettings{E <: Real}
     residual_tolerance::E = 1.0f-5
     tolerance_floor_ulps::E = 32.0f0
     newton_iterations::Int = 10
+    redraw_reach::E = 0.4f0
 end
 
 """
@@ -197,22 +202,33 @@ function (progress::TraceProgress)(point::P, tangent::T, step::S, ::Any;
 end
 
 """
-    TraceFinalise(progress, keep_going)
+    TraceFinalise(progress, keep_going, redraw, slot, step_offset)
 
-BifurcationKit's `finalise_solution` of a trace: `progress` records the point, and the trace goes on
-while `keep_going(logits, relative_precision)` holds.
+BifurcationKit's `finalise_solution` of one trace segment: `progress` records the point (its step counted from
+`step_offset`, the steps of earlier segments), and the trace goes on while `keep_going(logits, relative_precision)`
+holds. Then `redraw(logits, relative_precision)` may return a new game: `slot` takes it and the segment stops, for
+`trace_endpoint` to correct the point onto it and restart. A `redraw` that returns `nothing` or the current game swaps nothing.
 """
-struct TraceFinalise{R <: TraceProgress, A}
+struct TraceFinalise{R <: TraceProgress, A, D, S}
     progress::R
     keep_going::A
+    redraw::D
+    slot::S
+    step_offset::Int
 end
 
 function (finalise::TraceFinalise)(point::P, tangent::T, step::S, result::Any;
+    state::Any,
     # fatou-ignore unused-argument: BifurcationKit passes keyword arguments this callback ignores
     keywords...,
 )::Bool where {P, T, S <: Integer}
-    recorded = finalise.progress(point, tangent, step, result)
-    return recorded && finalise.keep_going(logits_at(point.u), point.p)
+    recorded = finalise.progress(point, tangent, finalise.step_offset + step, result)
+    logits = logits_at(point.u)
+    if !(recorded && finalise.keep_going(logits, point.p))
+        return false
+    end
+    finalise.slot.step_length = abs(state.ds)
+    return !swapped!(finalise.slot, finalise.redraw(logits, point.p))
 end
 
 """One scalar per step for BifurcationKit's branch record, the relative_precision: `TraceProgress` keeps the point."""

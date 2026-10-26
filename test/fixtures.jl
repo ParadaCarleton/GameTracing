@@ -31,13 +31,3 @@ const OVERSHOT_GAME = (
 
 # One logit whose branch folds back at precision about 1.4; target 2 lies past the fold.
 const FOLD_GAME = ThresholdPass(6.0f0, 3.0f0)
-
-# The swap moves a two-player branch by under a tenth: a redraw a projection and a fixed-level correction absorb.
-const NEAR_SWAP = MapSwap(
-    LinearGainPass(Float32[0 0.8f0; 0.6f0 0], Float32[0.3f0, -0.2f0]),
-    LinearGainPass(Float32[0 0.8f0; 0.6f0 0], Float32[0.34f0, -0.23f0]),
-    4.0f0, 0.5f0, 2,
-)
-
-# The swap removes the low branch at precision 1/2: the only root there is the high one, about 3.5 logits away.
-const FAR_SWAP = MapSwap(ThresholdPass(8.0f0, 4.0f0), ThresholdPass(8.0f0, 1.5f0), 1.0f0, 0.5f0, 1)
