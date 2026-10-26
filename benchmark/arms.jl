@@ -37,32 +37,67 @@ function random_case(seed::Integer)::Case
     return normal_form_case(string("random ", seed), random_payoffs(rng, rand(rng, 2:5)), 3)
 end
 
+"""
+A `Case` whose map is redrawn mid-trace: `case` holds the map before, `after` and `reference_after` the map after in
+Float32 and Float64, and the trace swaps at its first accepted point at or past relative precision `swap_level`.
+"""
+struct SwapCase{C <: Case, A, R, E <: Real}
+    case::C
+    after::A
+    reference_after::R
+    swap_level::E
+end
+
+"""`swap`'s maps and level as a `SwapCase` named `name`, with `reference_before` and `reference_after` its maps in Float64."""
+function swap_case(name::AbstractString, swap::MapSwap, reference_before::Any, reference_after::Any)::SwapCase
+    return SwapCase(Case(String(name), swap.before, reference_before, swap.width, swap.precision), swap.after, reference_after, swap.swap_level)
+end
+
 """A random 3-player game whose payoffs move by about 0.05 at relative precision 1/2, as a mid-trace redraw moves a sampled map."""
-function swap_case(seed::Integer)::Case
+function swap_case(seed::Integer)::SwapCase
     rng = Xoshiro(1000 + seed)
     before = random_payoffs(rng, 3)
     after = map(table -> table .+ randn(rng, size(table)...) ./ 20, before)
-    pass = MapSwap(NormalFormPass(map(table -> Float32.(table), before)), NormalFormPass(map(table -> Float32.(table), after)), 3.0f0, 0.5f0, 3)
-    return Case(string("swap ", seed), pass, MapSwap(NormalFormPass(before), NormalFormPass(after), float(3), float(1 // 2), 3), 3, 3.0f0)
+    swap = MapSwap(NormalFormPass(map(table -> Float32.(table), before)), NormalFormPass(map(table -> Float32.(table), after)), 3.0f0, 0.5f0, 3)
+    return swap_case(string("swap ", seed), swap, NormalFormPass(before), NormalFormPass(after))
 end
 
-"""`case`'s fine Float64 reference: across the swap for a `MapSwap`, else from the flat start."""
-case_reference(case::Case)::NamedTuple = case_reference(case.reference_pass, case)
-case_reference(swap::MapSwap, ::Case)::NamedTuple = swap_reference(swap)
-case_reference(pass::Any, case::Case)::NamedTuple = branch_reference(pass, case.width, case.precision)
+"""`case`'s fine Float64 reference from the flat start."""
+case_reference(case::Case)::NamedTuple = branch_reference(case.reference_pass, case.width, case.precision)
 
-"""The benchmark's games: LogitNash's, the overshot game, the fold game, random games, and the near, far and random map-swap games."""
-function benchmark_cases()::Vector{Case}
+"""A swap's reference: the map before's branch to the swap level, then the map after's branch on from that point."""
+function case_reference(swap::SwapCase)::NamedTuple
+    (; case) = swap
+    level = case.precision * swap.swap_level
+    before = branch_reference(case.reference_pass, case.width, level)
+    return branch_reference(swap.reference_after, case.width, case.precision; start = before.logits, start_precision = level)
+end
+
+case_name(case::Case)::String = case.name
+case_name(swap::SwapCase)::String = swap.case.name
+
+"""`pass` with Float64 parameters, for a reference."""
+widened(pass::LinearGainPass)::LinearGainPass = LinearGainPass(pass.interaction .* float(1), pass.stand_alone .* float(1))
+widened(pass::ThresholdPass)::ThresholdPass = ThresholdPass(pass.amplitude * float(1), pass.threshold * float(1))
+
+"""The fixed-map games: LogitNash's, the overshot game, the fold game and random games."""
+function fixed_cases()::Vector{Case}
     return vcat(
         Case[normal_form_case(string(name), payoffs, 4) for (name, payoffs) in pairs(LOGITNASH_GAMES)],
         Case[normal_form_case("overshot 3", OVERSHOT_GAME, 3), normal_form_case("overshot 3.1", OVERSHOT_GAME, 31 // 10)],
-        Case[Case("fold", FOLD_GAME, ThresholdPass(float(6), float(3)), 1, 2.0f0)],
+        Case[Case("fold", FOLD_GAME, widened(FOLD_GAME), 1, 2.0f0)],
         Case[random_case(seed) for seed in 1:24],
-        Case[
-            Case("near swap", NEAR_SWAP, MapSwap(LinearGainPass(float.(NEAR_SWAP.before.interaction), float.(NEAR_SWAP.before.stand_alone)), LinearGainPass(float.(NEAR_SWAP.after.interaction), float.(NEAR_SWAP.after.stand_alone)), float(4), float(1 // 2), 2), 2, NEAR_SWAP.precision),
-            Case("far swap", FAR_SWAP, MapSwap(ThresholdPass(float(8), float(4)), ThresholdPass(float(8), float(3 // 2)), float(1), float(1 // 2), 1), 1, FAR_SWAP.precision),
+    )
+end
+
+"""The map-swap games: the near and far swaps and random ones."""
+function swap_cases()::Vector{SwapCase}
+    return vcat(
+        SwapCase[
+            swap_case(name, swap, widened(swap.before), widened(swap.after))
+            for (name, swap) in (("near swap", NEAR_SWAP), ("far swap", FAR_SWAP))
         ],
-        Case[swap_case(seed) for seed in 1:6],
+        SwapCase[swap_case(seed) for seed in 1:6],
     )
 end
 
@@ -85,13 +120,22 @@ end
 const REFUSAL_CHECKS = (:reach, :kl, :angle, :nonfinite)
 const REFUSAL_MESSAGES = ("corrector refused", "corrector stopped")
 
-"""`case` traced under `settings`."""
-struct TraceRun{C <: Case, S <: TraceSettings}
+"""`case` traced under `settings`; a `SwapCase` redraws its map through `SwapAt`."""
+struct TraceRun{C, S <: TraceSettings}
     case::C
     settings::S
 end
 
-(trace_run::TraceRun)()::GameTracing.TraceResult{Float32} = trace_endpoint(LogitGame(trace_run.case.pass, trace_run.case.precision), trace_run.case.width, trace_run.settings)
+function (trace_run::TraceRun{<:Case})()::GameTracing.TraceResult{Float32}
+    (; case, settings) = trace_run
+    return trace_endpoint(LogitGame(case.pass, case.precision), case.width, settings)
+end
+
+function (trace_run::TraceRun{<:SwapCase})()::GameTracing.TraceResult{Float32}
+    (; settings) = trace_run
+    (; case, after, swap_level) = trace_run.case
+    return trace_endpoint(LogitGame(case.pass, case.precision), case.width, settings; redraw = SwapAt(LogitGame(after, case.precision), swap_level))
+end
 
 """First-action probabilities of `logits`."""
 first_choices(logits::AbstractVector{E})::Vector{E} where {E <: Real} = inv.(one(E) .+ exp.(-logits))
@@ -100,7 +144,7 @@ first_choices(logits::AbstractVector{E})::Vector{E} where {E <: Real} = inv.(one
 What one trace did: first-action probabilities (empty on failure), its status, accepted steps, corrector iterates,
 bytes, refusals per check (`REFUSAL_CHECKS`) and the check that refused last (`:none` if none did).
 """
-function traced(case::Case, settings::TraceSettings)::NamedTuple
+function traced(case::Union{Case, SwapCase}, settings::TraceSettings)::NamedTuple
     trace_run = TraceRun(case, settings)
     trace_run()
     bytes = @allocated trace_run()
@@ -128,13 +172,13 @@ function profile_gap(left::AbstractVector, right::AbstractVector)::Float64
 end
 
 """Every variant's row on `case`, printed, with a SIGNAL for each pair of reached endpoints over 1e-3 apart."""
-function case_rows(case::Case, variants::AbstractVector)::Vector{NamedTuple}
+function case_rows(case::Union{Case, SwapCase}, variants::AbstractVector)::Vector{NamedTuple}
     reference = case_reference(case)
     # A branch that folds back past the target has no natural-continuation reference: its gap is NaN.
     kind = ifelse(reference.reached, "reference", "folded")
     rows = NamedTuple[
-        (; case = case.name, label, outcome..., kind, pitchfork = Symbol(case.name) in PITCHFORK_GAMES,
-            swapped = case.pass isa MapSwap,
+        (; case = case_name(case), label, outcome..., kind, pitchfork = Symbol(case_name(case)) in PITCHFORK_GAMES,
+            swapped = case isa SwapCase,
             gap = ifelse(reference.reached, profile_gap(outcome.choices, reference.first_choices), NaN))
         for (label, outcome) in (label => traced(case, settings) for (label, settings) in variants)
     ]
@@ -147,7 +191,7 @@ function case_rows(case::Case, variants::AbstractVector)::Vector{NamedTuple}
     reached = [row for row in rows if !isempty(row.choices)]
     for (index, left) in pairs(reached), right in reached[(index + 1):end]
         if profile_gap(left.choices, right.choices) > 1.0e-3
-            println("SIGNAL | ", case.name, " | ", left.label, " vs ", right.label, " | ", @sprintf("%.3e", profile_gap(left.choices, right.choices)))
+            println("SIGNAL | ", case_name(case), " | ", left.label, " vs ", right.label, " | ", @sprintf("%.3e", profile_gap(left.choices, right.choices)))
         end
     end
     flush(stdout)
@@ -181,14 +225,14 @@ end
 
 function main(output::AbstractString)::Nothing
     variants = ["shipped" => TraceSettings{Float32}(); arm_variants()]
-    rows = reduce(vcat, [case_rows(case, variants) for case in benchmark_cases()])
+    rows = reduce(vcat, [case_rows(case, variants) for case in vcat(fixed_cases(), swap_cases())])
     io = open(output, "w")
     println(io, "game,variant,status,steps,iterations,refused_reach,refused_kl,refused_angle,refused_nonfinite,last_refusal,gap,bytes,reference,swapped")
     for row in rows
         println(io, join((row.case, row.label, row.status, row.steps, row.iterations, row.refusals..., row.last_refusal, row.gap, row.bytes, row.kind, row.swapped), ','))
     end
     close(io)
-    # A map that swaps mid-trace is compared only once the projection hook lands; until then its rows record stalls.
+    # Fixed-map and map-swap games are summarized apart: a swap's refusals come from the redraw, not the geometry.
     for (group, swapped) in (("fixed", false), ("swap", true)), (label, _) in variants
         print_summary(group, label, [row for row in rows if row.swapped == swapped])
     end
