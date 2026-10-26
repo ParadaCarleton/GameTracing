@@ -1,3 +1,4 @@
+using BifurcationKit: BifurcationKit
 using ErrorTypes: is_error, unwrap, unwrap_error
 using Random: RandomDevice, Xoshiro
 
