@@ -34,6 +34,7 @@ end
 
 `(; logits, relative_precision)`: the point one `projection_step` from `(logits, ρ)` toward `game`'s branch, in the
 trace's norm (`settings.state_weight`). The projection is first order: its residual is quadratic in the start's.
+A step that leaves the trace's relative precisions `(0, 1]`, as one from far off the branch can, throws a `DomainError`.
 """
 function branch_projection(
     game::LogitGame,
@@ -43,5 +44,8 @@ function branch_projection(
 )::NamedTuple{(:logits, :relative_precision), Tuple{Vector{E}, E}} where {E <: Real}
     step = projection_step(game, logits, relative_precision, settings.state_weight)
     moved = [logits ./ E(relative_precision); E(relative_precision)] .+ step
+    if !(0 < last(moved) <= 1)
+        throw(DomainError(last(moved), "the projection left the trace's relative precisions (0, 1]"))
+    end
     return (; logits = logits_at(moved), relative_precision = last(moved))
 end
