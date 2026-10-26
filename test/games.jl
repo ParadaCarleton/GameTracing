@@ -47,6 +47,27 @@ function (pass::ThresholdPass)(
     return nothing
 end
 
+"""A `LinearGainPass` whose gains shrink with the precision: `G = (A p + b) / sqrt(1 + (λ s)²)`, so `∂G/∂λ ≠ 0`."""
+struct DampedGainPass{E <: Real}
+    pass::LinearGainPass{E}
+    spread::E
+end
+
+function (pass::DampedGainPass)(
+    gain::AbstractVector,
+    gain_slope::AbstractMatrix,
+    gain_precision_slope::AbstractVector,
+    logits::AbstractVector{E},
+    precision::Real,
+)::Nothing where {E <: Real}
+    pass.pass(gain, gain_slope, gain_precision_slope, logits, precision)
+    damping = inv(sqrt(1 + (precision * pass.spread)^2))
+    gain_precision_slope .= -precision * pass.spread^2 * damping^2 .* damping .* gain
+    gain .*= damping
+    gain_slope .*= damping
+    return nothing
+end
+
 """A pass whose gain is NaN once the precision passes `poison`."""
 struct PoisonedPass{P, E <: Real}
     pass::P
