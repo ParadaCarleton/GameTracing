@@ -84,6 +84,11 @@ function (::PrecisionGainPass)(
     return nothing
 end
 
+# A coordination game whose branch folds; the fold and failure tests share it.
+const FOLD_GAME = ThresholdPass(6.0f0, 3.0f0)
+# A one-logit trace needs a state weight under 1/2 (`augmented_theta`).
+const FOLD_SETTINGS = TraceSettings{Float32}(state_weight = 0.4f0)
+
 """A pass whose gain is NaN once the precision passes `poison`."""
 struct PoisonedPass{P, E <: Real}
     pass::P
