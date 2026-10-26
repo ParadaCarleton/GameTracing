@@ -15,12 +15,13 @@ BifurcationKit = {url = "https://github.com/ParadaCarleton/BifurcationKit.jl", r
 [extras]
 Corset = "09bf9df1-bea6-4267-acd1-e930da7492cc"
 ErrorTypes = "7f495686-c6d2-4c77-9e8e-e4c865675f9d"
+LogitNash = "56ed5f9e-c32e-46b8-b489-5928d745fddb"
 Mooncake = "da2b9cff-9c12-43a0-ae48-6db2b0edb7d6"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["Corset", "ErrorTypes", "Mooncake", "Random", "Test"]
+test = ["Corset", "ErrorTypes", "LogitNash", "Mooncake", "Random", "Test"]
 
 [compat]
 julia = "1.11"
