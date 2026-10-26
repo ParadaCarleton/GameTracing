@@ -209,7 +209,7 @@ function trace_endpoint(
     context::NamedTuple = (;),
 )::TraceResult{E} where {E <: Real}
     flat = zeros(E, width)
-    traced_start = trace_start(game, width, E)
+    traced_start = trace_start(game, flat)
     # The start is a root for every finite game; a non-finite gain shows in its gaps.
     if !all(isfinite, traced_start)
         return Err(TraceFailure(
