@@ -138,7 +138,9 @@ function (trace_run::TraceRun{<:SwapCase})()::GameTracing.TraceResult{Float32}
 end
 
 """First-action probabilities of `logits`."""
-first_choices(logits::AbstractVector{E})::Vector{E} where {E <: Real} = inv.(one(E) .+ exp.(-logits))
+function first_choices(logits::AbstractVector{E})::Vector{E} where {E <: Real}
+    return inv.(one(E) .+ exp.(-logits))
+end
 
 """
 What one trace did: first-action probabilities (empty on failure), its status, accepted steps, corrector iterates,
