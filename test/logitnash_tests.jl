@@ -63,9 +63,8 @@ end
 
 Trace `payoffs` to LogitNash's stopping precision past `precision` and test the endpoint against `branch_reference`.
 LogitNash is a cross-check: a disagreement with it fails only when the reference sides with LogitNash. Near an
-unfolded pitchfork LogitNash crosses onto the symmetric arm (5 of 400 battle-of-the-sexes games perturbed by 0.05 to
-0.1, and most at 1e-4); the reference and the bordered trace did not. A branch that folds back in precision has no
-natural-continuation reference; every endpoint must also solve the map to the corrector's tolerance.
+unfolded pitchfork LogitNash can cross onto the middle arm, as on `UNFOLDED_PITCHFORK_GAME`. A reference that does not
+reach the target skips the comparison; every endpoint must also solve the map to the corrector's tolerance.
 """
 function cross_checked!(payoffs::Tuple, precision::Real, settings::TraceSettings{Float32})::Nothing
     cross = logitnash_equilibrium(payoffs, precision)
@@ -78,6 +77,8 @@ function cross_checked!(payoffs::Tuple, precision::Real, settings::TraceSettings
     logits = unwrap(result).logits
     traced = first_choices(logits)
     reference = branch_reference(NormalFormPass(map(float, payoffs)), length(payoffs), cross.precision)
+    # A generic game's branch crosses no singular point.
+    @test reference.crossings == 0
     if reference.reached
         @test agreeing(traced, reference.first_choices)
     end
@@ -106,11 +107,13 @@ end
 end
 
 @testset "branch_reference: each endpoint solves the map, and LogitNash's equilibria solve NormalFormPass" begin
-    for payoffs in values(LOGITNASH_GAMES), precision in (1, 4)
+    for (name, payoffs) in pairs(LOGITNASH_GAMES), precision in (1, 4)
         cross = logitnash_equilibrium(payoffs, precision)
         pass = NormalFormPass(map(float, payoffs))
         reference = branch_reference(pass, length(payoffs), cross.precision)
         @test reference.reached
+        # Only the exact battle of the sexes puts a singular point, its pitchfork, on the branch.
+        @test reference.crossings <= (name == :battle_of_the_sexes)
         @test residual_norm(pass, reference.logits, cross.precision * float(1)) < inv(float(10^6))
         # In probability space: LogitNash's profile may round a choice to certainty, an infinite logit.
         crossing = log.(cross.first_choices) .- log1p.(-cross.first_choices)
@@ -144,12 +147,36 @@ end
 end
 
 @testset "a pitchfork unfolded by a payoff perturbation: the bordered trace turns with the principal branch" begin
-    # Measured over 4 draws per scale: the secant tangent followed the principal branch 0/4 at 1e-4, 1/4 at 1e-3, 3/4 at
-    # 1e-2 and 4/4 at 1e-1; the bordered tangent 4/4 at every scale.
+    # Measured over 40 draws per scale against the arclength reference: the secant tangent followed the principal branch
+    # 0/40 at 1e-4, 3/40 at 1e-3, 34/40 at 1e-2 and 39/40 at 1e-1; the bordered tangent 40/40 at every scale.
     rng = fresh_rng()
     for scale in inv.(float.((10^4, 10^3, 10^2, 10))), _ in 1:3
         payoffs = map(table -> table .+ scale .* randn(rng, 2, 2), map(float, LOGITNASH_GAMES.battle_of_the_sexes))
         cross_checked!(payoffs, 4, TraceSettings{Float32}())
+    end
+end
+
+# The battle of the sexes perturbed by about 1e-4. Near precision 0.808 its principal branch turns steeply (dλ/ds about
+# 0.0024) past the middle arm of the unfolded pitchfork, and ends near the pure equilibrium (1, 1).
+const UNFOLDED_PITCHFORK_GAME = ([30000726 -37; 757 20000821] .// 10^7, [19999477 -283; 919 29999523] .// 10^7)
+
+@testset "a pitchfork unfolded by 1e-4: the reference and the trace turn onto the (1, 1) arm" begin
+    precision = logitnash_equilibrium(UNFOLDED_PITCHFORK_GAME, 4).precision
+    pass = NormalFormPass(map(float, UNFOLDED_PITCHFORK_GAME))
+    reference = branch_reference(pass, 2, precision)
+    @test reference.reached
+    @test reference.crossings == 0
+    # Oracle: Gambit 16.7's logit branch and a 50-digit arclength trace both end at the pure equilibrium (1, 1).
+    arm_root = level_root(pass, [float(15), float(10)], precision)
+    @test all(>(99 // 100), reference.first_choices)
+    @test maximum(abs, reference.logits .- arm_root) < inv(float(10^6))
+    settings = TraceSettings{Float32}()
+    result = traced_result(UNFOLDED_PITCHFORK_GAME, precision, settings)
+    @test !is_error(result)
+    if !is_error(result)
+        logits = unwrap(result).logits
+        @test agreeing(first_choices(logits), reference.first_choices)
+        @test settled_endpoint(UNFOLDED_PITCHFORK_GAME, logits, precision, settings)
     end
 end
 
