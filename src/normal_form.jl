@@ -21,19 +21,19 @@ struct NormalFormGains{N, A <: AbstractArray{<:Real, N}, E <: Real}
 
     function NormalFormGains(
         payoffs::NTuple{N, A},
-    )::NormalFormGains{N, A, float(eltype(A))} where {N, A <: AbstractArray{<:Real, N}}
+    )::NormalFormGains{N, A} where {N, A <: AbstractArray{<:Real, N}}
         if !allequal(size.(payoffs))
             throw(ArgumentError("every player's payoff array must have one size; got $(size.(payoffs))"))
         end
-        element = float(eltype(A))
+        payoff_zero = float(zero(eltype(A)))
         counts = size(first(payoffs))
         widest = maximum(counts)
-        return new{N, A, element}(
+        return new{N, A, typeof(payoff_zero)}(
             payoffs,
-            zeros.(element, counts),
-            zeros(element, widest),
-            zeros(element, widest, widest),
-            zeros(element, widest),
+            fill.(payoff_zero, counts),
+            fill(payoff_zero, widest),
+            fill(payoff_zero, widest, widest),
+            fill(payoff_zero, widest),
         )
     end
 end
@@ -69,8 +69,13 @@ function mixed_strategies(gains::NormalFormGains, logits::AbstractVector{E})::Tu
 end
 
 """The probability that every player but `player` and `skipped` plays its strategy in `profile`."""
-function rival_weight(strategies::Tuple, profile::CartesianIndex, player::Integer, skipped::Integer)::eltype(first(strategies))
-    weight = one(eltype(first(strategies)))
+function rival_weight(
+    strategies::NTuple{N, AbstractVector{E}},
+    profile::CartesianIndex{N},
+    player::Integer,
+    skipped::Integer,
+)::E where {N, E <: Real}
+    weight = one(E)
     for (other, strategy) in pairs(strategies)
         if other != player && other != skipped
             weight *= strategy[profile[other]]
