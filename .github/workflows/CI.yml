@@ -4,8 +4,9 @@ on:
     branches: ['**']
   workflow_dispatch:
 # Every branch runs on push, so a pull request shows its head's push run; a newer push cancels the older run.
+# The event is in the key, so a push never cancels a dispatched run (the mutation matrix) on the same branch.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref_name }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref_name }}
   cancel-in-progress: true
 # The test oracle's pygambit has no Linux wheel, so pip builds it; one cached Conda environment keeps that to a cold run.
 env:
