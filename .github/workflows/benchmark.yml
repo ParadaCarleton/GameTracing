@@ -1,6 +1,10 @@
 name: Arm benchmark
 on:
   workflow_dispatch:
+  # Dispatch needs the workflow on main; until then a push to the arms branch runs it.
+  push:
+    branches: [trace-arms]
+    paths: ['src/**', 'test/arms.jl', 'test/games.jl', 'test/fixtures.jl', 'benchmark/**', '.github/workflows/benchmark.yml']
   pull_request:
     paths: ['src/**', 'test/arms.jl', 'test/games.jl', 'test/fixtures.jl', 'benchmark/**', '.github/workflows/benchmark.yml']
 jobs:
