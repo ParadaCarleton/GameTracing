@@ -150,7 +150,7 @@ function traced(case::Union{Case, SwapCase}, settings::TraceSettings)::NamedTupl
     trace_run = TraceRun(case, settings)
     trace_run()
     bytes = @allocated trace_run()
-    sink = Channel{Pair{String, Symbol}}(Inf)
+    sink = Channel{Pair{String, Symbol}}(typemax(Int))
     result = with_logger(trace_run, TraceCounter(sink))
     close(sink)
     records = collect(sink)
@@ -166,11 +166,11 @@ function traced(case::Union{Case, SwapCase}, settings::TraceSettings)::NamedTupl
 end
 
 """The largest probability gap between two profiles, NaN when either is empty."""
-function profile_gap(left::AbstractVector, right::AbstractVector)::Float64
+function profile_gap(left::AbstractVector, right::AbstractVector)::Float32
     if isempty(left) || isempty(right)
-        return NaN
+        return NaN32
     end
-    return Float64(maximum(abs, left .- right))
+    return Float32(maximum(abs, left .- right))
 end
 
 """Every variant's row on `case`, printed, with a SIGNAL for each pair of reached endpoints over 1e-3 apart."""
@@ -181,7 +181,7 @@ function case_rows(case::Union{Case, SwapCase}, variants::AbstractVector)::Vecto
     rows = NamedTuple[
         (; case = case_name(case), label, outcome..., kind, pitchfork = Symbol(case_name(case)) in PITCHFORK_GAMES,
             swapped = case isa SwapCase,
-            gap = ifelse(reference.reached, profile_gap(outcome.choices, reference.first_choices), NaN))
+            gap = ifelse(reference.reached, profile_gap(outcome.choices, reference.first_choices), NaN32))
         for (label, outcome) in (label => traced(case, settings) for (label, settings) in variants)
     ]
     for row in rows
@@ -192,7 +192,7 @@ function case_rows(case::Union{Case, SwapCase}, variants::AbstractVector)::Vecto
     end
     reached = [row for row in rows if !isempty(row.choices)]
     for (index, left) in pairs(reached), right in reached[(index + 1):end]
-        if profile_gap(left.choices, right.choices) > 1.0e-3
+        if profile_gap(left.choices, right.choices) > 1.0f-3
             println("SIGNAL | ", case_name(case), " | ", left.label, " vs ", right.label, " | ", @sprintf("%.3e", profile_gap(left.choices, right.choices)))
         end
     end
@@ -201,11 +201,11 @@ function case_rows(case::Union{Case, SwapCase}, variants::AbstractVector)::Vecto
 end
 
 """`reduction` of `values`, NaN when there are none."""
-function statistic(reduction::Any, values::AbstractVector)::Float64
+function statistic(reduction::Any, values::AbstractVector)::Float32
     if isempty(values)
-        return NaN
+        return NaN32
     end
-    return Float64(reduction(values))
+    return Float32(reduction(values))
 end
 
 """
@@ -218,7 +218,7 @@ function print_summary(group::AbstractString, label::AbstractString, rows::Abstr
     failures = join(sort([string(row.status, ":", row.last_refusal) for row in mine if row.status != "reached"]), " ")
     @printf(
         "SUMMARY %-5s | %-14s | reached %2d/%2d | off-reference %2d | steps %6d | iterations %7d | gap median %.1e worst %.1e | bytes mean %d | failed %s\n",
-        group, label, count(row -> row.status == "reached", mine), length(mine), count(>(1.0e-3), gaps),
+        group, label, count(row -> row.status == "reached", mine), length(mine), count(>(1.0f-3), gaps),
         sum(row.steps for row in mine), sum(row.iterations for row in mine), statistic(median, gaps),
         statistic(maximum, gaps), round(Int, sum(row.bytes for row in mine) / length(mine)), failures,
     )
