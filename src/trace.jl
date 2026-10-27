@@ -277,7 +277,7 @@ function trace_endpoint(
         ))
     end
     progress = TraceProgress(
-        state_of(traced_start)[:],
+        payoff_gaps(traced_start)[:],
         zero(E),
         0,
         zero(E),
@@ -331,7 +331,7 @@ function redrawn_trace(
             ),
         ))
     end
-    copyto!(progress.gaps, state_of(correction.point))
+    copyto!(progress.gaps, payoff_gaps(correction.point))
     if progress.relative_precision == one(E) || progress.steps >= settings.max_steps
         return reached_state(progress, outcome, slot.game, settings, context)
     end

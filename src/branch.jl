@@ -88,15 +88,15 @@ function (jacobian::GameJacobian)(point::AbstractVector{E}, pin::Real)::Abstract
     return branch_system!(jacobian.workspace, jacobian.game, point, pin).jacobian
 end
 
-"""The payoff gaps `w` of a branch point `x = [w; ρ]`."""
-state_of(point::AbstractVector)::AbstractVector = view(
+"""The payoff-gap entries `w` of a vector over `[w; ρ]`: a branch point's gaps, or a residual's or weight's gap part."""
+payoff_gaps(point::AbstractVector)::AbstractVector = view(
     point,
     firstindex(point):(lastindex(point) - 1),
 )
 
 """The logits `z = ρ w` of a branch point `x = [w; ρ]`."""
 function logits_at(point::AbstractVector{E})::AbstractVector{E} where {E <: Real}
-    return last(point) .* state_of(point)
+    return last(point) .* payoff_gaps(point)
 end
 
 """
@@ -113,7 +113,7 @@ function branch_system!(
     pin::Real,
 )::typeof(workspace) where {E <: Real}
     (; residual, jacobian, logits) = workspace
-    gaps = state_of(point)
+    gaps = payoff_gaps(point)
     width = length(gaps)
     relative_precision = point[end]
     logits .= relative_precision .* gaps
@@ -146,7 +146,7 @@ The branch's start `[w; 0]` at zero precision: the gaps `P G(0, 0)` that the `fl
 """
 function trace_start(game::LogitGame, flat::AbstractVector{E})::AbstractVector{E} where {E <: Real}
     start = [flat; zero(E)]
-    state_of(start) .= .-state_of(branch_system!(BranchWorkspace(start), game, start, zero(E)).residual)
+    payoff_gaps(start) .= .-payoff_gaps(branch_system!(BranchWorkspace(start), game, start, zero(E)).residual)
     return start
 end
 

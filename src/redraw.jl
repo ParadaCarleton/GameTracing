@@ -59,7 +59,7 @@ function level_system!(system::LevelSystem, gaps::AbstractVector{E})::typeof(sys
 end
 
 function level_residual!(residual::AbstractVector{E}, gaps::AbstractVector{E}, system::LevelSystem)::Nothing where {E <: Real}
-    residual .= state_of(level_system!(system, gaps).residual)
+    residual .= payoff_gaps(level_system!(system, gaps).residual)
     return nothing
 end
 
@@ -86,7 +86,7 @@ function level_correction(
     solution = SciMLBase.solve(
         NonlinearProblem(
             NonlinearFunction{true}(level_residual!; jac = level_jacobian!),
-            collect(state_of(point)),
+            collect(payoff_gaps(point)),
             LevelSystem(game, relative_precision, BranchWorkspace(point)),
         ),
         solver;
@@ -95,8 +95,8 @@ function level_correction(
     )
     corrected_point = [solution.u; relative_precision]
     workspace = branch_system!(BranchWorkspace(point), game, corrected_point, relative_precision)
-    residual = maximum(abs, state_of(workspace.residual))
-    distance = relative_precision * sqrt(sum(abs2, solution.u .- state_of(point)))
+    residual = maximum(abs, payoff_gaps(workspace.residual))
+    distance = relative_precision * sqrt(sum(abs2, solution.u .- payoff_gaps(point)))
     tolerance = corrector_tolerance(
         settings.corrector.residual_tolerance,
         settings.corrector.tolerance_floor_ulps,

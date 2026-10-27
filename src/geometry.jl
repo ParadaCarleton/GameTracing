@@ -42,7 +42,7 @@ function trace_dot(
     right::AbstractVector{E},
     geometry::TraceGeometry{E},
 )::E where {E <: Real}
-    return coordinate_weight(geometry, length(left) - 1) * dot(state_of(left), state_of(right)) +
+    return coordinate_weight(geometry, length(left) - 1) * dot(payoff_gaps(left), payoff_gaps(right)) +
         level_weight(geometry) * last(left) * last(right)
 end
 
@@ -96,7 +96,7 @@ struct FisherWeights end
 
 function (::FisherWeights)(weights::AbstractVector{E}, point::BifurcationKit.BorderedArray)::AbstractVector{E} where {E <: Real}
     logits = logits_at(point.u)
-    state_of(weights) .= logistic.(logits) .* logistic.(.-logits)
+    payoff_gaps(weights) .= logistic.(logits) .* logistic.(.-logits)
     weights[end] = one(E)
     return weights
 end
