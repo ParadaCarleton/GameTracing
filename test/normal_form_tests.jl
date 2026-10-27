@@ -37,6 +37,7 @@ function strategies_cross_checked!(payoffs::Tuple, precision::Real)::Nothing
     traced = mixed_strategies(gains, unwrap(result).logits)
     reference_gains = NormalFormGains(map(float, payoffs))
     reference = branch_reference(reference_gains, logit_count(reference_gains), cross.precision)
+    @test reference.crossings == 0
     if reference.reached
         @test profile_gap(traced, mixed_strategies(reference_gains, reference.logits)) < 1.0f-3
     end
