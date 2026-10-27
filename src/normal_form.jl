@@ -129,16 +129,16 @@ end
 a gain takes its strategy's row less the first strategy's.
 """
 function write_gain_slope!(
-    block::AbstractMatrix,
+    block::AbstractMatrix{E},
     payoff::AbstractArray,
     work::NamedTuple,
     player::Integer,
     rival::Integer,
-)::Nothing
+)::Nothing where {E <: Real}
     rival_strategy = work.strategies[rival]
     # fatou-ignore call-arity: Base `view` takes any number of indices (jolars/fatou#125)
     sensitivity = view(work.sensitivity, axes(payoff, player), axes(payoff, rival))
-    fill!(sensitivity, zero(eltype(sensitivity)))
+    fill!(sensitivity, zero(E))
     for profile in CartesianIndices(payoff)
         sensitivity[profile[player], profile[rival]] += payoff[profile] * rival_weight(work.strategies, profile, player, rival)
     end

@@ -65,12 +65,11 @@ struct BranchWorkspace{E <: Real, W}
 end
 
 function BranchWorkspace(game::LogitGame, point::AbstractVector{E})::BranchWorkspace{E} where {E <: Real}
-    logits = Vector{E}(undef, length(point) - 1)
     return BranchWorkspace(
         Vector{E}(undef, length(point)),
         Matrix{E}(undef, length(point), length(point)),
-        logits,
-        pass_workspace(game.pass!, logits),
+        Vector{E}(undef, length(point) - 1),
+        pass_workspace(game.pass!, state_of(point)),
     )
 end
 
