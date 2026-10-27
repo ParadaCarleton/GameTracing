@@ -38,13 +38,19 @@ jobs:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2
       - run: fatou lint --color never src test
+      # The mutation job runs on a copy of the package without .github, so this check lives here.
+      # GameTracing.jl, which holds only includes and exports, is the one source file left unmutated.
+      - name: The mutation matrix lists every source file
+        run: |
+          diff <(yq '.jobs.mutation.strategy.matrix.file[]' .github/workflows/CI.yml | sort) \
+            <(ls src | grep -vx 'GameTracing.jl' | sort)
   mutation:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
-        file: [bordered.jl, branch.jl, callbacks.jl, failure.jl, trace.jl, projection.jl, normal_form.jl]
+        file: [bordered.jl, branch.jl, callbacks.jl, failure.jl, trace.jl, projection.jl, redraw.jl, normal_form.jl]
     steps:
       - uses: actions/checkout@v4
       - uses: julia-actions/setup-julia@v2

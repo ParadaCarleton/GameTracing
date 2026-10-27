@@ -1,3 +1,5 @@
+using ErrorTypes: is_error, unwrap, unwrap_error
+
 # State weight 0.4, as the fold tests use: a one-logit trace needs it below 1/2 (`augmented_theta`).
 const REDRAW_SETTINGS = TraceSettings{Float32}(state_weight = 0.4f0)
 
