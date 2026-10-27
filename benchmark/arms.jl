@@ -87,13 +87,38 @@ end
 """`case`'s fine Float64 reference from the flat start."""
 case_reference(case::Case)::NamedTuple = branch_reference(case.reference_pass, case.width, case.precision)
 
-"""A swap's reference: the map before's branch to the swap level, then the map after's branch on from that point."""
-function case_reference(swap::SwapCase)::NamedTuple
+"""
+The relative precision at which `swap`'s trace under `settings` redraws: its first accepted point at or past the swap
+level, from the same trace stopped there. A trace that fails before the swap level gives its last accepted point.
+"""
+function swap_precision(swap::SwapCase, settings::TraceSettings)::Real
     (; case) = swap
-    level = case.precision * swap.swap_level
+    stopped = trace_endpoint(LogitGame(case.pass, case.precision), case.width, settings; keep_going = StopAt(swap.swap_level))
+    return unwrap_error(stopped).context.relative_precision
+end
+
+"""
+A swap's reference under `settings`: the map before's branch to the precision where that trace redraws
+(`swap_precision`), then the map after's branch on from that point. A redraw happens at an accepted point, so each
+variant's reference swaps where its own trace does.
+"""
+function case_reference(swap::SwapCase, settings::TraceSettings)::NamedTuple
+    (; case) = swap
+    level = case.precision * swap_precision(swap, settings)
     before = branch_reference(case.reference_pass, case.width, level)
     return branch_reference(swap.reference_after, case.width, case.precision; start = before.logits, start_precision = level)
 end
+
+"""The reference every variant of `case` shares: a fixed map's own, none for a swap, whose reference is per variant."""
+shared_reference(case::Case)::NamedTuple = case_reference(case)
+shared_reference(::SwapCase)::Nothing = nothing
+
+"""The reference of `case`'s trace under `settings`: the `shared` one, or for a swap its own (`case_reference`)."""
+variant_reference(::Case, ::TraceSettings, shared::NamedTuple)::NamedTuple = shared
+variant_reference(swap::SwapCase, settings::TraceSettings, ::Nothing)::NamedTuple = case_reference(swap, settings)
+
+"""The gap kind of `reference`: a branch that folds back past the target has no natural-continuation reference."""
+reference_kind(reference::NamedTuple)::String = ifelse(reference.reached, "reference", "folded")
 
 case_name(case::Case)::String = case.name
 case_name(swap::SwapCase)::String = swap.case.name
@@ -232,7 +257,7 @@ function logitnash_row(case::Case)::NamedTuple
         status = ifelse(reached, "reached", "stalled"), steps = status.iteration, iterations = 0, bytes,
         refusals = NamedTuple{REFUSAL_CHECKS}(map(Returns(0), REFUSAL_CHECKS)), last_refusal = :none,
         stop_reason = ifelse(reached, :none, :stall),
-        kind = ifelse(reference.reached, "reference", "folded"), pitchfork = Symbol(case.name) in PITCHFORK_GAMES, swapped = false,
+        kind = reference_kind(reference), pitchfork = Symbol(case.name) in PITCHFORK_GAMES, swapped = false,
         gap = profile_gap(ifelse(reached && reference.reached, choices, empty(choices)), reference.first_choices),
     )
 end
@@ -254,14 +279,15 @@ Every variant's row on `case` and LogitNash's (`logitnash_rows`), printed, with 
 endpoints over 1e-3 apart.
 """
 function case_rows(case::Union{Case, SwapCase}, variants::AbstractVector)::Vector{NamedTuple}
-    reference = case_reference(case)
-    # A branch that folds back past the target has no natural-continuation reference: its gap is NaN.
-    kind = ifelse(reference.reached, "reference", "folded")
+    shared = shared_reference(case)
     rows = NamedTuple[
-        (; case = case_name(case), label, outcome..., kind, pitchfork = Symbol(case_name(case)) in PITCHFORK_GAMES,
+        (; case = case_name(case), label, outcome..., kind = reference_kind(reference), pitchfork = Symbol(case_name(case)) in PITCHFORK_GAMES,
             swapped = case isa SwapCase,
+            # A folded branch has no reference: its gap is NaN.
             gap = profile_gap(reference.reached ? outcome.choices : empty(outcome.choices), reference.first_choices))
-        for (label, outcome) in (label => traced(case, settings) for (label, settings) in variants)
+        for (label, outcome, reference) in (
+            (label, traced(case, settings), variant_reference(case, settings, shared)) for (label, settings) in variants
+        )
     ]
     reached = [row for row in rows if !isempty(row.choices)]
     rows = vcat(rows, logitnash_rows(case))
