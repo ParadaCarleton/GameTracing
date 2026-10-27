@@ -14,12 +14,12 @@ using PythonCall: pyconvert, pyimport
 `(; precision, first_choices)` of Gambit's logit QRE branch of the two-action game `payoffs` (one table per player, axis
 `k` player `k`'s action, first action first), from `pygambit.qre.logit_solve_lambda` at `precision`. Gambit's
 `π ∝ exp(λ u)` on the raw payoffs is the logit map `z = λ G` with `G` the first action's payoff gain, so Gambit's `λ` is
-the trace's precision (the test "Gambit's λ is the trace's precision"). `precision` is the `λ` Gambit reports reaching.
+the trace's precision (the test "Gambit's λ is the trace's precision"). `precision` is the `λ` Gambit reports reaching; both come back in `precision`'s type, the compared trace's.
 """
-function gambit_branch(payoffs::Tuple, precision::Real)::NamedTuple
+function gambit_branch(payoffs::Tuple, precision::E)::NamedTuple{(:precision, :first_choices), Tuple{E, Vector{E}}} where {E <: Real}
     gambit, numpy = pyimport("pygambit"), pyimport("numpy")
     game = gambit.Game.from_arrays((numpy.asarray(float.(table)) for table in payoffs)...)
     profile = first(gambit.qre.logit_solve_lambda(game; lam = [float(precision)]))
-    first_choices = [pyconvert(Real, profile.profile[first(player.strategies)]) for player in game.players]
-    return (; precision = pyconvert(Real, profile.lam), first_choices)
+    first_choices = [pyconvert(E, profile.profile[first(player.strategies)]) for player in game.players]
+    return (; precision = pyconvert(E, profile.lam), first_choices)
 end
