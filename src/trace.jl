@@ -324,6 +324,8 @@ function redrawn_trace(
     slot.pending = false
     correction = level_correction(slot.game, [progress.gaps; progress.relative_precision], settings, level_solver)
     if !correction.corrected
+        reason = ifelse(correction.distance > settings.corrector.redraw_reach, :redraw_reach, :redraw_residual)
+        @debug "trace stopped" _group = :trace reason distance = correction.distance residual = correction.residual
         # The context's logits are the accepted point, a root of the game before the swap.
         return Err(TraceFailure(
             TraceStuck,
@@ -408,21 +410,39 @@ function reached_state(
         if residual < tolerance
             return Ok(Traced(copy(progress.gaps), progress.steps))
         end
+        @debug "trace stopped" _group = :trace reason = :off_map residual tolerance
         return Err(TraceFailure(
             OffMap,
             (; stopped_context(progress, outcome, target_precision, context)..., residual, tolerance),
         ))
     end
-    cause = if uncorrected_start(outcome.exception)
-        TraceStuck
+    reason = stop_reason(progress, outcome, settings)
+    @debug "trace stopped" _group = :trace reason
+    return Err(TraceFailure(STOP_CAUSES[reason], stopped_context(progress, outcome, target_precision, context)))
+end
+
+# The cause each `stop_reason` fails with.
+const STOP_CAUSES = (;
+    uncorrected_start = TraceStuck, solver_blowup = Singular, max_steps = NoConvergence, unmoved = TraceStuck,
+    stopped_short = TraceStuck,
+)
+
+"""
+Why a trace that ended at `progress` after `outcome` stopped short of its target (`STOP_CAUSES`): a start that would not
+correct, a broken linear solve, `settings.max_steps` spent, an accepted point that did not move, or a stop short of the
+target otherwise (a step below `min_step`, `keep_going` or a refusal).
+"""
+function stop_reason(progress::TraceProgress, outcome::NamedTuple, settings::TraceSettings)::Symbol
+    if uncorrected_start(outcome.exception)
+        return :uncorrected_start
     elseif !isnothing(outcome.exception)
-        Singular
-    elseif progress.steps >= settings.max_steps && !progress.unmoved
-        NoConvergence
-    else
-        TraceStuck
+        return :solver_blowup
+    elseif progress.unmoved
+        return :unmoved
+    elseif progress.steps >= settings.max_steps
+        return :max_steps
     end
-    return Err(TraceFailure(cause, stopped_context(progress, outcome, target_precision, context)))
+    return :stopped_short
 end
 
 """

@@ -1,4 +1,6 @@
 using ErrorTypes: is_error, unwrap, unwrap_error
+using Logging: Debug
+using Test: collect_test_logs
 
 const REDRAW_SETTINGS = TraceSettings{Float32}()
 
@@ -67,6 +69,40 @@ end
     # The failure keeps the accepted point on the old map, not a root of the new one.
     @test residual_norm(FAR_SWAP.before, failure.context.logits, failure.context.relative_precision * FAR_SWAP.precision) <
         1.0f-3
+end
+
+"""`game` traced over `width` logits with `redraw`, a `Function` as `collect_test_logs` takes."""
+struct LoggedTrace{G, R} <: Function
+    game::G
+    width::Int
+    redraw::R
+end
+
+(trace::LoggedTrace)()::TraceResult{Float32} = trace_endpoint(trace.game, trace.width, REDRAW_SETTINGS; redraw = trace.redraw)
+
+"""`swap`'s redrawn trace as a `LoggedTrace`."""
+function logged_swap(swap::MapSwap)::LoggedTrace
+    redraw = SwapAt(LogitGame(swap.after, swap.precision), swap.swap_level)
+    return LoggedTrace(LogitGame(swap.before, swap.precision), swap.width, redraw)
+end
+
+"""The `reason` of each "trace stopped" record that `trace` logs, and its result."""
+function stop_reasons(trace::LoggedTrace)::NamedTuple
+    logs, result = collect_test_logs(trace; min_level = Debug)
+    return (; reasons = [record.kwargs[:reason] for record in logs if record.message == "trace stopped"], result)
+end
+
+@testset "a trace that stops short logs why, once: a redraw past its reach, a non-finite game; a reached trace logs no stop" begin
+    far = stop_reasons(logged_swap(FAR_SWAP))
+    @test unwrap_error(far.result).context.projected
+    @test far.reasons == [:redraw_reach]
+    poisoned = stop_reasons(LoggedTrace(LogitGame(PoisonedPass(GAME, 1.0f0), TARGET_PRECISION), WIDTH, GameTracing.NoRedraw()))
+    @test unwrap_error(poisoned.result).cause == GameTracing.TraceStuck
+    @test length(poisoned.reasons) == 1
+    @test GameTracing.STOP_CAUSES[only(poisoned.reasons)] == GameTracing.TraceStuck
+    near = stop_reasons(logged_swap(NEAR_SWAP))
+    @test !is_error(near.result)
+    @test isempty(near.reasons)
 end
 
 @testset "a redraw at the target precision ends on a root of the new map" begin
