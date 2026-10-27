@@ -62,9 +62,20 @@ function homotopy_record(::Any, blend::L;
 end
 
 """
+    CrossingResult(point, reason, steps)
+
+A homotopy crossing's last accepted point, why it ended (`:crossed` at `s = 1`, else the failure) and its accepted steps.
+"""
+struct CrossingResult{E <: Real}
+    point::Vector{E}
+    reason::Symbol
+    steps::Int
+end
+
+"""
     homotopy_crossing(start_problem, end_problem, point, algorithm, options; callback_newton)
 
-`(; point, reason, steps)`: `point`, a zero of `start_problem`'s vector field `F₀`, continued by BifurcationKit's
+A `CrossingResult`: `point`, a zero of `start_problem`'s vector field `F₀`, continued by BifurcationKit's
 `algorithm` under `options` along `H(u, s) = (1 - s) F₀(u) + s F₁(u)` from `s = 0` to `s = 1`, where it is a zero of
 `end_problem`'s `F₁`. `options` must bound `s` to `[0, 1]` (`p_min`, `p_max`); `callback_newton` is BifurcationKit's.
 
@@ -82,7 +93,7 @@ function homotopy_crossing(
     algorithm::BifurcationKit.AbstractContinuationAlgorithm,
     options::BifurcationKit.ContinuationPar;
     callback_newton::Any = BifurcationKit.cb_default,
-)::NamedTuple where {E <: Real}
+)::CrossingResult{E} where {E <: Real}
     homotopy = HomotopyMap(start_problem, end_problem)
     watch = CrossingWatch(HomotopyJacobian(homotopy), sign(det(HomotopyJacobian(homotopy)(point, zero(E)))), copy(point), 0, :stopped)
     # BifurcationKit's constructors are not inferable, so each is built in its own function and passed on unnamed.
@@ -95,7 +106,7 @@ function homotopy_crossing(
         finalise_solution = watch,
         callback_newton,
     )
-    return (; watch.point, watch.reason, watch.steps)
+    return CrossingResult(watch.point, watch.reason, watch.steps)
 end
 
 """BifurcationKit's problem for `homotopy` from `point` at `s = 0`, with its Jacobian and exact `∂H/∂s`."""

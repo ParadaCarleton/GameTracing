@@ -43,7 +43,7 @@ end
 """
     redraw_crossing(before, after, point, settings)
 
-`(; point, reason, steps)`: `homotopy_crossing` from `point = [w; ρ]`, a root of game `before`, to a root of game
+The `CrossingResult` of `homotopy_crossing` from `point = [w; ρ]`, a root of game `before`, to a root of game
 `after` at the same `ρ`, under the trace's PALC (`palc_algorithm`), step controls and corrector (`CorrectorReach`). The
 crossing replaces the map at fixed `ρ`, so it lands on the root its zero continues to, or fails. A start that would
 not correct (`uncorrected_start`) or a broken linear solve (`solver_blowup`) ends it as reason `:solver_blowup`.
@@ -53,7 +53,7 @@ function redraw_crossing(
     after::LogitGame,
     point::AbstractVector{E},
     settings::TraceSettings{E},
-)::NamedTuple where {E <: Real}
+)::CrossingResult{E} where {E <: Real}
     relative_precision = last(point)
     corrector = CorrectorReach(AcceptAll(), settings.corrector, settings.geometry, similar(point), similar(point), zero(E))
     try
@@ -69,7 +69,7 @@ function redraw_crossing(
         if !uncorrected_start(exception) && !solver_blowup(exception)
             rethrow()
         end
-        return (; point = copy(point), reason = :solver_blowup, steps = 0)
+        return CrossingResult(collect(point), :solver_blowup, 0)
     end
 end
 
