@@ -1,3 +1,5 @@
+using ErrorTypes: is_error, unwrap, unwrap_error
+
 const REDRAW_SETTINGS = TraceSettings{Float32}()
 
 """The trace of `swap` that redraws its game from `before` to `after` at `swap.swap_level`."""
