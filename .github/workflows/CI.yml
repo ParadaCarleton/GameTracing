@@ -44,6 +44,8 @@ jobs:
           diff <(yq '.jobs.mutation.strategy.matrix.file[]' .github/workflows/CI.yml | sort) \
             <(ls src | grep -vx 'GameTracing.jl' | sort)
   mutation:
+    # An hour-long matrix per push starved the account's runners; branches run it on demand with `gh workflow run CI.yml --ref <branch>`.
+    if: github.ref_name == 'main' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     strategy:
