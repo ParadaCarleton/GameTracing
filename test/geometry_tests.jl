@@ -63,17 +63,21 @@ end
     end
 end
 
-@testset "a converged corrector past the KL or angle limit is refused" begin
+@testset "a converged corrector past the KL, angle or reach limit is refused, in the default geometry" begin
+    geometry = TraceGeometry{Float32}()
     predicted = Float32[1, 0, 0.5f0]
+    # A move of twice the reach in the geometry's own norm, whatever its state weight; the step is 1.
+    beyond_reach = predicted .+ [2 * 0.5f0 / sqrt(GameTracing.coordinate_weight(geometry, 2)), 0, 0]
+    @test GameTracing.arclength_distance(predicted, beyond_reach, geometry) ≈ 1
     for (corrector, corrected) in (
             (CorrectorSettings{Float32}(reach = nothing, max_kl = 1.0f-3), Float32[3, 0, 0.5f0]),
             (CorrectorSettings{Float32}(reach = nothing, max_angle = 0.1f0), Float32[0, 1, 0.5f0]),
-            (CorrectorSettings{Float32}(reach = 0.5f0), Float32[3, 0, 0.5f0]),
+            (CorrectorSettings{Float32}(reach = 0.5f0), beyond_reach),
         )
         check = GameTracing.CorrectorReach(
             GameTracing.AcceptAll(),
             corrector,
-            TraceGeometry{Float32}(distance = SummedDistance, state_weight = 0.5f0),
+            geometry,
             Float32[0, 0, 0.5f0],
             predicted,
             1.0f0,
