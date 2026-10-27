@@ -77,6 +77,8 @@ function cross_checked!(payoffs::Tuple, precision::Real, settings::TraceSettings
     logits = unwrap(result).logits
     traced = first_choices(logits)
     reference = branch_reference(NormalFormPass(map(float, payoffs)), length(payoffs), cross.precision)
+    # A generic game's branch crosses no singular point.
+    @test reference.crossings == 0
     if reference.reached
         @test agreeing(traced, reference.first_choices)
     end
@@ -105,11 +107,13 @@ end
 end
 
 @testset "branch_reference: each endpoint solves the map, and LogitNash's equilibria solve NormalFormPass" begin
-    for payoffs in values(LOGITNASH_GAMES), precision in (1, 4)
+    for (name, payoffs) in pairs(LOGITNASH_GAMES), precision in (1, 4)
         cross = logitnash_equilibrium(payoffs, precision)
         pass = NormalFormPass(map(float, payoffs))
         reference = branch_reference(pass, length(payoffs), cross.precision)
         @test reference.reached
+        # Only the exact battle of the sexes puts a singular point, its pitchfork, on the branch.
+        @test reference.crossings <= (name == :battle_of_the_sexes)
         @test residual_norm(pass, reference.logits, cross.precision * float(1)) < inv(float(10^6))
         # In probability space: LogitNash's profile may round a choice to certainty, an infinite logit.
         crossing = log.(cross.first_choices) .- log1p.(-cross.first_choices)
@@ -161,6 +165,7 @@ const UNFOLDED_PITCHFORK_GAME = ([30000726 -37; 757 20000821] .// 10^7, [1999947
     pass = NormalFormPass(map(float, UNFOLDED_PITCHFORK_GAME))
     reference = branch_reference(pass, 2, precision)
     @test reference.reached
+    @test reference.crossings == 0
     # Oracle: Gambit 16.7's logit branch and a 50-digit arclength trace both end at the pure equilibrium (1, 1).
     arm_root = level_root(pass, [float(15), float(10)], precision)
     @test all(>(99 // 100), reference.first_choices)

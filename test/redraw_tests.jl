@@ -46,6 +46,7 @@ end
         start_precision = swap.relative_precision * NEAR_SWAP.precision,
     )
     @test reference.reached
+    @test reference.crossings == 0
     # Probabilities to 1e-3, as the LogitNash cross-check compares a Float32 trace with its reference.
     @test maximum(abs, inv.(1 .+ exp.(-logits)) .- reference.first_choices) < 1.0f-3
     # The swap moved the branch: the endpoint is not the old map's.
