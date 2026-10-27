@@ -1,0 +1,18 @@
+RUNNER | AMD EPYC 9V74 80-Core Processor | target znver4 | threads 1 | Julia 1.13.3
+SEED | 3146277127375524762
+PITCHFORK | scale 1e-04 | shipped                        | principal 40/40 | reached 40 | reference crossings 0 | steps  1045
+PITCHFORK | scale 1e-04 | fisher_reach state_weight 0.01 | principal 40/40 | reached 40 | reference crossings 0 | steps   978
+PITCHFORK | scale 1e-04 | fisher_reach state_weight 0.03 | principal 40/40 | reached 40 | reference crossings 0 | steps   932
+PITCHFORK | scale 1e-04 | fisher_reach state_weight 0.1  | principal 40/40 | reached 40 | reference crossings 0 | steps   952
+PITCHFORK | scale 1e-03 | shipped                        | principal 40/40 | reached 40 | reference crossings 0 | steps   863
+PITCHFORK | scale 1e-03 | fisher_reach state_weight 0.01 | principal 40/40 | reached 40 | reference crossings 0 | steps   790
+PITCHFORK | scale 1e-03 | fisher_reach state_weight 0.03 | principal 40/40 | reached 40 | reference crossings 0 | steps   766
+PITCHFORK | scale 1e-03 | fisher_reach state_weight 0.1  | principal 40/40 | reached 40 | reference crossings 0 | steps   756
+PITCHFORK | scale 1e-02 | shipped                        | principal 40/40 | reached 40 | reference crossings 0 | steps   764
+PITCHFORK | scale 1e-02 | fisher_reach state_weight 0.01 | principal 40/40 | reached 40 | reference crossings 0 | steps   528
+PITCHFORK | scale 1e-02 | fisher_reach state_weight 0.03 | principal 40/40 | reached 40 | reference crossings 0 | steps   658
+PITCHFORK | scale 1e-02 | fisher_reach state_weight 0.1  | principal 40/40 | reached 40 | reference crossings 0 | steps   682
+PITCHFORK | scale 1e-01 | shipped                        | principal 40/40 | reached 40 | reference crossings 0 | steps   683
+PITCHFORK | scale 1e-01 | fisher_reach state_weight 0.01 | principal 40/40 | reached 40 | reference crossings 0 | steps   522
+PITCHFORK | scale 1e-01 | fisher_reach state_weight 0.03 | principal 40/40 | reached 40 | reference crossings 0 | steps   536
+PITCHFORK | scale 1e-01 | fisher_reach state_weight 0.1  | principal 40/40 | reached 40 | reference crossings 0 | steps   551

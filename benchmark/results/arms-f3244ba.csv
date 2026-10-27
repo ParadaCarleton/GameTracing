@@ -1,0 +1,336 @@
+game,variant,status,steps,iterations,refused_reach,refused_kl,refused_angle,refused_nonfinite,last_refusal,stop_reason,gap,bytes,reference,swapped
+battle_of_the_sexes,shipped,reached,38,104,0,0,0,0,none,none,0.5828678288208606,140336,reference,false
+battle_of_the_sexes,fisher_reach state_weight 0.01,reached,33,90,0,0,0,0,none,none,0.5828678288208606,126976,reference,false
+battle_of_the_sexes,fisher_reach state_weight 0.03,reached,33,91,0,0,0,0,none,none,0.5828677728541947,126640,reference,false
+battle_of_the_sexes,fisher_reach state_weight 0.1,reached,35,96,0,0,0,0,none,none,0.5828678288208606,133200,reference,false
+battle_of_the_sexes,fisher_log_precision_reach state_weight 0.01,reached,41,103,0,0,0,0,none,none,0.5828677728541947,151088,reference,false
+battle_of_the_sexes,fisher_log_precision_reach state_weight 0.03,reached,34,92,0,0,0,0,none,none,0.5828677730288176,129584,reference,false
+battle_of_the_sexes,fisher_log_precision_reach state_weight 0.1,reached,38,104,0,0,0,0,none,none,0.5828677728541947,142912,reference,false
+battle_of_the_sexes,logitnash,reached,26,0,0,0,0,0,none,none,2.3314683517128287e-15,1632,reference,false
+coordination_wiki,shipped,Singular,11,39,0,0,0,0,none,solver_blowup,NaN,87216,reference,false
+coordination_wiki,fisher_reach state_weight 0.01,Singular,17,48,0,0,0,0,none,solver_blowup,NaN,109184,reference,false
+coordination_wiki,fisher_reach state_weight 0.03,Singular,17,48,0,0,0,0,none,solver_blowup,NaN,109184,reference,false
+coordination_wiki,fisher_reach state_weight 0.1,Singular,17,48,0,0,0,0,none,solver_blowup,NaN,109248,reference,false
+coordination_wiki,fisher_log_precision_reach state_weight 0.01,Singular,20,52,0,0,0,0,none,solver_blowup,NaN,117248,reference,false
+coordination_wiki,fisher_log_precision_reach state_weight 0.03,Singular,20,52,0,0,0,0,none,solver_blowup,NaN,117248,reference,false
+coordination_wiki,fisher_log_precision_reach state_weight 0.1,Singular,20,52,0,0,0,0,none,solver_blowup,NaN,117248,reference,false
+coordination_wiki,logitnash,stalled,0,0,0,0,0,0,none,stall,NaN,1632,reference,false
+coordination_pure,shipped,Singular,7,34,0,0,0,0,none,solver_blowup,NaN,77584,reference,false
+coordination_pure,fisher_reach state_weight 0.01,Singular,10,39,0,0,0,0,none,solver_blowup,NaN,87648,reference,false
+coordination_pure,fisher_reach state_weight 0.03,Singular,10,39,0,0,0,0,none,solver_blowup,NaN,87648,reference,false
+coordination_pure,fisher_reach state_weight 0.1,Singular,10,39,0,0,0,0,none,solver_blowup,NaN,87648,reference,false
+coordination_pure,fisher_log_precision_reach state_weight 0.01,Singular,9,35,0,0,0,0,none,solver_blowup,NaN,80352,reference,false
+coordination_pure,fisher_log_precision_reach state_weight 0.03,Singular,9,35,0,0,0,0,none,solver_blowup,NaN,80352,reference,false
+coordination_pure,fisher_log_precision_reach state_weight 0.1,Singular,9,35,0,0,0,0,none,solver_blowup,NaN,80352,reference,false
+coordination_pure,logitnash,stalled,0,0,0,0,0,0,none,stall,NaN,1632,reference,false
+coordination_assurance,shipped,reached,22,68,0,0,0,0,none,none,1.2656542480726785e-14,85264,reference,false
+coordination_assurance,fisher_reach state_weight 0.01,reached,15,42,0,0,0,0,none,none,1.2656542480726785e-14,59248,reference,false
+coordination_assurance,fisher_reach state_weight 0.03,reached,15,42,0,0,0,0,none,none,1.2656542480726785e-14,59344,reference,false
+coordination_assurance,fisher_reach state_weight 0.1,reached,19,53,0,0,0,0,none,none,1.2656542480726785e-14,75312,reference,false
+coordination_assurance,fisher_log_precision_reach state_weight 0.01,reached,16,46,0,0,0,0,none,none,1.2656542480726785e-14,66384,reference,false
+coordination_assurance,fisher_log_precision_reach state_weight 0.03,reached,15,42,0,0,0,0,none,none,1.2656542480726785e-14,58768,reference,false
+coordination_assurance,fisher_log_precision_reach state_weight 0.1,reached,17,47,0,0,0,0,none,none,1.2656542480726785e-14,68448,reference,false
+coordination_assurance,logitnash,reached,49,0,0,0,0,0,none,none,0.0,1632,reference,false
+stag_hunt,shipped,reached,18,53,0,0,0,0,none,none,1.5793150390804143e-14,72496,reference,false
+stag_hunt,fisher_reach state_weight 0.01,reached,12,32,0,0,0,0,none,none,2.378675616810527e-14,49856,reference,false
+stag_hunt,fisher_reach state_weight 0.03,reached,12,32,0,0,0,0,none,none,2.798344112692043e-17,50880,reference,false
+stag_hunt,fisher_reach state_weight 0.1,reached,13,34,0,0,0,0,none,none,2.798344112692043e-17,52336,reference,false
+stag_hunt,fisher_log_precision_reach state_weight 0.01,reached,12,31,0,0,0,0,none,none,4.024786329777484e-15,48912,reference,false
+stag_hunt,fisher_log_precision_reach state_weight 0.03,reached,14,36,0,0,0,0,none,none,3.968819447523643e-15,54880,reference,false
+stag_hunt,fisher_log_precision_reach state_weight 0.1,reached,14,36,0,0,0,0,none,none,4.024786329777484e-15,54880,reference,false
+stag_hunt,logitnash,reached,46,0,0,0,0,0,none,none,3.1429968144871116e-20,1632,reference,false
+prisoners_dilemma,shipped,reached,11,28,0,0,0,0,none,none,5.090558113929333e-10,46208,reference,false
+prisoners_dilemma,fisher_reach state_weight 0.01,reached,8,21,0,0,0,0,none,none,1.8677357073448864e-7,37616,reference,false
+prisoners_dilemma,fisher_reach state_weight 0.03,reached,8,19,0,0,0,0,none,none,7.501486178063121e-8,36912,reference,false
+prisoners_dilemma,fisher_reach state_weight 0.1,reached,8,19,0,0,0,0,none,none,5.090558113929333e-10,37824,reference,false
+prisoners_dilemma,fisher_log_precision_reach state_weight 0.01,reached,9,20,0,0,0,0,none,none,6.941524785530895e-9,40080,reference,false
+prisoners_dilemma,fisher_log_precision_reach state_weight 0.03,reached,9,19,0,0,0,0,none,none,5.090558113929333e-10,39728,reference,false
+prisoners_dilemma,fisher_log_precision_reach state_weight 0.1,reached,9,20,0,0,0,0,none,none,1.541021700524059e-8,40080,reference,false
+prisoners_dilemma,logitnash,reached,35,0,0,0,0,0,none,none,1.2672154992010576e-14,1632,reference,false
+matching_pennies,shipped,reached,6,5,0,0,0,0,none,none,0.0,27200,reference,false
+matching_pennies,fisher_reach state_weight 0.01,reached,6,5,0,0,0,0,none,none,0.0,27504,reference,false
+matching_pennies,fisher_reach state_weight 0.03,reached,6,5,0,0,0,0,none,none,0.0,27504,reference,false
+matching_pennies,fisher_reach state_weight 0.1,reached,6,5,0,0,0,0,none,none,0.0,27504,reference,false
+matching_pennies,fisher_log_precision_reach state_weight 0.01,reached,8,7,0,0,0,0,none,none,0.0,31664,reference,false
+matching_pennies,fisher_log_precision_reach state_weight 0.03,reached,8,7,0,0,0,0,none,none,0.0,31664,reference,false
+matching_pennies,fisher_log_precision_reach state_weight 0.1,reached,8,7,0,0,0,0,none,none,0.0,31664,reference,false
+matching_pennies,logitnash,stalled,0,0,0,0,0,0,none,stall,NaN,1632,reference,false
+three_prisoners,shipped,reached,8,20,0,0,0,0,none,none,1.87639761714542e-9,39904,reference,false
+three_prisoners,fisher_reach state_weight 0.01,reached,7,15,0,0,0,0,none,none,1.87639761714542e-9,36704,reference,false
+three_prisoners,fisher_reach state_weight 0.03,reached,7,16,0,0,0,0,none,none,1.87639761714542e-9,37104,reference,false
+three_prisoners,fisher_reach state_weight 0.1,reached,8,19,0,0,0,0,none,none,1.87639761714542e-9,40144,reference,false
+three_prisoners,fisher_log_precision_reach state_weight 0.01,reached,9,19,0,0,0,0,none,none,1.87639761714542e-9,42144,reference,false
+three_prisoners,fisher_log_precision_reach state_weight 0.03,reached,9,19,0,0,0,0,none,none,1.87639761714542e-9,42144,reference,false
+three_prisoners,fisher_log_precision_reach state_weight 0.1,reached,9,19,0,0,0,0,none,none,1.87639761714542e-9,42144,reference,false
+three_prisoners,logitnash,reached,36,0,0,0,0,0,none,none,4.5152249994462323e-13,2448,reference,false
+overshot 3,shipped,reached,12,34,0,0,0,0,none,none,2.0480512999410116e-7,55584,reference,false
+overshot 3,fisher_reach state_weight 0.01,reached,8,24,0,0,0,0,none,none,1.638269367110201e-7,45456,reference,false
+overshot 3,fisher_reach state_weight 0.03,reached,9,26,0,0,0,0,none,none,5.2994004073880774e-8,45888,reference,false
+overshot 3,fisher_reach state_weight 0.1,reached,9,27,0,0,0,0,none,none,2.4884080829512545e-6,47392,reference,false
+overshot 3,fisher_log_precision_reach state_weight 0.01,reached,9,25,0,0,0,0,none,none,6.341577149515665e-8,47856,reference,false
+overshot 3,fisher_log_precision_reach state_weight 0.03,reached,9,25,0,0,0,0,none,none,2.988815880899942e-8,47856,reference,false
+overshot 3,fisher_log_precision_reach state_weight 0.1,reached,10,29,0,0,0,0,none,none,5.2994004073880774e-8,50352,reference,false
+overshot 3,logitnash,reached,32,0,0,0,0,0,none,none,1.5111517176480405e-9,2448,reference,false
+overshot 3.1,shipped,reached,13,36,0,0,0,0,none,none,2.3062582876764992e-7,60080,reference,false
+overshot 3.1,fisher_reach state_weight 0.01,reached,8,24,0,0,0,0,none,none,2.6787873175226906e-7,45520,reference,false
+overshot 3.1,fisher_reach state_weight 0.03,reached,10,29,0,0,0,0,none,none,1.0179047513214634e-7,52032,reference,false
+overshot 3.1,fisher_reach state_weight 0.1,reached,9,26,0,0,0,0,none,none,3.051316347368882e-7,48096,reference,false
+overshot 3.1,fisher_log_precision_reach state_weight 0.01,reached,9,25,0,0,0,0,none,none,4.038518276461289e-7,47856,reference,false
+overshot 3.1,fisher_log_precision_reach state_weight 0.03,reached,9,25,0,0,0,0,none,none,8.161421682917336e-8,47856,reference,false
+overshot 3.1,fisher_log_precision_reach state_weight 0.1,reached,10,29,0,0,0,0,none,none,5.125657280946605e-6,50288,reference,false
+overshot 3.1,logitnash,reached,32,0,0,0,0,0,none,none,1.5111517176480405e-9,2448,reference,false
+fold,shipped,reached,19,65,0,0,0,0,none,none,4.5590357711233764e-8,71296,reference,false
+fold,fisher_reach state_weight 0.01,reached,27,84,0,0,0,0,none,none,4.5590357711233764e-8,93760,reference,false
+fold,fisher_reach state_weight 0.03,reached,19,59,0,0,0,0,none,none,4.5590357711233764e-8,70688,reference,false
+fold,fisher_reach state_weight 0.1,reached,16,46,0,0,0,0,none,none,4.5590357711233764e-8,61120,reference,false
+fold,fisher_log_precision_reach state_weight 0.01,reached,28,89,0,0,0,0,none,none,4.5590357711233764e-8,97680,reference,false
+fold,fisher_log_precision_reach state_weight 0.03,reached,20,60,0,0,0,0,none,none,4.5590357711233764e-8,73296,reference,false
+fold,fisher_log_precision_reach state_weight 0.1,reached,18,53,0,0,0,0,none,none,4.5590357711233764e-8,67280,reference,false
+random 1,shipped,reached,13,35,0,0,0,0,none,none,3.291655803483451e-8,52736,reference,false
+random 1,fisher_reach state_weight 0.01,reached,8,17,0,0,0,0,none,none,3.291655803483451e-8,36208,reference,false
+random 1,fisher_reach state_weight 0.03,reached,10,25,0,0,0,0,none,none,3.291655803483451e-8,43232,reference,false
+random 1,fisher_reach state_weight 0.1,reached,10,24,0,0,0,0,none,none,3.291655803483451e-8,42880,reference,false
+random 1,fisher_log_precision_reach state_weight 0.01,reached,9,20,0,0,0,0,none,none,3.291655803483451e-8,39168,reference,false
+random 1,fisher_log_precision_reach state_weight 0.03,reached,9,20,0,0,0,0,none,none,3.291655803483451e-8,39168,reference,false
+random 1,fisher_log_precision_reach state_weight 0.1,reached,10,23,0,0,0,0,none,none,3.291655803483451e-8,40976,reference,false
+random 1,logitnash,reached,42,0,0,0,0,0,none,none,2.220446049250313e-16,1632,reference,false
+random 2,shipped,reached,18,51,0,0,0,0,none,none,3.6260657809705776e-9,71648,reference,false
+random 2,fisher_reach state_weight 0.01,reached,12,30,0,0,0,0,none,none,3.6260657809705776e-9,48240,reference,false
+random 2,fisher_reach state_weight 0.03,reached,12,31,0,0,0,0,none,none,3.6260657809705776e-9,49360,reference,false
+random 2,fisher_reach state_weight 0.1,reached,13,33,0,0,0,0,none,none,3.6260657809705776e-9,51104,reference,false
+random 2,fisher_log_precision_reach state_weight 0.01,reached,13,33,0,0,0,0,none,none,3.6260657809705776e-9,51968,reference,false
+random 2,fisher_log_precision_reach state_weight 0.03,reached,13,33,0,0,0,0,none,none,3.6260657809705776e-9,51968,reference,false
+random 2,fisher_log_precision_reach state_weight 0.1,reached,13,33,0,0,0,0,none,none,3.6260657809705776e-9,51968,reference,false
+random 2,logitnash,reached,46,0,0,0,0,0,none,none,0.0,1632,reference,false
+random 3,shipped,reached,13,37,0,0,0,0,none,none,4.5207819932002735e-8,57168,reference,false
+random 3,fisher_reach state_weight 0.01,reached,10,28,0,0,0,0,none,none,4.5374630952554895e-7,48256,reference,false
+random 3,fisher_reach state_weight 0.03,reached,10,29,0,0,0,0,none,none,4.5207819932002735e-8,49760,reference,false
+random 3,fisher_reach state_weight 0.1,reached,9,24,0,0,0,0,none,none,2.3090848677576048e-8,45088,reference,false
+random 3,fisher_log_precision_reach state_weight 0.01,reached,9,23,0,0,0,0,none,none,4.5207819932002735e-8,44848,reference,false
+random 3,fisher_log_precision_reach state_weight 0.03,reached,10,26,0,0,0,0,none,none,1.439682484338789e-8,48720,reference,false
+random 3,fisher_log_precision_reach state_weight 0.1,reached,11,30,0,0,0,0,none,none,2.3090848677576048e-8,52160,reference,false
+random 3,logitnash,reached,39,0,0,0,0,0,none,none,2.475797344914099e-14,2448,reference,false
+random 4,shipped,reached,19,59,0,0,0,0,none,none,2.9362615250327906e-7,87168,reference,false
+random 4,fisher_reach state_weight 0.01,reached,10,28,0,0,0,0,none,none,5.520757340171656e-8,51472,reference,false
+random 4,fisher_reach state_weight 0.03,reached,12,34,0,0,0,0,none,none,6.512540211556228e-7,58480,reference,false
+random 4,fisher_reach state_weight 0.1,reached,12,36,0,0,0,0,none,none,5.520757340171656e-8,57200,reference,false
+random 4,fisher_log_precision_reach state_weight 0.01,reached,11,30,0,0,0,0,none,none,1.1280911793587478e-6,53168,reference,false
+random 4,fisher_log_precision_reach state_weight 0.03,reached,11,31,0,0,0,0,none,none,5.8660847249147885e-8,54864,reference,false
+random 4,fisher_log_precision_reach state_weight 0.1,reached,13,36,0,0,0,0,none,none,5.520757340171656e-8,62736,reference,false
+random 4,logitnash,reached,42,0,0,0,0,0,none,none,2.8090585413309554e-12,4880,reference,false
+random 5,shipped,reached,18,53,0,0,0,0,none,none,5.933158361282054e-7,81424,reference,false
+random 5,fisher_reach state_weight 0.01,reached,11,36,0,0,0,0,none,none,6.188356765912673e-8,56640,reference,false
+random 5,fisher_reach state_weight 0.03,reached,13,42,0,0,0,0,none,none,7.778116395407153e-8,62368,reference,false
+random 5,fisher_reach state_weight 0.1,reached,12,34,0,0,0,0,none,none,1.1647867792508038e-7,58992,reference,false
+random 5,fisher_log_precision_reach state_weight 0.01,reached,13,40,0,0,0,0,none,none,9.168589004682204e-8,63120,reference,false
+random 5,fisher_log_precision_reach state_weight 0.03,reached,13,38,0,0,0,0,none,none,6.188356765912673e-8,63568,reference,false
+random 5,fisher_log_precision_reach state_weight 0.1,reached,14,40,0,0,0,0,none,none,9.168589004682204e-8,66240,reference,false
+random 5,logitnash,reached,41,0,0,0,0,0,none,none,1.47776124670429e-10,4880,reference,false
+random 6,shipped,reached,19,53,0,0,0,0,none,none,6.860226509086687e-8,82352,reference,false
+random 6,fisher_reach state_weight 0.01,reached,10,31,0,0,0,0,none,none,5.8704882743843e-7,52720,reference,false
+random 6,fisher_reach state_weight 0.03,reached,11,35,0,0,0,0,none,none,1.8983510124970238e-6,55040,reference,false
+random 6,fisher_reach state_weight 0.1,reached,12,36,0,0,0,0,none,none,5.0607024459914385e-8,59824,reference,false
+random 6,fisher_log_precision_reach state_weight 0.01,reached,11,31,0,0,0,0,none,none,6.860226509086687e-8,59680,reference,false
+random 6,fisher_log_precision_reach state_weight 0.03,reached,11,31,0,0,0,0,none,none,6.964879495363618e-8,54864,reference,false
+random 6,fisher_log_precision_reach state_weight 0.1,reached,12,34,0,0,0,0,none,none,5.0607024459914385e-8,59232,reference,false
+random 6,logitnash,reached,43,0,0,0,0,0,none,none,6.570632926639064e-12,4880,reference,false
+random 7,shipped,reached,14,40,0,0,0,0,none,none,4.9714316663340696e-8,55840,reference,false
+random 7,fisher_reach state_weight 0.01,reached,8,19,0,0,0,0,none,none,4.9714316663340696e-8,36720,reference,false
+random 7,fisher_reach state_weight 0.03,reached,10,25,0,0,0,0,none,none,4.9714316663340696e-8,43040,reference,false
+random 7,fisher_reach state_weight 0.1,reached,9,22,0,0,0,0,none,none,4.9714316663340696e-8,39488,reference,false
+random 7,fisher_log_precision_reach state_weight 0.01,reached,9,21,0,0,0,0,none,none,4.9714316663340696e-8,39328,reference,false
+random 7,fisher_log_precision_reach state_weight 0.03,reached,9,21,0,0,0,0,none,none,4.9714316663340696e-8,39328,reference,false
+random 7,fisher_log_precision_reach state_weight 0.1,reached,10,23,0,0,0,0,none,none,4.9714316663340696e-8,41744,reference,false
+random 7,logitnash,reached,43,0,0,0,0,0,none,none,1.368534192219828e-16,1632,reference,false
+random 8,shipped,reached,12,38,0,0,0,0,none,none,3.221901823113882e-8,58400,reference,false
+random 8,fisher_reach state_weight 0.01,reached,8,21,0,0,0,0,none,none,3.259331826654943e-8,42048,reference,false
+random 8,fisher_reach state_weight 0.03,reached,8,23,0,0,0,0,none,none,5.964824084658815e-8,42848,reference,false
+random 8,fisher_reach state_weight 0.1,reached,10,29,0,0,0,0,none,none,3.221901823113882e-8,49760,reference,false
+random 8,fisher_log_precision_reach state_weight 0.01,reached,9,23,0,0,0,0,none,none,3.259331826654943e-8,44848,reference,false
+random 8,fisher_log_precision_reach state_weight 0.03,reached,9,24,0,0,0,0,none,none,2.7011326508841194e-8,45248,reference,false
+random 8,fisher_log_precision_reach state_weight 0.1,reached,9,24,0,0,0,0,none,none,3.259331826654943e-8,46352,reference,false
+random 8,logitnash,reached,27,0,0,0,0,0,none,none,6.592404400151963e-11,2448,reference,false
+random 9,shipped,reached,16,50,0,0,0,0,none,none,4.3575663632999806e-8,74944,reference,false
+random 9,fisher_reach state_weight 0.01,reached,10,29,0,0,0,0,none,none,4.3575663632999806e-8,48656,reference,false
+random 9,fisher_reach state_weight 0.03,reached,11,31,0,0,0,0,none,none,4.3575663632999806e-8,51296,reference,false
+random 9,fisher_reach state_weight 0.1,reached,12,34,0,0,0,0,none,none,4.3575663632999806e-8,54336,reference,false
+random 9,fisher_log_precision_reach state_weight 0.01,reached,13,36,0,0,0,0,none,none,4.3575663632999806e-8,57968,reference,false
+random 9,fisher_log_precision_reach state_weight 0.03,reached,13,36,0,0,0,0,none,none,4.3575663632999806e-8,57968,reference,false
+random 9,fisher_log_precision_reach state_weight 0.1,reached,12,34,0,0,0,0,none,none,4.3575663632999806e-8,54496,reference,false
+random 9,logitnash,reached,45,0,0,0,0,0,none,none,2.220446049250313e-16,2448,reference,false
+random 10,shipped,reached,12,33,0,0,0,0,none,none,7.114139677355524e-8,54080,reference,false
+random 10,fisher_reach state_weight 0.01,reached,8,22,0,0,0,0,none,none,7.114139677355524e-8,42448,reference,false
+random 10,fisher_reach state_weight 0.03,reached,9,27,0,0,0,0,none,none,7.114139677355524e-8,45184,reference,false
+random 10,fisher_reach state_weight 0.1,reached,9,26,0,0,0,0,none,none,7.114139677355524e-8,45888,reference,false
+random 10,fisher_log_precision_reach state_weight 0.01,reached,9,25,0,0,0,0,none,none,7.114139677355524e-8,45648,reference,false
+random 10,fisher_log_precision_reach state_weight 0.03,reached,9,24,0,0,0,0,none,none,3.6916462065050837e-7,45248,reference,false
+random 10,fisher_log_precision_reach state_weight 0.1,reached,10,29,0,0,0,0,none,none,7.114139677355524e-8,49088,reference,false
+random 10,logitnash,reached,27,0,0,0,0,0,none,none,7.393017309453853e-10,2448,reference,false
+random 11,shipped,reached,16,44,0,0,0,0,none,none,1.836908907967838e-9,69920,reference,false
+random 11,fisher_reach state_weight 0.01,reached,10,28,0,0,0,0,none,none,6.493521781045231e-9,48992,reference,false
+random 11,fisher_reach state_weight 0.03,reached,13,37,0,0,0,0,none,none,1.836908907967838e-9,58944,reference,false
+random 11,fisher_reach state_weight 0.1,reached,12,33,0,0,0,0,none,none,1.836908907967838e-9,54672,reference,false
+random 11,fisher_log_precision_reach state_weight 0.01,reached,13,35,0,0,0,0,none,none,6.493521781045231e-9,58304,reference,false
+random 11,fisher_log_precision_reach state_weight 0.03,reached,13,34,0,0,0,0,none,none,1.836908907967838e-9,57968,reference,false
+random 11,fisher_log_precision_reach state_weight 0.1,reached,12,33,0,0,0,0,none,none,6.493521781045231e-9,54832,reference,false
+random 11,logitnash,reached,46,0,0,0,0,0,none,none,3.1797481314654874e-15,3568,reference,false
+random 12,shipped,reached,22,71,0,0,0,0,none,none,3.933045178428074e-8,93664,reference,false
+random 12,fisher_reach state_weight 0.01,reached,15,46,0,0,0,0,none,none,3.933045178428074e-8,67280,reference,false
+random 12,fisher_reach state_weight 0.03,reached,14,43,0,0,0,0,none,none,3.933045178428074e-8,63408,reference,false
+random 12,fisher_reach state_weight 0.1,reached,17,51,0,0,0,0,none,none,3.933045178428074e-8,77472,reference,false
+random 12,fisher_log_precision_reach state_weight 0.01,reached,16,47,0,0,0,0,none,none,3.933045178428074e-8,73360,reference,false
+random 12,fisher_log_precision_reach state_weight 0.03,reached,16,47,0,0,0,0,none,none,3.933045178428074e-8,73360,reference,false
+random 12,fisher_log_precision_reach state_weight 0.1,reached,15,44,0,0,0,0,none,none,3.933045178428074e-8,65808,reference,false
+random 12,logitnash,reached,47,0,0,0,0,0,none,none,3.8160157762786315e-18,2448,reference,false
+random 13,shipped,reached,10,29,0,0,0,0,none,none,1.882443600997874e-8,44912,reference,false
+random 13,fisher_reach state_weight 0.01,reached,8,21,0,0,0,0,none,none,1.882443600997874e-8,37616,reference,false
+random 13,fisher_reach state_weight 0.03,reached,8,21,0,0,0,0,none,none,1.8393098921709594e-7,37616,reference,false
+random 13,fisher_reach state_weight 0.1,reached,8,22,0,0,0,0,none,none,1.0977886377716572e-8,38944,reference,false
+random 13,fisher_log_precision_reach state_weight 0.01,reached,9,21,0,0,0,0,none,none,1.882443600997874e-8,39584,reference,false
+random 13,fisher_log_precision_reach state_weight 0.03,reached,9,22,0,0,0,0,none,none,7.05825311531072e-8,40784,reference,false
+random 13,fisher_log_precision_reach state_weight 0.1,reached,9,21,0,0,0,0,none,none,1.2432634444170532e-7,39520,reference,false
+random 13,logitnash,reached,25,0,0,0,0,0,none,none,4.867553893284082e-8,1632,reference,false
+random 14,shipped,reached,21,65,0,0,0,0,none,none,6.403996291592939e-7,91792,reference,false
+random 14,fisher_reach state_weight 0.01,reached,18,56,0,0,0,0,none,none,5.9254342599235343e-8,82832,reference,false
+random 14,fisher_reach state_weight 0.03,reached,19,65,0,0,0,0,none,none,1.4550859017692375e-8,90480,reference,false
+random 14,fisher_reach state_weight 0.1,reached,19,65,0,0,0,0,none,none,8.788182082608564e-7,89296,reference,false
+random 14,fisher_log_precision_reach state_weight 0.01,reached,18,56,0,0,0,0,none,none,4.435318140538769e-8,85200,reference,false
+random 14,fisher_log_precision_reach state_weight 0.03,reached,19,63,0,0,0,0,none,none,4.435318140538769e-8,90048,reference,false
+random 14,fisher_log_precision_reach state_weight 0.1,reached,21,68,0,0,0,0,none,none,4.435318140538769e-8,96544,reference,false
+random 14,logitnash,reached,54,0,0,0,0,0,none,none,1.6886213705102904e-8,4880,reference,false
+random 15,shipped,reached,13,35,0,0,0,0,none,none,2.2082607270546006e-8,56352,reference,false
+random 15,fisher_reach state_weight 0.01,reached,10,26,0,0,0,0,none,none,7.18144607669835e-9,47456,reference,false
+random 15,fisher_reach state_weight 0.03,reached,9,22,0,0,0,0,none,none,3.325847816593175e-8,44288,reference,false
+random 15,fisher_reach state_weight 0.1,reached,10,24,0,0,0,0,none,none,2.2082607270546006e-8,46928,reference,false
+random 15,fisher_log_precision_reach state_weight 0.01,reached,9,21,0,0,0,0,none,none,3.325847816593175e-8,44048,reference,false
+random 15,fisher_log_precision_reach state_weight 0.03,reached,10,24,0,0,0,0,none,none,7.18144607669835e-9,45984,reference,false
+random 15,fisher_log_precision_reach state_weight 0.1,reached,11,27,0,0,0,0,none,none,2.2082607270546006e-8,49024,reference,false
+random 15,logitnash,reached,45,0,0,0,0,0,none,none,5.412337245047638e-16,2448,reference,false
+random 16,shipped,reached,12,33,0,0,0,0,none,none,7.109420196993455e-8,54880,reference,false
+random 16,fisher_reach state_weight 0.01,reached,8,23,0,0,0,0,none,none,7.335882812320449e-8,43648,reference,false
+random 16,fisher_reach state_weight 0.03,reached,10,29,0,0,0,0,none,none,5.4057182063971254e-8,50560,reference,false
+random 16,fisher_reach state_weight 0.1,reached,9,24,0,0,0,0,none,none,7.335882812320449e-8,45888,reference,false
+random 16,fisher_log_precision_reach state_weight 0.01,reached,10,27,0,0,0,0,none,none,1.903034915207158e-7,49920,reference,false
+random 16,fisher_log_precision_reach state_weight 0.03,reached,9,24,0,0,0,0,none,none,9.65163873600794e-7,46112,reference,false
+random 16,fisher_log_precision_reach state_weight 0.1,reached,11,30,0,0,0,0,none,none,7.335882812320449e-8,52960,reference,false
+random 16,logitnash,reached,39,0,0,0,0,0,none,none,1.887379141862766e-15,3568,reference,false
+random 17,shipped,reached,15,43,0,0,0,0,none,none,9.355993219051228e-8,67376,reference,false
+random 17,fisher_reach state_weight 0.01,reached,10,31,0,0,0,0,none,none,3.915831560674654e-7,52720,reference,false
+random 17,fisher_reach state_weight 0.03,reached,12,36,0,0,0,0,none,none,8.104624271698668e-8,59312,reference,false
+random 17,fisher_reach state_weight 0.1,reached,13,39,0,0,0,0,none,none,8.104624271698668e-8,61120,reference,false
+random 17,fisher_log_precision_reach state_weight 0.01,reached,11,33,0,0,0,0,none,none,9.355993219051228e-8,55760,reference,false
+random 17,fisher_log_precision_reach state_weight 0.03,reached,12,35,0,0,0,0,none,none,9.355993219051228e-8,60480,reference,false
+random 17,fisher_log_precision_reach state_weight 0.1,reached,12,34,0,0,0,0,none,none,8.104624271698668e-8,60064,reference,false
+random 17,logitnash,reached,39,0,0,0,0,0,none,none,9.131584377541913e-14,4880,reference,false
+random 18,shipped,reached,16,42,0,0,0,0,none,none,7.665279411206427e-9,64752,reference,false
+random 18,fisher_reach state_weight 0.01,reached,10,26,0,0,0,0,none,none,7.665279411206427e-9,42624,reference,false
+random 18,fisher_reach state_weight 0.03,reached,12,29,0,0,0,0,none,none,7.665279411206427e-9,47888,reference,false
+random 18,fisher_reach state_weight 0.1,reached,12,29,0,0,0,0,none,none,7.665279411206427e-9,47888,reference,false
+random 18,fisher_log_precision_reach state_weight 0.01,reached,11,27,0,0,0,0,none,none,7.665279411206427e-9,44880,reference,false
+random 18,fisher_log_precision_reach state_weight 0.03,reached,13,31,0,0,0,0,none,none,7.665279411206427e-9,50496,reference,false
+random 18,fisher_log_precision_reach state_weight 0.1,reached,13,31,0,0,0,0,none,none,7.665279411206427e-9,50496,reference,false
+random 18,logitnash,reached,47,0,0,0,0,0,none,none,7.927534604717344e-24,1632,reference,false
+random 19,shipped,reached,26,83,0,0,0,0,none,none,7.37591593219511e-8,107536,reference,false
+random 19,fisher_reach state_weight 0.01,reached,26,90,0,0,0,0,none,none,4.5450130228830155e-8,115024,reference,false
+random 19,fisher_reach state_weight 0.03,reached,21,70,0,0,0,0,none,none,3.6506256337331955e-8,97120,reference,false
+random 19,fisher_reach state_weight 0.1,reached,22,72,0,0,0,0,none,none,6.703933949636642e-9,98512,reference,false
+random 19,fisher_log_precision_reach state_weight 0.01,reached,29,94,0,0,0,0,none,none,3.6506256337331955e-8,125456,reference,false
+random 19,fisher_log_precision_reach state_weight 0.03,reached,23,76,0,0,0,0,none,none,3.6506256337331955e-8,104432,reference,false
+random 19,fisher_log_precision_reach state_weight 0.1,reached,22,72,0,0,0,0,none,none,7.37591593219511e-8,98816,reference,false
+random 19,logitnash,reached,59,0,0,0,0,0,none,none,1.6917023337725823e-14,4880,reference,false
+random 20,shipped,reached,13,37,0,0,0,0,none,none,2.8171847965552388e-8,59104,reference,false
+random 20,fisher_reach state_weight 0.01,reached,8,21,0,0,0,0,none,none,4.784676326252679e-7,40944,reference,false
+random 20,fisher_reach state_weight 0.03,reached,10,25,0,0,0,0,none,none,2.8171847965552388e-8,47056,reference,false
+random 20,fisher_reach state_weight 0.1,reached,10,26,0,0,0,0,none,none,2.8171847965552388e-8,48560,reference,false
+random 20,fisher_log_precision_reach state_weight 0.01,reached,9,21,0,0,0,0,none,none,1.2083976397292417e-7,42944,reference,false
+random 20,fisher_log_precision_reach state_weight 0.03,reached,9,21,0,0,0,0,none,none,2.8171847965552388e-8,44048,reference,false
+random 20,fisher_log_precision_reach state_weight 0.1,reached,10,25,0,0,0,0,none,none,2.8171847965552388e-8,48320,reference,false
+random 20,logitnash,reached,38,0,0,0,0,0,none,none,1.0813572259849025e-13,2448,reference,false
+random 21,shipped,reached,15,41,0,0,0,0,none,none,2.7411180547609604e-8,58816,reference,false
+random 21,fisher_reach state_weight 0.01,reached,10,24,0,0,0,0,none,none,2.7411180547609604e-8,42880,reference,false
+random 21,fisher_reach state_weight 0.03,reached,10,23,0,0,0,0,none,none,2.7411180547609604e-8,42528,reference,false
+random 21,fisher_reach state_weight 0.1,reached,9,20,0,0,0,0,none,none,2.7411180547609604e-8,39136,reference,false
+random 21,fisher_log_precision_reach state_weight 0.01,reached,9,19,0,0,0,0,none,none,2.7411180547609604e-8,38880,reference,false
+random 21,fisher_log_precision_reach state_weight 0.03,reached,9,19,0,0,0,0,none,none,2.7411180547609604e-8,38816,reference,false
+random 21,fisher_log_precision_reach state_weight 0.1,reached,10,22,0,0,0,0,none,none,2.7411180547609604e-8,40624,reference,false
+random 21,logitnash,reached,43,0,0,0,0,0,none,none,5.0151126741032614e-17,1632,reference,false
+random 22,shipped,reached,17,51,0,0,0,0,none,none,2.0980898685074578e-8,70928,reference,false
+random 22,fisher_reach state_weight 0.01,reached,10,27,0,0,0,0,none,none,2.0980898685074578e-8,43936,reference,false
+random 22,fisher_reach state_weight 0.03,reached,11,30,0,0,0,0,none,none,2.0980898685074578e-8,46704,reference,false
+random 22,fisher_reach state_weight 0.1,reached,13,38,0,0,0,0,none,none,2.0980898685074578e-8,53728,reference,false
+random 22,fisher_log_precision_reach state_weight 0.01,reached,11,30,0,0,0,0,none,none,2.6740099242500426e-8,46896,reference,false
+random 22,fisher_log_precision_reach state_weight 0.03,reached,11,30,0,0,0,0,none,none,2.6740099242500426e-8,46896,reference,false
+random 22,fisher_log_precision_reach state_weight 0.1,reached,13,35,0,0,0,0,none,none,6.213035707788861e-8,52864,reference,false
+random 22,logitnash,reached,41,0,0,0,0,0,none,none,2.4091839634365897e-14,1632,reference,false
+random 23,shipped,reached,16,44,0,0,0,0,none,none,2.948029838023558e-7,71760,reference,false
+random 23,fisher_reach state_weight 0.01,reached,10,29,0,0,0,0,none,none,2.948029838023558e-7,50624,reference,false
+random 23,fisher_reach state_weight 0.03,reached,11,33,0,0,0,0,none,none,5.294997318383565e-8,54000,reference,false
+random 23,fisher_reach state_weight 0.1,reached,13,37,0,0,0,0,none,none,5.294997318383565e-8,60112,reference,false
+random 23,fisher_log_precision_reach state_weight 0.01,reached,11,32,0,0,0,0,none,none,5.638440470079331e-8,53760,reference,false
+random 23,fisher_log_precision_reach state_weight 0.03,reached,11,29,0,0,0,0,none,none,5.638440470079331e-8,52560,reference,false
+random 23,fisher_log_precision_reach state_weight 0.1,reached,13,36,0,0,0,0,none,none,5.294997318383565e-8,61040,reference,false
+random 23,logitnash,reached,41,0,0,0,0,0,none,none,7.025879877886609e-12,3568,reference,false
+random 24,shipped,reached,19,59,0,0,0,0,none,none,5.075908116047856e-8,76416,reference,false
+random 24,fisher_reach state_weight 0.01,reached,11,30,0,0,0,0,none,none,5.075908116047856e-8,46656,reference,false
+random 24,fisher_reach state_weight 0.03,reached,13,36,0,0,0,0,none,none,5.075908116047856e-8,53072,reference,false
+random 24,fisher_reach state_weight 0.1,reached,12,31,0,0,0,0,none,none,5.075908116047856e-8,49776,reference,false
+random 24,fisher_log_precision_reach state_weight 0.01,reached,13,35,0,0,0,0,none,none,5.075908116047856e-8,53776,reference,false
+random 24,fisher_log_precision_reach state_weight 0.03,reached,13,36,0,0,0,0,none,none,5.075908116047856e-8,54128,reference,false
+random 24,fisher_log_precision_reach state_weight 0.1,reached,13,33,0,0,0,0,none,none,5.075908116047856e-8,51328,reference,false
+random 24,logitnash,reached,47,0,0,0,0,0,none,none,0.0,1632,reference,false
+near swap,shipped,reached,7,18,0,0,0,0,none,none,1.236774993529366e-8,61536,reference,true
+near swap,fisher_reach state_weight 0.01,reached,7,14,0,0,0,0,none,none,7.192703432856717e-8,58960,reference,true
+near swap,fisher_reach state_weight 0.03,reached,7,14,0,0,0,0,none,none,1.236774993529366e-8,58960,reference,true
+near swap,fisher_reach state_weight 0.1,reached,7,14,0,0,0,0,none,none,1.236774993529366e-8,58960,reference,true
+near swap,fisher_log_precision_reach state_weight 0.01,reached,9,18,0,0,0,0,none,none,1.236774993529366e-8,64560,reference,true
+near swap,fisher_log_precision_reach state_weight 0.03,reached,9,18,0,0,0,0,none,none,1.236774993529366e-8,64560,reference,true
+near swap,fisher_log_precision_reach state_weight 0.1,reached,9,18,0,0,0,0,none,none,1.236774993529366e-8,64560,reference,true
+far swap,shipped,TraceStuck,4,8,0,0,0,0,none,redraw_reach,NaN,33200,reference,true
+far swap,fisher_reach state_weight 0.01,TraceStuck,5,10,0,0,0,0,none,redraw_reach,NaN,35152,reference,true
+far swap,fisher_reach state_weight 0.03,TraceStuck,5,10,0,0,0,0,none,redraw_reach,NaN,35216,reference,true
+far swap,fisher_reach state_weight 0.1,TraceStuck,5,10,0,0,0,0,none,redraw_reach,NaN,35152,reference,true
+far swap,fisher_log_precision_reach state_weight 0.01,TraceStuck,5,10,0,0,0,0,none,redraw_reach,NaN,34960,reference,true
+far swap,fisher_log_precision_reach state_weight 0.03,TraceStuck,5,10,0,0,0,0,none,redraw_reach,NaN,34960,reference,true
+far swap,fisher_log_precision_reach state_weight 0.1,TraceStuck,5,10,0,0,0,0,none,redraw_reach,NaN,34960,reference,true
+swap 1,shipped,reached,11,32,0,0,0,0,none,none,4.932819264169552e-9,75392,reference,true
+swap 1,fisher_reach state_weight 0.01,reached,8,21,0,0,0,0,none,none,5.817857495760137e-8,65568,reference,true
+swap 1,fisher_reach state_weight 0.03,reached,8,22,0,0,0,0,none,none,4.932818931102645e-9,65968,reference,true
+swap 1,fisher_reach state_weight 0.1,reached,9,26,0,0,0,0,none,none,6.103071448215758e-8,68432,reference,true
+swap 1,fisher_log_precision_reach state_weight 0.01,reached,9,22,0,0,0,0,none,none,5.817857495760137e-8,68128,reference,true
+swap 1,fisher_log_precision_reach state_weight 0.03,reached,9,22,0,0,0,0,none,none,5.467182545570992e-8,68128,reference,true
+swap 1,fisher_log_precision_reach state_weight 0.1,reached,9,24,0,0,0,0,none,none,6.103071448215758e-8,68928,reference,true
+swap 2,shipped,reached,16,44,0,0,0,0,none,none,1.3423557936320663e-6,89488,reference,true
+swap 2,fisher_reach state_weight 0.01,reached,8,22,0,0,0,0,none,none,2.0986754289964438e-7,65968,reference,true
+swap 2,fisher_reach state_weight 0.03,reached,10,33,0,0,0,0,none,none,5.525942503581405e-7,75264,reference,true
+swap 2,fisher_reach state_weight 0.1,reached,11,32,0,0,0,0,none,none,1.0443325697551131e-6,75216,reference,true
+swap 2,fisher_log_precision_reach state_weight 0.01,reached,9,25,0,0,0,0,none,none,3.10536085734725e-8,70432,reference,true
+swap 2,fisher_log_precision_reach state_weight 0.03,reached,9,23,0,0,0,0,none,none,2.5457102648118735e-7,69632,reference,true
+swap 2,fisher_log_precision_reach state_weight 0.1,reached,11,30,0,0,0,0,none,none,2.5457102648118735e-7,75840,reference,true
+swap 3,shipped,reached,14,37,0,0,0,0,none,none,5.508221023742266e-8,83440,reference,true
+swap 3,fisher_reach state_weight 0.01,reached,10,27,0,0,0,0,none,none,6.084669954137256e-7,71376,reference,true
+swap 3,fisher_reach state_weight 0.03,reached,10,27,0,0,0,0,none,none,5.508221023742266e-8,72480,reference,true
+swap 3,fisher_reach state_weight 0.1,reached,10,26,0,0,0,0,none,none,2.292298210179733e-6,72080,reference,true
+swap 3,fisher_log_precision_reach state_weight 0.01,reached,9,23,0,0,0,0,none,none,5.508221023742266e-8,68528,reference,true
+swap 3,fisher_log_precision_reach state_weight 0.03,reached,10,25,0,0,0,0,none,none,2.217792404654584e-6,72000,reference,true
+swap 3,fisher_log_precision_reach state_weight 0.1,reached,11,28,0,0,0,0,none,none,2.366804016107338e-6,73936,reference,true
+swap 4,shipped,reached,17,48,0,0,0,0,none,none,3.227853040410622e-8,92144,reference,true
+swap 4,fisher_reach state_weight 0.01,reached,11,30,0,0,0,0,none,none,3.227853040410622e-8,74544,reference,true
+swap 4,fisher_reach state_weight 0.03,reached,11,31,0,0,0,0,none,none,3.227853040410622e-8,74944,reference,true
+swap 4,fisher_reach state_weight 0.1,reached,12,32,0,0,0,0,none,none,3.227853040410622e-8,77056,reference,true
+swap 4,fisher_log_precision_reach state_weight 0.01,reached,11,29,0,0,0,0,none,none,3.227853040410622e-8,74336,reference,true
+swap 4,fisher_log_precision_reach state_weight 0.03,reached,12,31,0,0,0,0,none,none,3.227853040410622e-8,76976,reference,true
+swap 4,fisher_log_precision_reach state_weight 0.1,reached,12,32,0,0,0,0,none,none,3.227853040410622e-8,77376,reference,true
+swap 5,shipped,reached,16,44,0,0,0,0,none,none,2.0720533483453707e-7,90656,reference,true
+swap 5,fisher_reach state_weight 0.01,reached,10,29,0,0,0,0,none,none,2.0720533522311513e-7,72176,reference,true
+swap 5,fisher_reach state_weight 0.03,reached,11,33,0,0,0,0,none,none,2.0720533477902592e-7,75616,reference,true
+swap 5,fisher_reach state_weight 0.1,reached,11,32,0,0,0,0,none,none,1.774030123913306e-7,75216,reference,true
+swap 5,fisher_log_precision_reach state_weight 0.01,reached,11,31,0,0,0,0,none,none,2.0720533489004822e-7,75136,reference,true
+swap 5,fisher_log_precision_reach state_weight 0.03,reached,11,30,0,0,0,0,none,none,2.370076577773439e-7,75840,reference,true
+swap 5,fisher_log_precision_reach state_weight 0.1,reached,11,31,0,0,0,0,none,none,2.3700765738876584e-7,76240,reference,true
+swap 6,shipped,reached,19,58,0,0,0,0,none,none,1.5042454532337247e-10,105856,reference,true
+swap 6,fisher_reach state_weight 0.01,reached,13,36,0,0,0,0,none,none,1.6042898704287468e-10,81280,reference,true
+swap 6,fisher_reach state_weight 0.03,reached,15,43,0,0,0,0,none,none,1.9552637241294934e-12,89744,reference,true
+swap 6,fisher_reach state_weight 0.1,reached,15,42,0,0,0,0,none,none,1.9552293083338135e-12,89344,reference,true
+swap 6,fisher_log_precision_reach state_weight 0.01,TraceStuck,12,36,0,0,0,0,none,redraw_reach,NaN,65616,reference,true
+swap 6,fisher_log_precision_reach state_weight 0.03,reached,15,42,0,0,0,0,none,none,1.9552293083338135e-12,89792,reference,true
+swap 6,fisher_log_precision_reach state_weight 0.1,reached,16,44,0,0,0,0,none,none,1.9552293083338135e-12,92304,reference,true

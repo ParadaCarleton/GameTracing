@@ -2,27 +2,6 @@ using BifurcationKit: BifurcationKit
 using ErrorTypes: is_error, unwrap, unwrap_error
 using LogitNash: LogitNash
 
-# LogitNash.jl's games with two actions per player (test/test_e2e.jl and its README), as integer payoff tables.
-const LOGITNASH_GAMES = (
-    battle_of_the_sexes = ([3 0; 0 2], [2 0; 0 3]),
-    coordination_wiki = ([2 1; 1 2], [4 3; 3 4]),
-    coordination_pure = ([8 0; 0 8], [8 0; 0 8]),
-    coordination_assurance = ([8 0; 0 5], [8 0; 0 5]),
-    stag_hunt = ([8 0; 7 5], [8 7; 0 5]),
-    prisoners_dilemma = ([5 0; 8 1], [5 8; 0 1]),
-    matching_pennies = ([1 -1; -1 1], [-1 1; 1 -1]),
-    three_prisoners = (
-        cat([3 1; 5 2], [1 0; 2 1]; dims = 3),
-        cat([3 5; 1 2], [1 2; 0 1]; dims = 3),
-        cat([3 1; 1 0], [5 2; 2 1]; dims = 3),
-    ),
-)
-
-# Games symmetric under relabeling actions (battle of the sexes also swaps players): the principal branch meets an
-# exact pitchfork (battle of the sexes at precision 0.808), past which it is ambiguous. Exact symmetry is measure
-# zero, so these games assert only that the endpoint is an equilibrium of the map.
-const PITCHFORK_GAMES = (:battle_of_the_sexes, :coordination_wiki, :coordination_pure)
-
 """
 LogitNash's QRE of `payoffs` past `precision`: `(; first_choices, precision)`, each player's probability of its first
 action and the precision LogitNash stopped at, which may pass the one asked for.
@@ -177,11 +156,7 @@ end
     end
 end
 
-# The battle of the sexes perturbed by about 1e-4. Near precision 0.808 its principal branch turns steeply (dλ/ds about
-# 0.0024) past the middle arm of the unfolded pitchfork, and ends near the pure equilibrium (1, 1).
-const UNFOLDED_PITCHFORK_GAME = ([30000726 -37; 757 20000821] .// 10^7, [19999477 -283; 919 29999523] .// 10^7)
-
-@testset "a pitchfork unfolded by 1e-4: the reference and the trace turn onto the (1, 1) arm" begin
+@testset "a pitchfork unfolded by 1e-4: the reference, the default trace and every arm turn onto the (1, 1) arm" begin
     precision = logitnash_equilibrium(UNFOLDED_PITCHFORK_GAME, 4).precision
     pass = NormalFormPass(map(float, UNFOLDED_PITCHFORK_GAME))
     reference = branch_reference(pass, 2, precision)
@@ -193,23 +168,16 @@ const UNFOLDED_PITCHFORK_GAME = ([30000726 -37; 757 20000821] .// 10^7, [1999947
     @test maximum(abs, reference.logits .- arm_root) < inv(float(10^6))
     oracle = gambit_branch(UNFOLDED_PITCHFORK_GAME, precision)
     @test agreeing(reference.first_choices, oracle.first_choices)
-    settings = TraceSettings{Float32}()
-    result = traced_result(UNFOLDED_PITCHFORK_GAME, precision, settings)
-    @test !is_error(result)
-    if !is_error(result)
-        logits = unwrap(result).logits
-        @test agreeing(first_choices(logits), oracle.first_choices)
-        @test settled_endpoint(UNFOLDED_PITCHFORK_GAME, logits, precision, settings)
+    for (_, settings) in ["default" => TraceSettings{Float32}(); arm_variants()]
+        result = traced_result(UNFOLDED_PITCHFORK_GAME, precision, settings)
+        @test !is_error(result)
+        if !is_error(result)
+            logits = unwrap(result).logits
+            @test agreeing(first_choices(logits), oracle.first_choices)
+            @test settled_endpoint(UNFOLDED_PITCHFORK_GAME, logits, precision, settings)
+        end
     end
 end
-
-# Three players, two actions each. The principal branch folds back in precision between 31//10 and 32//10, so a
-# corrector started from a predictor past the target can converge onto the folded-back segment.
-const OVERSHOT_GAME = (
-    [358 -73; -175 -10;;; 113 -822; -685 390] .// 100,
-    [183 -129; 53 -357;;; -158 235; -354 -285] .// 100,
-    [-175 -405; 87 -124;;; 10 -177; -110 180] .// 100,
-)
 
 @testset "a step past the target precision lands where the branch first reaches it" begin
     # Traced at the requested precisions themselves, both short of the fold, so the reference must reach them.
