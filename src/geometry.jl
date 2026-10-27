@@ -19,11 +19,12 @@ summed norm.
     TraceGeometry{E}(; distance, state_weight)
 
 The norm a trace steps in: its `StepDistance`, and `state_weight`, the gaps' weight against the relative precision's.
-The default is PALC's averaged norm at `state_weight = 1/2`.
+The default is the Fisher distance at `state_weight = 0.01`: of the arms benchmarked, it took the fewest steps,
+corrector iterates and bytes, with every endpoint on the reference (`benchmark/results/arms-f3244ba-summary.txt`).
 """
 Base.@kwdef struct TraceGeometry{E <: Real}
-    distance::StepDistance = AveragedDistance
-    state_weight::E = 0.5f0
+    distance::StepDistance = FisherDistance
+    state_weight::E = 0.01f0
 end
 
 """The weight of each `Δwᵢ²` in `geometry`'s plain norm over `width` gaps (`StepDistance`)."""

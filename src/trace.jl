@@ -20,8 +20,8 @@ end
                      corrector, max_steps, tangent, bordered_solver, step_control, orientation_check)
 
 BifurcationKit PALC controls for `trace_endpoint`, in `(w, ρ)` with `w = logits / ρ` the payoff gaps and `ρ` the
-relative precision. Step sizes are arclength in `geometry`'s norm (`StepDistance`); the default is PALC's
-`sqrt(state_weight ‖dw‖² / k + (1 - state_weight) dρ²)`, `state_weight` the gaps' weight and `k` their number.
+relative precision. Step sizes are arclength in `geometry`'s norm (`StepDistance`); the default is the Fisher
+distance (`TraceGeometry`).
 
 - `first_step`, `min_step`, `max_step`: first, smallest and largest arclength step. A step whose corrector fails
   halves; the trace ends as `TraceStuck` once the step reaches `min_step`.
