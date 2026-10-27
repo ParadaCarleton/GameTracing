@@ -3,7 +3,7 @@ using LogitNash
 using Logging: Logging, AbstractLogger, Debug, LogLevel, with_logger
 
 """Prints each LogitNash `Path` step's λ and first-action probabilities, copied as they are logged."""
-struct PathLogger end
+struct PathLogger <: AbstractLogger end
 
 Logging.min_enabled_level(::PathLogger)::LogLevel = Debug
 Logging.shouldlog(::PathLogger, level::LogLevel, _module::Module, group::Any, id::Any)::Bool = _module == LogitNash || parentmodule(_module) == LogitNash
