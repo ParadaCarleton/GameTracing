@@ -6,7 +6,7 @@ using ErrorTypes: is_error, unwrap, unwrap_error
 using Logging: AbstractLogger, Debug, LogLevel, with_logger
 import Logging: catch_exceptions, handle_message, min_enabled_level, shouldlog
 using Printf: @printf, @sprintf
-using Random: Xoshiro
+using Random: AbstractRNG, Xoshiro
 using Statistics: median
 
 const TEST_DIRECTORY = joinpath(@__DIR__, "..", "test")
@@ -25,11 +25,31 @@ end
 
 """A two-action normal-form `Case` from integer, rational or float payoff tables."""
 function normal_form_case(name::AbstractString, payoffs::Tuple, precision::Real)::Case
-    return Case(String(name), NormalFormPass(map(table -> Float32.(table), payoffs)), NormalFormPass(map(float, payoffs)), length(payoffs), Float32(precision))
+    return Case(String(name), NormalFormPass(map(single_precision, payoffs)), NormalFormPass(map(float, payoffs)), length(payoffs), Float32(precision))
 end
 
+"""`table` in Float32."""
+function single_precision(table::AbstractArray{T, N})::Array{Float32, N} where {T <: Real, N}
+    return Float32.(table)
+end
+
+"""Draws one random payoff table of scale 3 from `rng` for `players` players with two actions each."""
+struct RandomTable{R <: AbstractRNG}
+    rng::R
+    players::Int
+end
+
+(table::RandomTable)(::Integer)::Array = 3 .* randn(table.rng, ntuple(Returns(2), table.players))
+
+"""Moves a payoff table by Gaussian noise of scale 1/20 drawn from `rng`, as a redraw moves a sampled map."""
+struct PayoffJitter{R <: AbstractRNG}
+    rng::R
+end
+
+(jitter::PayoffJitter)(table::AbstractArray)::Array = table .+ randn(jitter.rng, size(table)...) ./ 20
+
 """`players` random payoff tables of scale 3 from `rng`."""
-random_payoffs(rng::Xoshiro, players::Integer)::Tuple = ntuple(_ -> 3 .* randn(rng, ntuple(_ -> 2, players)), players)
+random_payoffs(rng::AbstractRNG, players::Integer)::Tuple = ntuple(RandomTable(rng, players), players)
 
 """A random game of 2 to 5 players from seed `seed`."""
 function random_case(seed::Integer)::Case
@@ -57,8 +77,8 @@ end
 function swap_case(seed::Integer)::SwapCase
     rng = Xoshiro(1000 + seed)
     before = random_payoffs(rng, 3)
-    after = map(table -> table .+ randn(rng, size(table)...) ./ 20, before)
-    swap = MapSwap(NormalFormPass(map(table -> Float32.(table), before)), NormalFormPass(map(table -> Float32.(table), after)), 3.0f0, 0.5f0, 3)
+    after = map(PayoffJitter(rng), before)
+    swap = MapSwap(NormalFormPass(map(single_precision, before)), NormalFormPass(map(single_precision, after)), 3.0f0, 0.5f0, 3)
     return swap_case(string("swap ", seed), swap, NormalFormPass(before), NormalFormPass(after))
 end
 
@@ -142,6 +162,13 @@ function first_choices(logits::AbstractVector{E})::Vector{E} where {E <: Real}
     return inv.(one(E) .+ exp.(-logits))
 end
 
+"""Counts the refusals in `refusals` that a given check made."""
+struct RefusalCount{V <: AbstractVector{Symbol}}
+    refusals::V
+end
+
+(counter::RefusalCount)(check::Symbol)::Int = count(==(check), counter.refusals)
+
 """
 What one trace did: first-action probabilities (empty on failure), its status, accepted steps, corrector iterates,
 bytes, refusals per check (`REFUSAL_CHECKS`) and the check that refused last (`:none` if none did).
@@ -154,9 +181,9 @@ function traced(case::Union{Case, SwapCase}, settings::TraceSettings)::NamedTupl
     result = with_logger(trace_run, TraceCounter(sink))
     close(sink)
     records = collect(sink)
-    steps, iterations = count(record -> first(record) == "trace point", records), count(record -> first(record) == "corrector iterate", records)
+    steps, iterations = count(==("trace point") ∘ first, records), count(==("corrector iterate") ∘ first, records)
     refusals = [last(record) for record in records if first(record) in REFUSAL_MESSAGES]
-    counts = NamedTuple{REFUSAL_CHECKS}(map(check -> count(==(check), refusals), REFUSAL_CHECKS))
+    counts = NamedTuple{REFUSAL_CHECKS}(map(RefusalCount(refusals), REFUSAL_CHECKS))
     last_refusal = last([:none; refusals])
     common = (; steps, iterations, bytes, refusals = counts, last_refusal)
     if is_error(result)
@@ -211,6 +238,9 @@ function statistic(reduction::Any, values::AbstractVector)::Real
     return reduction(values)
 end
 
+"""Whether `row`'s trace reached its target."""
+reached_row(row::NamedTuple)::Bool = row.status == "reached"
+
 """
 One SUMMARY line for variant `label` over the `rows` of one game group (`group` names it); the gap statistics skip
 pitchfork games, whose branch is ambiguous. Failures list the check that refused last before each stall.
@@ -221,7 +251,7 @@ function print_summary(group::AbstractString, label::AbstractString, rows::Abstr
     failures = join(sort([string(row.status, ":", row.last_refusal) for row in mine if row.status != "reached"]), " ")
     @printf(
         "SUMMARY %-5s | %-14s | reached %2d/%2d | off-reference %2d | steps %6d | iterations %7d | gap median %.1e worst %.1e | bytes mean %d | failed %s\n",
-        group, label, count(row -> row.status == "reached", mine), length(mine), count(>(1.0f-3), gaps),
+        group, label, count(reached_row, mine), length(mine), count(>(1.0f-3), gaps),
         sum(row.steps for row in mine), sum(row.iterations for row in mine), statistic(median, gaps),
         statistic(maximum, gaps), round(Int, sum(row.bytes for row in mine) / length(mine)), failures,
     )
