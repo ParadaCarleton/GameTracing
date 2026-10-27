@@ -23,6 +23,7 @@ jobs:
       - uses: julia-actions/cache@v2
       - run: julia --project=benchmark -e 'using Pkg; Pkg.instantiate()'
       - run: julia --project=benchmark benchmark/arms.jl arms.csv | tee arms.log
+      - run: julia --project=benchmark benchmark/arms.jl pitchfork.csv pitchfork | tee pitchfork.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -30,3 +31,5 @@ jobs:
           path: |
             arms.csv
             arms.log
+            pitchfork.csv
+            pitchfork.log

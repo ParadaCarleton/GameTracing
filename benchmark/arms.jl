@@ -8,7 +8,7 @@ using LogitNash: LogitNash
 using Logging: AbstractLogger, Debug, LogLevel, with_logger
 import Logging: catch_exceptions, handle_message, min_enabled_level, shouldlog
 using Printf: @printf, @sprintf
-using Random: AbstractRNG, Xoshiro
+using Random: AbstractRNG, RandomDevice, Xoshiro
 using Statistics: median
 
 const TEST_DIRECTORY = joinpath(@__DIR__, "..", "test")
@@ -314,6 +314,9 @@ function statistic(reduction::Any, values::AbstractVector)::Real
     return reduction(values)
 end
 
+"""Whether `row`'s trace ended on the principal branch."""
+principal_row(row::NamedTuple)::Bool = row.principal
+
 """Whether `row`'s trace reached its target."""
 reached_row(row::NamedTuple)::Bool = row.status == "reached"
 
@@ -334,19 +337,78 @@ function print_summary(group::AbstractString, label::AbstractString, rows::Abstr
     return nothing
 end
 
+# The unfolded pitchforks: battles of the sexes with every payoff moved by Gaussian noise at each scale.
+const UNFOLDING_SCALES = inv.(float.((10^4, 10^3, 10^2, 10)))
+const UNFOLDING_DRAWS = 40
+
+"""Moves a payoff table by Gaussian noise of scale `scale` drawn from `rng`."""
+struct ScaledNoise{R <: AbstractRNG, E <: Real}
+    rng::R
+    scale::E
+end
+
+(noise::ScaledNoise)(table::AbstractArray)::Array = table .+ noise.scale .* randn(noise.rng, size(table)...)
+
+"""
+One unfolded battle of the sexes at noise `scale` from `rng`, traced under each of `variants` to precision 4: a row per
+variant with whether it ended on the principal branch (the arclength reference's endpoint, to 1e-3), the reference's
+crossings of a singular point and the trace's steps.
+"""
+function unfolded_rows(rng::AbstractRNG, scale::Real, draw::Integer, variants::AbstractVector)::Vector{NamedTuple}
+    payoffs = map(ScaledNoise(rng, scale), map(float, LOGITNASH_GAMES.battle_of_the_sexes))
+    case = normal_form_case(string("unfolded ", scale, " draw ", draw), payoffs, 4)
+    reference = case_reference(case)
+    return NamedTuple[
+        (; scale, draw, label, outcome.status, outcome.steps, reference.crossings,
+            principal = reference.reached && profile_gap(outcome.choices, reference.first_choices) < 1.0f-3)
+        for (label, outcome) in (label => traced(case, settings) for (label, settings) in variants)
+    ]
+end
+
+"""
+The unfolded-pitchfork benchmark: `UNFOLDING_DRAWS` draws per scale under the shipped settings and fisher_reach, rows to
+`output`, and a PITCHFORK line per scale and variant: draws on the principal branch, reference crossings and steps.
+"""
+function pitchfork_benchmark(output::AbstractString)::Nothing
+    seed = rand(RandomDevice(), UInt)
+    println("SEED | ", seed)
+    rng = Xoshiro(seed)
+    variants = ["shipped" => TraceSettings{Float32}(); [variant for variant in arm_variants() if startswith(first(variant), "fisher_reach ")]]
+    rows = reduce(vcat, [unfolded_rows(rng, scale, draw, variants) for scale in UNFOLDING_SCALES for draw in 1:UNFOLDING_DRAWS])
+    io = open(output, "w")
+    println(io, "scale,draw,variant,status,steps,crossings,principal")
+    for row in rows
+        println(io, join((row.scale, row.draw, row.label, row.status, row.steps, row.crossings, row.principal), ','))
+    end
+    close(io)
+    for scale in UNFOLDING_SCALES, (label, _) in variants
+        mine = [row for row in rows if row.scale == scale && row.label == label]
+        @printf(
+            "PITCHFORK | scale %.0e | %-30s | principal %2d/%2d | reached %2d | reference crossings %d | steps %5d\n",
+            scale, label, count(principal_row, mine), length(mine), count(reached_row, mine),
+            sum(row.crossings for row in mine), sum(row.steps for row in mine),
+        )
+    end
+    return nothing
+end
+
 """
 Run the benchmark over `scope`: `"full"` every game and variant, `"quick"` one fixed and one swapped game under the
-shipped settings and the first arm, the load check CI runs. Throws unless every game and variant gave a row.
+shipped settings and the first arm, the load check CI runs; `"pitchfork"` the unfolded pitchforks
+(`pitchfork_benchmark`). Throws unless every game and variant gave a row.
 """
 function main(output::AbstractString, scope::AbstractString)::Nothing
     # Step counts can differ between runners; the CPU and its LLVM target name the hardware each run used.
     println("RUNNER | ", first(Sys.cpu_info()).model, " | target ", Sys.CPU_NAME, " | threads ", Threads.nthreads(), " | Julia ", VERSION)
+    if scope == "pitchfork"
+        return pitchfork_benchmark(output)
+    end
     variants = ["shipped" => TraceSettings{Float32}(); arm_variants()]
     cases = vcat(fixed_cases(), swap_cases())
     if scope == "quick"
         cases, variants = [first(fixed_cases()), first(swap_cases())], variants[1:2]
     elseif scope != "full"
-        throw(ArgumentError("scope must be \"full\" or \"quick\", got $(repr(scope))"))
+        throw(ArgumentError("scope must be \"full\", \"quick\" or \"pitchfork\", got $(repr(scope))"))
     end
     rows = reduce(vcat, [case_rows(case, variants) for case in cases])
     expected = length(cases) * length(variants) + count(logitnash_supported, cases)
