@@ -26,7 +26,7 @@ end
         for _ in 1:5
             logits = randn(rng, width) ./ 10
             relative_precision = 1 // 2 + 2 * rand(rng) / 5
-            step = projection_step(game, logits, relative_precision, TraceGeometry{typeof(state_weight)}(; distance = AveragedDistance, state_weight))
+            step = projection_step(game, logits, relative_precision, TraceGeometry{typeof(state_weight)}(; state_weight))
             start = branch_equations(game, [logits ./ relative_precision; relative_precision])
             # Newton's linearized equation holds, and no part of the step runs along the branch's tangent.
             @test norm(start.jacobian * step .+ start.residual) <= inv(float(10^10)) * (1 + norm(start.residual))
