@@ -29,5 +29,9 @@ const OVERSHOT_GAME = (
     [-175 -405; 87 -124;;; 10 -177; -110 180] .// 100,
 )
 
+# The battle of the sexes perturbed by about 1e-4. Its unfolded pitchfork lies near precision 0.81, where every arm
+# left the reference branch for the arm toward (1, 1) (benchmark/jump.jl replay on branch jump-replay-arms).
+const UNFOLDED_PITCHFORK_GAME = ([30000726 -37; 757 20000821] .// 10^7, [19999477 -283; 919 29999523] .// 10^7)
+
 # One logit whose branch folds back at precision about 1.4; target 2 lies past the fold.
 const FOLD_GAME = ThresholdPass(6.0f0, 3.0f0)

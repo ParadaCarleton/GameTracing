@@ -132,6 +132,22 @@ end
     end
 end
 
+@testset "a pitchfork unfolded by 1e-4: the default trace and every arm stay on the reference branch" begin
+    precision = logitnash_equilibrium(UNFOLDED_PITCHFORK_GAME, 4).precision
+    reference = branch_reference(NormalFormPass(map(float, UNFOLDED_PITCHFORK_GAME)), 2, precision)
+    @test reference.reached
+    for (_, settings) in ["default" => TraceSettings{Float32}(); arm_variants()]
+        result = traced_result(UNFOLDED_PITCHFORK_GAME, precision, settings)
+        @test !is_error(result)
+        if !is_error(result)
+            logits = unwrap(result).logits
+            # Broken: every setting crosses to the other arm; a fix turns this into an unexpected pass.
+            @test_broken agreeing(first_choices(logits), reference.first_choices)
+            @test settled_endpoint(UNFOLDED_PITCHFORK_GAME, logits, precision, settings)
+        end
+    end
+end
+
 @testset "a step past the target precision lands where the branch first reaches it" begin
     # Traced at the requested precisions themselves, both short of the fold, so the reference must reach them.
     settings = TraceSettings{Float32}()
