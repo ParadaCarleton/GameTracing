@@ -1,5 +1,5 @@
 using ErrorTypes: is_error, unwrap, unwrap_error
-using LinearAlgebra: norm
+using LinearAlgebra: norm, opnorm
 using Logging: Debug
 using Test: collect_test_logs
 
@@ -58,19 +58,27 @@ end
     )
 end
 
-@testset "a redraw whose old root does not continue to the new map fails stuck and projected, at a fold" begin
+@testset "a redraw whose homotopy rises to the new map's only root crosses there, 3.5 logits on" begin
+    swap = swap_point(FAR_SWAP)
+    @test rising_homotopy(FAR_SWAP.before, FAR_SWAP.after, swap.relative_precision * FAR_SWAP.precision, only(swap.logits))
     result = swapped_trace(FAR_SWAP)
+    @test !is_error(result)
+    @test on_map(result, FAR_SWAP.after, FAR_SWAP.precision)
+end
+
+@testset "a redraw whose homotopy folds before the new map fails stuck and projected, at the fold" begin
+    swap = swap_point(FOLD_SWAP)
+    @test !rising_homotopy(FOLD_SWAP.before, FOLD_SWAP.after, swap.relative_precision * FOLD_SWAP.precision, only(swap.logits))
+    result = swapped_trace(FOLD_SWAP)
     @test is_error(result)
     failure = unwrap_error(result)
     @test failure.cause == GameTracing.TraceStuck
     @test failure.context.projected
-    @test failure.context.reason in (:fold, :crossing)
-    @test failure.context.relative_precision >= FAR_SWAP.swap_level
-    @test failure.context.precision == failure.context.relative_precision * FAR_SWAP.precision
+    @test failure.context.reason == :fold
+    @test failure.context.relative_precision == swap.relative_precision
     @test failure.context.step_length > 0
     # The failure keeps the accepted point on the old map, not a root of the new one.
-    @test residual_norm(FAR_SWAP.before, failure.context.logits, failure.context.relative_precision * FAR_SWAP.precision) <
-        1.0f-3
+    @test residual_norm(FOLD_SWAP.before, failure.context.logits, failure.context.precision) < 1.0f-3
 end
 
 """`game` traced over `width` logits with `redraw`, a `Function` as `collect_test_logs` takes."""
@@ -95,10 +103,9 @@ function stop_reasons(trace::LoggedTrace)::NamedTuple
 end
 
 @testset "a trace that stops short logs why, once: a redraw that folds, a non-finite game; a reached trace logs no stop" begin
-    far = stop_reasons(logged_swap(FAR_SWAP))
-    @test unwrap_error(far.result).context.projected
-    @test length(far.reasons) == 1
-    @test only(far.reasons) in (:fold, :crossing)
+    folded = stop_reasons(logged_swap(FOLD_SWAP))
+    @test unwrap_error(folded.result).context.projected
+    @test folded.reasons == [:fold]
     poisoned = stop_reasons(LoggedTrace(LogitGame(PoisonedPass(GAME, 1.0f0), TARGET_PRECISION), WIDTH, GameTracing.NoRedraw()))
     @test unwrap_error(poisoned.result).cause == GameTracing.TraceStuck
     @test length(poisoned.reasons) == 1
@@ -120,6 +127,19 @@ end
     )
     @test residual_norm(swap.after, logits, swap.precision) < 2 * tolerance
     @test residual_norm(swap.before, logits, swap.precision) > 100 * tolerance
+end
+
+"""
+    probability_bound(pass, logits, precision, residual)
+
+The largest first-action probability error of a root of `pass` at `precision` whose logit residual is `residual`, to
+first order: the logit error `‖J⁻¹‖∞ residual`, `J = I - ∂(λG)/∂z` at the Float64 root `logits`, plus Float32's 32-ulp
+rounding of the logits, times the logistic's largest slope 1/4.
+"""
+function probability_bound(pass::Any, logits::AbstractVector, precision::Real, residual::Real)::typeof(float(residual))
+    jacobian = reference_system(pass, [logits; precision * float(1)]).jacobian[:, 1:(end - 1)]
+    logit_error = opnorm(inv(jacobian), Inf32) * residual + 32 * eps(Float32) * maximum(abs, logits)
+    return logit_error / 4
 end
 
 """Whether the logits of `result` solve `pass` at `precision` to twice the corrector tolerance at `ρ = 1`."""
@@ -196,14 +216,16 @@ end
     @info "crossing steps" swap = "swap 6" crossing.steps
     result = trace_endpoint(LogitGame(swap.before, swap.precision), swap.width, REDRAW_SETTINGS; redraw = SwapAt(LogitGame(swap.after, swap.precision), level))
     @test !is_error(result)
+    endpoint = unwrap(result).logits
     reference = branch_reference(reference_after, swap.width, swap.precision; start = logits .* float(1), start_precision = relative_precision * swap.precision)
     @test reference.reached
     @test reference.crossings == 0
-    # Probabilities to 1e-3, as the LogitNash cross-check compares a Float32 trace with its reference.
-    @test maximum(abs, inv.(1 .+ exp.(-unwrap(result).logits)) .- reference.first_choices) < 1.0f-3
+    # The endpoint's residual is under the corrector tolerance at ρ = 1, where gap and logit residuals agree; 2x covers recomputing it.
+    residual = 2 * GameTracing.corrector_tolerance(REDRAW_SETTINGS.corrector.residual_tolerance, REDRAW_SETTINGS.corrector.tolerance_floor_ulps, [endpoint; 1.0f0])
+    @test maximum(abs, inv.(1 .+ exp.(-endpoint)) .- reference.first_choices) < probability_bound(reference_after, reference.logits, swap.precision, residual)
 end
 
-@testset "a redraw onto a game whose branch is torn at the redraw fails stuck and projected" begin
+@testset "a redraw onto a game that is non-finite at the redraw fails stuck and projected, as a solver blowup" begin
     # The new game is non-finite past precision 1, so its branch has no points at the redraw's precision 2.
     before = PoisonedPass(NEAR_SWAP.before, Inf32)
     after = PoisonedPass(NEAR_SWAP.after, 1.0f0)
@@ -217,5 +239,5 @@ end
     failure = unwrap_error(result)
     @test failure.cause == GameTracing.TraceStuck
     @test failure.context.projected
-    @test failure.context.reason in (:solver_blowup, :stopped)
+    @test failure.context.reason == :solver_blowup
 end

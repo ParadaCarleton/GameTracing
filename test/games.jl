@@ -362,8 +362,42 @@ const NEAR_SWAP = MapSwap(
     4.0f0, 0.5f0, 2,
 )
 
-# The swap removes the low branch at precision 1/2: the only root there is the high one, about 3.5 logits away.
+# The swap removes the low branch at precision 1/2: the only root there is the high one, about 3.5 logits away,
+# and the homotopy between the maps reaches it with `s` rising throughout (`rising_homotopy`).
 const FAR_SWAP = MapSwap(ThresholdPass(8.0f0, 4.0f0), ThresholdPass(8.0f0, 1.5f0), 1.0f0, 0.5f0, 1)
+
+# The new map's root at precision 1/2 lies past a fold of the homotopy: the blended map loses the low root near s = 0.44.
+const FOLD_SWAP = MapSwap(ThresholdPass(8.0f0, 4.0f0), ThresholdPass(16.0f0, 2.0f0), 1.0f0, 0.5f0, 1)
+
+"""`pass`'s gain at the logit `logit`, in Float64."""
+threshold_gain(pass::ThresholdPass, logit::Real)::typeof(logit * float(1)) = pass.amplitude * float(1) / (1 + exp(pass.threshold * float(1) - logit))
+
+"""
+    rising_homotopy(before, after, precision, logit)
+
+Whether the homotopy `z = λ ((1 - s) G₀(z) + s G₁(z))` from `before`'s root `logit` at precision `λ` reaches `s = 1`
+with `s` rising: solved for `s`, the path is `s(z) = (z / λ - G₀) / (G₁ - G₀)`, here sampled upward in `z` from
+`logit` in Float64 steps of 1e-4. A fall in `s` is a fold. Each map is one logit, with `G₁ > G₀` on the path.
+"""
+function rising_homotopy(before::ThresholdPass, after::ThresholdPass, precision::Real, logit::Real)::Bool
+    # `float(1)` widens to Float64; the path starts at `s ≈ 0`, so any first sample rises.
+    level, blend, logit_step = precision * float(1), typemin(float(1)), inv(float(10^4))
+    for logit_now in range(logit * float(1); step = logit_step, length = 10^6)
+        spread = threshold_gain(after, logit_now) - threshold_gain(before, logit_now)
+        if !(spread > 0)
+            throw(ArgumentError("the gains do not order on the path at logit $logit_now"))
+        end
+        next = (logit_now / level - threshold_gain(before, logit_now)) / spread
+        if next >= 1
+            return true
+        end
+        if next < blend
+            return false
+        end
+        blend = next
+    end
+    throw(ArgumentError("the path does not reach s = 1 within 100 logits"))
+end
 
 """
     SwapAt(game, swap_level)
