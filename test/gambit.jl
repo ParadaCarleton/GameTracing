@@ -20,6 +20,6 @@ function gambit_branch(payoffs::Tuple, precision::Real)::NamedTuple
     gambit, numpy = pyimport("pygambit"), pyimport("numpy")
     game = gambit.Game.from_arrays((numpy.asarray(float.(table)) for table in payoffs)...)
     profile = first(gambit.qre.logit_solve_lambda(game; lam = [float(precision)]))
-    first_choices = [pyconvert(Float64, profile.profile[player.strategies[0]]) for player in game.players]
+    first_choices = [pyconvert(Float64, profile.profile[first(player.strategies)]) for player in game.players]
     return (; precision = pyconvert(Float64, profile.lam), first_choices)
 end
