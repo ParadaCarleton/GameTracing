@@ -1,8 +1,10 @@
 # The trace-geometry arms (test/arms.jl) against the shipped trace on GameTracing's games, each beside a
-# fine-step Float64 natural-continuation reference (`branch_reference`). Prints a ROW per game and variant,
-# a SIGNAL per pair of reached endpoints more than 1e-3 apart, and a SUMMARY per variant; writes rows to ARGS[1].
+# fine-step Float64 natural-continuation reference (`branch_reference`), and LogitNash 0.3.0 on the normal-form games.
+# Prints a ROW per game and variant, a SIGNAL per pair of traced endpoints more than 1e-3 apart, and a SUMMARY per
+# variant; writes rows to ARGS[1].
 using GameTracing
 using ErrorTypes: is_error, unwrap, unwrap_error
+using LogitNash: LogitNash
 using Logging: AbstractLogger, Debug, LogLevel, with_logger
 import Logging: catch_exceptions, handle_message, min_enabled_level, shouldlog
 using Printf: @printf, @sprintf
@@ -203,7 +205,52 @@ function profile_gap(left::AbstractVector, right::AbstractVector{E})::E where {E
     return maximum(abs, E.(left) .- right)
 end
 
-"""Every variant's row on `case`, printed, with a SIGNAL for each pair of reached endpoints over 1e-3 apart."""
+"""LogitNash's solve of `payoffs` to `precision`, with no regret stop: `(profile, status)`."""
+struct LogitNashRun{P <: Tuple, E <: Real}
+    payoffs::P
+    precision::E
+end
+
+(solve::LogitNashRun)()::Tuple = LogitNash.solve(solve.payoffs; stop_lambda = solve.precision, stop_eps = zero(solve.precision))
+
+"""
+LogitNash's row on `case`: its iterations as steps, no corrector iterates or refusals, which it does not report.
+LogitNash stops past the target precision, so its gap is against a reference at the precision it stopped at.
+"""
+function logitnash_row(case::Case)::NamedTuple
+    logitnash_run = LogitNashRun(case.reference_pass.payoffs, case.precision * float(1))
+    logitnash_run()
+    bytes = @allocated logitnash_run()
+    profile, status = logitnash_run()
+    precision = logitnash_run.precision
+    choices = [first(strategy) for strategy in profile]
+    reached = !status.stall && status.lambda >= precision
+    reference = branch_reference(case.reference_pass, case.width, status.lambda)
+    return (;
+        case = case.name, label = "logitnash", choices = ifelse(reached, choices, empty(choices)),
+        status = ifelse(reached, "reached", "stalled"), steps = status.iteration, iterations = 0, bytes,
+        refusals = NamedTuple{REFUSAL_CHECKS}(map(Returns(0), REFUSAL_CHECKS)), last_refusal = :none,
+        kind = ifelse(reference.reached, "reference", "folded"), pitchfork = Symbol(case.name) in PITCHFORK_GAMES, swapped = false,
+        gap = profile_gap(ifelse(reached && reference.reached, choices, empty(choices)), reference.first_choices),
+    )
+end
+
+"""Whether LogitNash runs on `case`: a fixed-map normal-form game, the only kind it takes."""
+logitnash_supported(::Union{Case, SwapCase})::Bool = false
+logitnash_supported(::Case{<:Any, <:NormalFormPass})::Bool = true
+
+"""`case`'s LogitNash row, or none where LogitNash does not run (`logitnash_supported`)."""
+function logitnash_rows(case::Union{Case, SwapCase})::Vector{NamedTuple}
+    if !logitnash_supported(case)
+        return NamedTuple[]
+    end
+    return NamedTuple[logitnash_row(case)]
+end
+
+"""
+Every variant's row on `case` and LogitNash's (`logitnash_rows`), printed, with a SIGNAL for each pair of traced
+endpoints over 1e-3 apart.
+"""
 function case_rows(case::Union{Case, SwapCase}, variants::AbstractVector)::Vector{NamedTuple}
     reference = case_reference(case)
     # A branch that folds back past the target has no natural-continuation reference: its gap is NaN.
@@ -214,13 +261,14 @@ function case_rows(case::Union{Case, SwapCase}, variants::AbstractVector)::Vecto
             gap = profile_gap(reference.reached ? outcome.choices : empty(outcome.choices), reference.first_choices))
         for (label, outcome) in (label => traced(case, settings) for (label, settings) in variants)
     ]
+    reached = [row for row in rows if !isempty(row.choices)]
+    rows = vcat(rows, logitnash_rows(case))
     for row in rows
         @printf(
             "ROW | %-24s | %-14s | %-13s | steps %5d | iterations %6d | refused reach %d kl %d angle %d nonfinite %d, last %s | gap %.2e (%s) | bytes %d\n",
             row.case, row.label, row.status, row.steps, row.iterations, row.refusals..., row.last_refusal, row.gap, row.kind, row.bytes,
         )
     end
-    reached = [row for row in rows if !isempty(row.choices)]
     for (index, left) in pairs(reached), right in reached[(index + 1):end]
         if profile_gap(left.choices, right.choices) > 1.0f-3
             println("SIGNAL | ", case_name(case), " | ", left.label, " vs ", right.label, " | ", @sprintf("%.3e", profile_gap(left.choices, right.choices)))
@@ -273,8 +321,9 @@ function main(output::AbstractString, scope::AbstractString)::Nothing
         throw(ArgumentError("scope must be \"full\" or \"quick\", got $(repr(scope))"))
     end
     rows = reduce(vcat, [case_rows(case, variants) for case in cases])
-    if length(rows) != length(cases) * length(variants)
-        error("expected $(length(cases) * length(variants)) rows, got $(length(rows))")
+    expected = length(cases) * length(variants) + count(logitnash_supported, cases)
+    if length(rows) != expected
+        error("expected $expected rows, got $(length(rows))")
     end
     io = open(output, "w")
     println(io, "game,variant,status,steps,iterations,refused_reach,refused_kl,refused_angle,refused_nonfinite,last_refusal,gap,bytes,reference,swapped")
@@ -283,7 +332,7 @@ function main(output::AbstractString, scope::AbstractString)::Nothing
     end
     close(io)
     # Fixed-map and map-swap games are summarized apart: a swap's refusals come from the redraw, not the geometry.
-    for (group, swapped) in (("fixed", false), ("swap", true)), (label, _) in variants
+    for (group, swapped) in (("fixed", false), ("swap", true)), label in [first.(variants); ifelse(swapped, String[], ["logitnash"])]
         print_summary(group, label, [row for row in rows if row.swapped == swapped])
     end
     return nothing
