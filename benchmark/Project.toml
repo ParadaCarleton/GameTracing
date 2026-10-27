@@ -1,0 +1,11 @@
+[deps]
+BifurcationKit = "0f109fa4-8a5d-4b75-95aa-f515264e7665"
+ErrorTypes = "7f495686-c6d2-4c77-9e8e-e4c865675f9d"
+GameTracing = "5d2f1c0e-7a4b-4e3c-9b6a-1f0c8d2e4a77"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+LogitNash = "56ed5f9e-c32e-46b8-b489-5928d745fddb"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+
+[sources]
+GameTracing = {path = ".."}
+BifurcationKit = {url = "https://github.com/ParadaCarleton/BifurcationKit.jl", rev = "irv"}
