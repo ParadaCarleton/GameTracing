@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   # Dispatch needs the workflow on main; until then a push to the arms branch runs it.
   push:
-    branches: [trace-arms]
+    branches: [trace-arms, swap6-diagnosis]
     paths: ['src/**', 'test/arms.jl', 'test/games.jl', 'test/fixtures.jl', 'benchmark/**', '.github/workflows/benchmark.yml']
   pull_request:
     paths: ['src/**', 'test/arms.jl', 'test/games.jl', 'test/fixtures.jl', 'benchmark/**', '.github/workflows/benchmark.yml']
@@ -22,7 +22,7 @@ jobs:
           version: '1'
       - uses: julia-actions/cache@v2
       - run: julia --project=benchmark -e 'using Pkg; Pkg.instantiate()'
-      - run: julia --project=benchmark benchmark/arms.jl arms.csv | tee arms.log
+      - run: julia --project=benchmark benchmark/arms.jl arms.csv diagnose | tee arms.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:

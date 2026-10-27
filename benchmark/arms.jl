@@ -3,7 +3,7 @@
 # a SIGNAL per pair of reached endpoints more than 1e-3 apart, and a SUMMARY per variant; writes rows to ARGS[1].
 using GameTracing
 using ErrorTypes: is_error, unwrap, unwrap_error
-using Logging: AbstractLogger, Debug, LogLevel, with_logger
+using Logging: Logging, AbstractLogger, Debug, LogLevel, with_logger
 import Logging: catch_exceptions, handle_message, min_enabled_level, shouldlog
 using Printf: @printf, @sprintf
 using Random: AbstractRNG, Xoshiro
@@ -289,4 +289,20 @@ function main(output::AbstractString, scope::AbstractString)::Nothing
     return nothing
 end
 
-main(get(ARGS, 1, joinpath(@__DIR__, "arms.csv")), get(ARGS, 2, "full"))
+"""SCRATCH: swap 6 under fisher_reach θ 0.9 and θ 0.5, every trace record and the failure context printed."""
+function diagnose()::Nothing
+    swap = swap_cases()[8]
+    println("CASE | ", case_name(swap))
+    for weight in (0.9f0, 0.5f0)
+        settings = arm_settings(ARMS.fisher_reach, weight)
+        result = with_logger(TraceRun(swap, settings), Logging.ConsoleLogger(stdout, Debug))
+        println("WEIGHT ", weight, " | ", is_error(result) ? unwrap_error(result) : unwrap(result))
+    end
+    return nothing
+end
+
+if get(ARGS, 2, "full") == "diagnose"
+    diagnose()
+else
+    main(get(ARGS, 1, joinpath(@__DIR__, "arms.csv")), get(ARGS, 2, "full"))
+end
