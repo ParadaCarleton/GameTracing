@@ -91,7 +91,15 @@ function palc_algorithm(
     width::Integer,
     target_precision::Real,
 )::BifurcationKit.AbstractContinuationAlgorithm where {E <: Real}
-    geometry = palc_geometry(settings.geometry, width, target_precision)
+    return palc_with_geometry(settings, width, palc_geometry(settings.geometry, width, target_precision))
+end
+
+"""BifurcationKit's PALC for `settings` over `width` logits in `geometry` (`palc_geometry`), whose type varies by distance."""
+function palc_with_geometry(
+    settings::TraceSettings{E},
+    width::Integer,
+    geometry::NamedTuple,
+)::BifurcationKit.AbstractContinuationAlgorithm where {E <: Real}
     return BifurcationKit.PALC(;
         tangent = settings.tangent,
         θ = geometry.palc_state_weight,
@@ -416,34 +424,28 @@ function reached_state(
             (; stopped_context(progress, outcome, target_precision, context)..., residual, tolerance),
         ))
     end
-    reason = stop_reason(progress, outcome, settings)
+    # Why the trace stopped short: a start that would not correct, a broken linear solve, a point that did not move,
+    # spent steps, or else a step below `min_step`, `keep_going` or a refusal (`STOP_CAUSES`).
+    reason = if uncorrected_start(outcome.exception)
+        :uncorrected_start
+    elseif !isnothing(outcome.exception)
+        :solver_blowup
+    elseif progress.unmoved
+        :unmoved
+    elseif progress.steps >= settings.max_steps
+        :max_steps
+    else
+        :stopped_short
+    end
     @debug "trace stopped" _group = :trace reason
     return Err(TraceFailure(STOP_CAUSES[reason], stopped_context(progress, outcome, target_precision, context)))
 end
 
-# The cause each `stop_reason` fails with.
+# The cause a trace that stops short for each reason fails with.
 const STOP_CAUSES = (;
     uncorrected_start = TraceStuck, solver_blowup = Singular, max_steps = NoConvergence, unmoved = TraceStuck,
     stopped_short = TraceStuck,
 )
-
-"""
-Why a trace that ended at `progress` after `outcome` stopped short of its target (`STOP_CAUSES`): a start that would not
-correct, a broken linear solve, `settings.max_steps` spent, an accepted point that did not move, or a stop short of the
-target otherwise (a step below `min_step`, `keep_going` or a refusal).
-"""
-function stop_reason(progress::TraceProgress, outcome::NamedTuple, settings::TraceSettings)::Symbol
-    if uncorrected_start(outcome.exception)
-        return :uncorrected_start
-    elseif !isnothing(outcome.exception)
-        return :solver_blowup
-    elseif progress.unmoved
-        return :unmoved
-    elseif progress.steps >= settings.max_steps
-        return :max_steps
-    end
-    return :stopped_short
-end
 
 """
     stopped_context(progress, outcome, target_precision, context)
