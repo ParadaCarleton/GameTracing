@@ -13,7 +13,7 @@ jobs:
           version: '1'
       - uses: julia-actions/cache@v2
       - run: julia --project=benchmark -e 'using Pkg; Pkg.instantiate()'
-      - run: julia --project=benchmark benchmark/jump.jl | tee jump.log
+      - run: julia --project=benchmark benchmark/precision.jl | tee jump.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
