@@ -74,10 +74,10 @@ function report_path(label::AbstractString, draw::Integer, pass::Any, points::Ab
         chord = here .- previous
         cosine = dot(chord, previous_chord) / (norm(chord) * norm(previous_chord))
         flag = !left && gap > 1.0e-3
-        if flag || step <= 3 || step == filled
+        if flag || step <= 3 || step == filled || 0.14 <= last(here) <= 0.19
             println("PATH $label draw $draw step $step ρ $(round(last(here); digits = 5)) Δρ $(round(last(chord); digits = 5)) ",
                 "|Δ(w,ρ)| $(round(norm(chord); digits = 5)) cos $(round(cosine; digits = 4)) probs $(round.(traced; digits = 5)) ",
-                "ref $(round.(reference.first_choices; digits = 5)) gap $(round(gap; digits = 5))", flag ? " LEFT" : "")
+                "ref $(round.(reference.first_choices; digits = 5)) gap $(round(gap; sigdigits = 3))", flag ? " LEFT" : "")
         end
         left = left || flag
         previous, previous_chord = here, chord
@@ -87,6 +87,9 @@ end
 
 function main()::Nothing
     for (draw, payoffs) in enumerate(unfolded_draws(SEED))
+        if draw != 2
+            continue
+        end
         precision = logitnash_precision(payoffs, 4)
         pass64 = NormalFormPass(map(float, payoffs))
         reference = branch_reference(pass64, 2, precision)
