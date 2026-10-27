@@ -15,8 +15,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: julia-actions/setup-julia@v2
         with:
-          # Julia 1.13.3 does not count Printf as a stdlib, and General does not register it (printf-probe run 40445444890).
-          version: '1.12'
+          version: '1'
       - uses: julia-actions/cache@v2
       - run: julia --project=benchmark -e 'using Pkg; Pkg.instantiate()'
       - run: julia --project=benchmark benchmark/arms.jl arms.csv | tee arms.log
