@@ -120,8 +120,8 @@ end
 const REFUSAL_CHECKS = (:reach, :kl, :angle, :nonfinite)
 const REFUSAL_MESSAGES = ("corrector refused", "corrector stopped")
 
-"""`case` traced under `settings`; a `SwapCase` redraws its map through `SwapAt`."""
-struct TraceRun{C, S <: TraceSettings}
+"""`case` traced under `settings`; a `SwapCase` redraws its map through `SwapAt`. A `Function`, as `with_logger` requires."""
+struct TraceRun{C, S <: TraceSettings} <: Function
     case::C
     settings::S
 end
