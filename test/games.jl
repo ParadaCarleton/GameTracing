@@ -1,5 +1,5 @@
 using LinearAlgebra: det, dot, norm
-using Random: RandomDevice, Xoshiro
+using Random: AbstractRNG, RandomDevice, Xoshiro
 
 """A generator on a fresh seed, logged so a failing draw can be replayed with `Xoshiro(seed)`."""
 function fresh_rng()::Xoshiro
@@ -389,3 +389,40 @@ struct StopAt{E <: Real}
 end
 
 (hook::StopAt)(::AbstractVector, relative_precision::Real)::Bool = relative_precision < hook.swap_level
+
+"""`table` in Float32."""
+function single_precision(table::AbstractArray{T, N})::Array{Float32, N} where {T <: Real, N}
+    return Float32.(table)
+end
+
+"""Draws one random payoff table of scale 3 from `rng` for `players` players with two actions each."""
+struct RandomTable{R <: AbstractRNG}
+    rng::R
+    players::Int
+end
+
+(table::RandomTable)(::Integer)::Array = 3 .* randn(table.rng, ntuple(Returns(2), table.players))
+
+"""Moves a payoff table by Gaussian noise of scale 1/20 drawn from `rng`, as a redraw moves a sampled map."""
+struct PayoffJitter{R <: AbstractRNG}
+    rng::R
+end
+
+(jitter::PayoffJitter)(table::AbstractArray)::Array = table .+ randn(jitter.rng, size(table)...) ./ 20
+
+"""`players` random payoff tables of scale 3 from `rng`."""
+random_payoffs(rng::AbstractRNG, players::Integer)::Tuple = ntuple(RandomTable(rng, players), players)
+
+"""
+    random_swap(seed)
+
+`(; swap, reference_before, reference_after)`: a random 3-player game from seed `seed` whose payoffs move by about 0.05
+at relative precision 1/2, as a mid-trace redraw moves a sampled map, and its two maps in Float64.
+"""
+function random_swap(seed::Integer)::NamedTuple
+    rng = Xoshiro(1000 + seed)
+    before = random_payoffs(rng, 3)
+    after = map(PayoffJitter(rng), before)
+    swap = MapSwap(NormalFormPass(map(single_precision, before)), NormalFormPass(map(single_precision, after)), 3.0f0, 0.5f0, 3)
+    return (; swap, reference_before = NormalFormPass(before), reference_after = NormalFormPass(after))
+end

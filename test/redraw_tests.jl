@@ -1,4 +1,5 @@
 using ErrorTypes: is_error, unwrap, unwrap_error
+using LinearAlgebra: norm
 using Logging: Debug
 using Test: collect_test_logs
 
@@ -57,12 +58,13 @@ end
     )
 end
 
-@testset "a redraw whose new root is past the correction's reach fails stuck and projected" begin
+@testset "a redraw whose old root does not continue to the new map fails stuck and projected, at a fold" begin
     result = swapped_trace(FAR_SWAP)
     @test is_error(result)
     failure = unwrap_error(result)
     @test failure.cause == GameTracing.TraceStuck
     @test failure.context.projected
+    @test failure.context.reason in (:fold, :crossing)
     @test failure.context.relative_precision >= FAR_SWAP.swap_level
     @test failure.context.precision == failure.context.relative_precision * FAR_SWAP.precision
     @test failure.context.step_length > 0
@@ -92,10 +94,11 @@ function stop_reasons(trace::LoggedTrace)::NamedTuple
     return (; reasons = [record.kwargs[:reason] for record in logs if record.message == "trace stopped"], result)
 end
 
-@testset "a trace that stops short logs why, once: a redraw past its reach, a non-finite game; a reached trace logs no stop" begin
+@testset "a trace that stops short logs why, once: a redraw that folds, a non-finite game; a reached trace logs no stop" begin
     far = stop_reasons(logged_swap(FAR_SWAP))
     @test unwrap_error(far.result).context.projected
-    @test far.reasons == [:redraw_reach]
+    @test length(far.reasons) == 1
+    @test only(far.reasons) in (:fold, :crossing)
     poisoned = stop_reasons(LoggedTrace(LogitGame(PoisonedPass(GAME, 1.0f0), TARGET_PRECISION), WIDTH, GameTracing.NoRedraw()))
     @test unwrap_error(poisoned.result).cause == GameTracing.TraceStuck
     @test length(poisoned.reasons) == 1
@@ -165,11 +168,54 @@ end
 end
 
 @testset "a redrawn game must keep the trace's target precision" begin
-    slot = GameTracing.RedrawSlot(LogitGame(GAME, TARGET_PRECISION), false, 0.1f0)
+    game = LogitGame(GAME, TARGET_PRECISION)
+    slot = GameTracing.RedrawSlot(game, game, false, 0.1f0)
     @test !GameTracing.swapped!(slot, nothing)
     @test !GameTracing.swapped!(slot, slot.game)
     @test !slot.pending
     @test_throws ArgumentError GameTracing.swapped!(slot, LogitGame(GAME, 2 * TARGET_PRECISION))
     @test GameTracing.swapped!(slot, LogitGame(LinearGainPass(GAME.interaction, -GAME.stand_alone), TARGET_PRECISION))
     @test slot.pending
+    @test slot.before === game
+end
+
+@testset "a redraw of random swap 6 at relative precision 0.734 crosses to the branch a double-precision reference follows" begin
+    (; swap, reference_after) = random_swap(6)
+    # A Newton correction moved this swap's logits 0.439 from the old root, past a fixed bound of 0.4.
+    level = 0.734f0
+    stopped = trace_endpoint(LogitGame(swap.before, swap.precision), swap.width, REDRAW_SETTINGS; keep_going = StopAt(level))
+    (; logits, relative_precision) = unwrap_error(stopped).context
+    @test relative_precision >= level
+    point = [logits ./ relative_precision; relative_precision]
+    crossing = GameTracing.redraw_crossing(LogitGame(swap.before, swap.precision), LogitGame(swap.after, swap.precision), point, REDRAW_SETTINGS)
+    @test crossing.reason == :crossed
+    @test crossing.steps > 0
+    crossed = GameTracing.logits_at(crossing.point)
+    @test residual_norm(swap.after, crossed, relative_precision * swap.precision) < 1.0f-3
+    @test norm(crossed .- logits) > 0.4f0
+    @info "crossing steps" swap = "swap 6" crossing.steps
+    result = trace_endpoint(LogitGame(swap.before, swap.precision), swap.width, REDRAW_SETTINGS; redraw = SwapAt(LogitGame(swap.after, swap.precision), level))
+    @test !is_error(result)
+    reference = branch_reference(reference_after, swap.width, swap.precision; start = logits .* float(1), start_precision = relative_precision * swap.precision)
+    @test reference.reached
+    @test reference.crossings == 0
+    # Probabilities to 1e-3, as the LogitNash cross-check compares a Float32 trace with its reference.
+    @test maximum(abs, inv.(1 .+ exp.(-unwrap(result).logits)) .- reference.first_choices) < 1.0f-3
+end
+
+@testset "a redraw onto a game whose branch is torn at the redraw fails stuck and projected" begin
+    # The new game is non-finite past precision 1, so its branch has no points at the redraw's precision 2.
+    before = PoisonedPass(NEAR_SWAP.before, Inf32)
+    after = PoisonedPass(NEAR_SWAP.after, 1.0f0)
+    result = trace_endpoint(
+        LogitGame(before, NEAR_SWAP.precision),
+        NEAR_SWAP.width,
+        REDRAW_SETTINGS;
+        redraw = SwapAt(LogitGame(after, NEAR_SWAP.precision), NEAR_SWAP.swap_level),
+    )
+    @test is_error(result)
+    failure = unwrap_error(result)
+    @test failure.cause == GameTracing.TraceStuck
+    @test failure.context.projected
+    @test failure.context.reason in (:solver_blowup, :stopped)
 end
