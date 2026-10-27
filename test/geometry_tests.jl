@@ -21,11 +21,11 @@ end
     @test GameTracing.chord_angle(start, Float32[1, 0, 0], start, geometry) == 0
 end
 
-@testset "each distance weighs coordinates and precision as documented, Fisher and log precision measuring in the summed norm" begin
+@testset "each distance weighs coordinates and precision as documented, the Fisher distances measuring in the summed norm" begin
     displacement = Float32[1, 2, 3]
     for (distance, expected) in (
             (AveragedDistance, 0.4f0 * 5 / 2 + 0.6f0 * 9), (SummedDistance, 0.4f0 * 5 + 9), (FisherDistance, 0.4f0 * 5 + 9),
-            (LogPrecisionDistance, 0.4f0 * 5 + 9),
+            (FisherLogPrecisionDistance, 0.4f0 * 5 + 9),
         )
         geometry = TraceGeometry{Float32}(; distance, state_weight = 0.4f0)
         @test GameTracing.arclength_distance(zeros(Float32, 3), displacement, geometry)^2 ≈ expected
@@ -37,24 +37,29 @@ end
     displacement = Float32[0.2f0, -0.1f0, 0.05f0]
     for distance in instances(StepDistance)
         geometry = TraceGeometry{Float32}(; distance, state_weight = 0.3f0)
-        palc = GameTracing.palc_geometry(geometry, 2)
+        palc = GameTracing.palc_geometry(geometry, 2, 3.0f0)
         GameTracing.BifurcationKit.reweight!(palc.dot, GameTracing.BifurcationKit.BorderedArray(point, last(point)))
         # PALC's pin moves with the relative precision, so it repeats the displacement's last coordinate.
         palc_square = palc.dot(displacement, displacement, last(displacement), last(displacement), palc.theta)
         logits = GameTracing.logits_at(point)
-        weights = ifelse(distance == FisherDistance, inv.(1 .+ exp.(-logits)) .* inv.(1 .+ exp.(logits)), ones(Float32, 2))
-        # A log-precision step in ρ is the step in log(1 + ρ) to first order.
-        precision_weight = ifelse(distance == LogPrecisionDistance, inv(1 + last(point)), 1.0f0)
-        frozen = distance in (FisherDistance, LogPrecisionDistance)
+        frozen = distance in (FisherDistance, FisherLogPrecisionDistance)
+        weights = ifelse(frozen, inv.(1 .+ exp.(-logits)) .* inv.(1 .+ exp.(logits)), ones(Float32, 2))
+        # A step in ρ is a step in log(1 + λ), λ = 3ρ, of 3 / (1 + 3ρ) times its length to first order.
+        precision_weight = ifelse(distance == FisherLogPrecisionDistance, 3 / (1 + 3 * last(point)), 1.0f0)
         plain = TraceGeometry{Float32}(; distance = ifelse(frozen, SummedDistance, distance), state_weight = 0.3f0)
         weighted = [sqrt.(weights) .* displacement[1:2]; precision_weight * last(displacement)]
         @test palc_square ≈ GameTracing.arclength_distance(zeros(Float32, 3), weighted, plain)^2 rtol = 1.0f-5
     end
 end
 
-@testset "a log-precision trace weighs the relative precision positively over its range" begin
-    for relative_precision in range(0.0f0, 1.0f0; length = 101)
-        @test GameTracing.log_precision_weight(relative_precision) > 0
+@testset "a log-precision trace weighs the relative precision positively over its range, at every target" begin
+    for target_precision in (0.01f0, 0.5f0, 1.0f0, 4.0f0, 100.0f0)
+        palc = GameTracing.palc_geometry(TraceGeometry{Float32}(distance = FisherLogPrecisionDistance), 2, target_precision)
+        @test 0 < palc.theta < 1
+        weighting = GameTracing.FisherLogPrecisionWeights(1.0f0, palc.theta, target_precision)
+        for relative_precision in range(0.0f0, 1.0f0; length = 101)
+            @test GameTracing.precision_dot_weight(weighting, relative_precision) > 0
+        end
     end
 end
 
@@ -150,7 +155,7 @@ end
 @testset "the redraw restart's border row gives PALC's product with the old tangent, in every distance" begin
     rng = fresh_rng()
     for distance in instances(StepDistance), _ in 1:5
-        palc = GameTracing.palc_geometry(TraceGeometry{Float32}(; distance, state_weight = 0.3f0), 2)
+        palc = GameTracing.palc_geometry(TraceGeometry{Float32}(; distance, state_weight = 0.3f0), 2, 3.0f0)
         point = randn(rng, Float32, 3)
         GameTracing.BifurcationKit.reweight!(palc.dot, GameTracing.BifurcationKit.BorderedArray(point, last(point)))
         old_tangent, tangent = randn(rng, Float32, 3), randn(rng, Float32, 3)

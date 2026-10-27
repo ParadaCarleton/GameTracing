@@ -85,12 +85,13 @@ function corrector_quality(
     )
 end
 
-"""BifurcationKit's PALC for `settings` over a trace of `width` logits."""
+"""BifurcationKit's PALC for `settings` over a trace of `width` logits to precision `target_precision`."""
 function palc_algorithm(
     settings::TraceSettings{E},
     width::Integer,
+    target_precision::Real,
 )::BifurcationKit.AbstractContinuationAlgorithm where {E <: Real}
-    geometry = palc_geometry(settings.geometry, width)
+    geometry = palc_geometry(settings.geometry, width, target_precision)
     return BifurcationKit.PALC(;
         tangent = settings.tangent,
         θ = geometry.theta,
@@ -167,7 +168,7 @@ function continue_trace(
     )
     opened_continuation!(
         branch_problem(game, start, last(start); record_from_solution = trace_record_precision),
-        palc_algorithm(settings, length(start) - 1),
+        palc_algorithm(settings, length(start) - 1, game.target_precision),
         continuation_options(settings, step_length, max_steps),
         old_tangent,
         finalise,

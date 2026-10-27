@@ -116,12 +116,12 @@ end
 @testset "every state weight in (0, 1) traces, a one-logit game at the default settings included" begin
     for state_weight in (0.1f0, 0.5f0, 0.9f0), distance in instances(StepDistance)
         geometry = TraceGeometry{Float32}(; distance, state_weight)
-        # A log-precision trace carries its state weight in its dot and runs PALC at a fixed weight.
-        palc_theta = ifelse(distance == LogPrecisionDistance, Float32(GameTracing.LOG_PRECISION_THETA), state_weight)
-        @test GameTracing.palc_geometry(geometry, 1).theta == palc_theta
+        # A log-precision trace carries its state weight in its dot and runs PALC at a weight set by the target.
+        palc_weight = ifelse(distance == FisherLogPrecisionDistance, GameTracing.log_precision_palc_weight(2.0f0), state_weight)
+        @test GameTracing.palc_geometry(geometry, 1, 2.0f0).theta == palc_weight
     end
     for state_weight in (0.0f0, 1.0f0, -0.5f0, NaN32)
-        @test_throws ArgumentError GameTracing.palc_geometry(TraceGeometry{Float32}(; state_weight), 1)
+        @test_throws ArgumentError GameTracing.palc_geometry(TraceGeometry{Float32}(; state_weight), 1, 2.0f0)
     end
     result = trace_endpoint(LogitGame(FOLD_GAME, 2.0f0), 1, TraceSettings{Float32}())
     @test !is_error(result)
@@ -139,7 +139,7 @@ end
             orientation_check = check,
             bordered_solver = solver,
         )
-        oriented = GameTracing.palc_algorithm(settings, WIDTH).orientation_check
+        oriented = GameTracing.palc_algorithm(settings, WIDTH, TARGET_PRECISION).orientation_check
         @test oriented == (check && solver == MatrixSolve)
     end
 end

@@ -1,8 +1,8 @@
-# The trace-geometry arms in payoff gaps: step distance (Fisher or log precision) with the shipped reach acceptance,
+# The trace-geometry arms in payoff gaps: Fisher gaps beside a step in ρ or in log(1 + λ), with the shipped reach acceptance,
 # each at three state weights.
 const ARMS = (
     fisher_reach = (; distance = FisherDistance),
-    log_precision_reach = (; distance = LogPrecisionDistance),
+    fisher_log_precision_reach = (; distance = FisherLogPrecisionDistance),
 )
 const ARM_WEIGHTS = (0.01f0, 0.03f0, 0.1f0)
 
