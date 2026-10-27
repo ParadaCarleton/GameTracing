@@ -32,6 +32,12 @@ jobs:
         if: matrix.version == '1'
         run: |
           awk '/^SF:/{file=$0} /^DA:[0-9]+,0$/{print file, $0; bad=1} END{exit bad}' lcov.info
+      # Loads the arm benchmark and runs two games under two variants, so a script that cannot run fails here.
+      - name: The arm benchmark runs
+        if: matrix.version == '1'
+        run: |
+          julia --project=benchmark -e 'using Pkg; Pkg.instantiate()'
+          julia --project=benchmark benchmark/arms.jl quick.csv quick
   lint:
     runs-on: ubuntu-latest
     steps:

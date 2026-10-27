@@ -225,9 +225,22 @@ function print_summary(group::AbstractString, label::AbstractString, rows::Abstr
     return nothing
 end
 
-function main(output::AbstractString)::Nothing
+"""
+Run the benchmark over `scope`: `"full"` every game and variant, `"quick"` one fixed and one swapped game under the
+shipped settings and the first arm, the load check CI runs. Throws unless every game and variant gave a row.
+"""
+function main(output::AbstractString, scope::AbstractString)::Nothing
     variants = ["shipped" => TraceSettings{Float32}(); arm_variants()]
-    rows = reduce(vcat, [case_rows(case, variants) for case in vcat(fixed_cases(), swap_cases())])
+    cases = vcat(fixed_cases(), swap_cases())
+    if scope == "quick"
+        cases, variants = [first(fixed_cases()), first(swap_cases())], variants[1:2]
+    elseif scope != "full"
+        throw(ArgumentError("scope must be \"full\" or \"quick\", got $(repr(scope))"))
+    end
+    rows = reduce(vcat, [case_rows(case, variants) for case in cases])
+    if length(rows) != length(cases) * length(variants)
+        error("expected $(length(cases) * length(variants)) rows, got $(length(rows))")
+    end
     io = open(output, "w")
     println(io, "game,variant,status,steps,iterations,refused_reach,refused_kl,refused_angle,refused_nonfinite,last_refusal,gap,bytes,reference,swapped")
     for row in rows
@@ -241,4 +254,4 @@ function main(output::AbstractString)::Nothing
     return nothing
 end
 
-main(get(ARGS, 1, joinpath(@__DIR__, "arms.csv")))
+main(get(ARGS, 1, joinpath(@__DIR__, "arms.csv")), get(ARGS, 2, "full"))
