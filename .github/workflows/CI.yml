@@ -7,6 +7,9 @@ on:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref_name }}
   cancel-in-progress: true
+# The test oracle's pygambit has no Linux wheel, so pip builds it; one cached Conda environment keeps that to a cold run.
+env:
+  JULIA_CONDAPKG_ENV: /home/runner/.condapkg-test
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -22,6 +25,10 @@ jobs:
         with:
           version: ${{ matrix.version }}
       - uses: julia-actions/cache@v2
+      - uses: actions/cache@v4
+        with:
+          path: /home/runner/.condapkg-test
+          key: condapkg-${{ runner.os }}-${{ hashFiles('test/gambit.jl') }}
       - uses: jdx/mise-action@v2
       - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-runtest@v1
@@ -56,6 +63,10 @@ jobs:
         with:
           version: '1'
       - uses: julia-actions/cache@v2
+      - uses: actions/cache@v4
+        with:
+          path: /home/runner/.condapkg-test
+          key: condapkg-${{ runner.os }}-${{ hashFiles('test/gambit.jl') }}
       - uses: jdx/mise-action@v2
       - uses: julia-actions/julia-buildpkg@v1
       - name: Install Gremlins
