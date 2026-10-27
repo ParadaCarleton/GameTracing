@@ -1,23 +1,15 @@
-# The trace-geometry arms in payoff gaps: step distance (summed or Fisher) × acceptance, each at three state weights.
-# KL + angle accepts by KL and chord angle with the reach and first-step distance tests off; reach keeps the shipped ones.
-const KL_ANGLE = CorrectorSettings{Float32}(reach = nothing, max_kl = 0.01f0, max_angle = 0.5f0)
-const NO_DISTANCE_LIMIT = StepControl{Float32}(distance_limit = nothing)
-const ACCEPTANCES = (
-    kl_angle = (; corrector = KL_ANGLE, step_control = NO_DISTANCE_LIMIT),
-    reach = (; corrector = CorrectorSettings{Float32}(), step_control = StepControl{Float32}()),
-)
+# The trace-geometry arms in payoff gaps: step distance (Fisher or log precision) with the shipped reach acceptance,
+# each at three state weights.
 const ARMS = (
-    summed_kl_angle = (; distance = SummedDistance, ACCEPTANCES.kl_angle...),
-    fisher_kl_angle = (; distance = FisherDistance, ACCEPTANCES.kl_angle...),
-    summed_reach = (; distance = SummedDistance, ACCEPTANCES.reach...),
-    fisher_reach = (; distance = FisherDistance, ACCEPTANCES.reach...),
+    fisher_reach = (; distance = FisherDistance),
+    log_precision_reach = (; distance = LogPrecisionDistance),
 )
-const ARM_WEIGHTS = (0.1f0, 0.5f0, 0.9f0)
+const ARM_WEIGHTS = (0.01f0, 0.03f0, 0.1f0)
 
 """The `TraceSettings` of `arm` (an `ARMS` entry) at state weight `state_weight`, with `keywords` passed on."""
 function arm_settings(arm::NamedTuple, state_weight::E; keywords...)::TraceSettings{E} where {E <: Real}
     geometry = TraceGeometry{E}(; arm.distance, state_weight)
-    return TraceSettings{E}(; geometry, arm.corrector, arm.step_control, keywords...)
+    return TraceSettings{E}(; geometry, keywords...)
 end
 
 """Every arm at every weight, as `label => settings` pairs."""
