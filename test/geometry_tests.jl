@@ -40,7 +40,7 @@ end
         palc = GameTracing.palc_geometry(geometry, 2, 3.0f0)
         GameTracing.BifurcationKit.reweight!(palc.dot, GameTracing.BifurcationKit.BorderedArray(point, last(point)))
         # PALC's pin moves with the relative precision, so it repeats the displacement's last coordinate.
-        palc_square = palc.dot(displacement, displacement, last(displacement), last(displacement), palc.theta)
+        palc_square = palc.dot(displacement, displacement, last(displacement), last(displacement), palc.palc_state_weight)
         logits = GameTracing.logits_at(point)
         frozen = distance in (FisherDistance, FisherLogPrecisionDistance)
         weights = ifelse(frozen, inv.(1 .+ exp.(-logits)) .* inv.(1 .+ exp.(logits)), ones(Float32, 2))
@@ -55,8 +55,8 @@ end
 @testset "a log-precision trace weighs the relative precision positively over its range, at every target" begin
     for target_precision in (0.01f0, 0.5f0, 1.0f0, 4.0f0, 100.0f0)
         palc = GameTracing.palc_geometry(TraceGeometry{Float32}(distance = FisherLogPrecisionDistance), 2, target_precision)
-        @test 0 < palc.theta < 1
-        weighting = GameTracing.FisherLogPrecisionWeights(1.0f0, palc.theta, target_precision)
+        @test 0 < palc.palc_state_weight < 1
+        weighting = GameTracing.FisherLogPrecisionWeights(1.0f0, palc.palc_state_weight, target_precision)
         for relative_precision in range(0.0f0, 1.0f0; length = 101)
             @test GameTracing.precision_dot_weight(weighting, relative_precision) > 0
         end
@@ -159,7 +159,7 @@ end
         point = randn(rng, Float32, 3)
         GameTracing.BifurcationKit.reweight!(palc.dot, GameTracing.BifurcationKit.BorderedArray(point, last(point)))
         old_tangent, tangent = randn(rng, Float32, 3), randn(rng, Float32, 3)
-        border = GameTracing.palc_border(palc.dot, palc.theta, old_tangent)
-        @test border' * tangent ≈ GameTracing.palc_product(palc.dot, palc.theta, old_tangent, tangent) rtol = 1.0f-4
+        border = GameTracing.palc_border(palc.dot, palc.palc_state_weight, old_tangent)
+        @test border' * tangent ≈ GameTracing.palc_product(palc.dot, palc.palc_state_weight, old_tangent, tangent) rtol = 1.0f-4
     end
 end

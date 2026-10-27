@@ -3,7 +3,7 @@ using ErrorTypes: unwrap
 using LinearAlgebra: Diagonal, dot, norm, normalize, nullspace
 using Random: RandomDevice, Xoshiro
 
-"""PALC's weights `[θ / k … θ / k, 1 - θ]` over a branch point of `width` logits."""
+"""PALC's weights `[state_weight / k … state_weight / k, 1 - state_weight]` over a branch point of `width` logits."""
 function palc_weights(width::Integer, state_weight::E)::Diagonal{E} where {E <: Real}
     return Diagonal([fill(state_weight / width, width); 1 - state_weight])
 end

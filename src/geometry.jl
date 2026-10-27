@@ -2,20 +2,24 @@ using BifurcationKit: BifurcationKit
 using LinearAlgebra: dot
 using LogExpFunctions: log1pexp, logistic
 """
-The trace's step length in a state `x = [w; ρ]` of `k` payoff gaps `w` at state weight `θ`: `AveragedDistance` is
-`θ ‖Δw‖² / k + (1 - θ) Δρ²`, `SummedDistance` `θ ‖Δw‖² + Δρ²`, and `FisherDistance` `θ Σ σ(zᵢ)σ(-zᵢ) Δwᵢ² + Δρ²`
-with the Bernoulli Fisher weights of the logits `z = ρ w`. `FisherLogPrecisionDistance` is
-`θ Σ σ(zᵢ)σ(-zᵢ) Δwᵢ² + (Δλ / (1 + λ))²` at the precision `λ = ρ P`, `P` the target: Fisher's gaps beside the step in
-`log(1 + λ)` to first order, LogitNash's path variable. Both Fisher distances freeze their weights at each accepted
-point, and their reach and angle checks measure in the summed norm.
+The trace's step length in a state `x = [w; ρ]` of `k` payoff gaps `w`, at `state_weight` (the gaps' weight):
+
+- `AveragedDistance`: `state_weight ‖Δw‖² / k + (1 - state_weight) Δρ²`.
+- `SummedDistance`: `state_weight ‖Δw‖² + Δρ²`.
+- `FisherDistance`: `state_weight Σ σ(zᵢ)σ(-zᵢ) Δwᵢ² + Δρ²`, with the Bernoulli Fisher weights of the logits `z = ρ w`.
+- `FisherLogPrecisionDistance`: `state_weight Σ σ(zᵢ)σ(-zᵢ) Δwᵢ² + (Δλ / (1 + λ))²` at the precision `λ = ρ P`, `P` the
+  target: Fisher's gaps beside the step in `log(1 + λ)` to first order, LogitNash's path variable.
+
+Both Fisher distances freeze their weights at each accepted point, and their reach and angle checks measure in the
+summed norm.
 """
 @enum StepDistance AveragedDistance SummedDistance FisherDistance FisherLogPrecisionDistance
 
 """
     TraceGeometry{E}(; distance, state_weight)
 
-The norm a trace steps in: its `StepDistance`, and `state_weight`, the gaps' weight `θ` against the relative
-precision's. The default is PALC's averaged norm at `θ = 1/2`.
+The norm a trace steps in: its `StepDistance`, and `state_weight`, the gaps' weight against the relative precision's.
+The default is PALC's averaged norm at `state_weight = 1/2`.
 """
 Base.@kwdef struct TraceGeometry{E <: Real}
     distance::StepDistance = AveragedDistance
@@ -109,30 +113,33 @@ function log_precision_scale(relative_precision::E, target_precision::E)::E wher
 end
 
 """
-PALC's state weight `θₚ` for a `FisherLogPrecisionDistance` trace to `target_precision`: `1 - m / 2`, with
-`m = P² / (1 + P)²` the smallest `log_precision_scale` over ρ ∈ [0, 1]. PALC's own `(1 - θₚ) Δρ²` then stays under
-the distance's `Δρ²` weight, so the dot's precision weight (`FisherLogPrecisionWeights`) stays positive.
+PALC's state weight for a `FisherLogPrecisionDistance` trace to `target_precision`: one minus half of `P² / (1 + P)²`,
+the smallest `log_precision_scale` over ρ ∈ [0, 1]. PALC's own `Δρ²` term then stays under the distance's, so the
+dot's precision weight (`FisherLogPrecisionWeights`) stays positive.
 """
-function log_precision_palc_weight(target_precision::E)::E where {E <: Real}
+function log_precision_palc_state_weight(target_precision::E)::E where {E <: Real}
     return one(E) - log_precision_scale(one(E), target_precision) / 2
 end
 
 """
-`weights!` of a `FisherLogPrecisionDistance` trace's `PointWeightedDot`, under PALC state weight `palc_weight`
-(`log_precision_palc_weight`): each gap its Fisher weight `σ(z)σ(-z)` times `gap_scale = θ / palc_weight`, and the
-relative precision `(log_precision_scale - (1 - palc_weight)) / palc_weight`, both at the accepted point. PALC's
-`palc_weight ⟨Δx, Δx⟩ + (1 - palc_weight) Δρ²` is then the distance's norm.
+`weights!` of a `FisherLogPrecisionDistance` trace's `PointWeightedDot`, under PALC state weight `palc_state_weight`
+(`log_precision_palc_state_weight`), both weights at the accepted point:
+
+- each gap: its Fisher weight `σ(z)σ(-z)` times `gap_scale = state_weight / palc_state_weight`;
+- the relative precision: `(log_precision_scale - (1 - palc_state_weight)) / palc_state_weight`.
+
+PALC's `palc_state_weight ⟨Δx, Δx⟩ + (1 - palc_state_weight) Δρ²` is then the distance's norm.
 """
 struct FisherLogPrecisionWeights{E <: Real}
     gap_scale::E
-    palc_weight::E
+    palc_state_weight::E
     target_precision::E
 end
 
 """The weight of `Δρ` in `weighting`'s dot at relative precision `relative_precision`."""
 function precision_dot_weight(weighting::FisherLogPrecisionWeights{E}, relative_precision::E)::E where {E <: Real}
     scale = log_precision_scale(relative_precision, weighting.target_precision)
-    return (scale - (one(E) - weighting.palc_weight)) / weighting.palc_weight
+    return (scale - (one(E) - weighting.palc_state_weight)) / weighting.palc_state_weight
 end
 
 function (weighting::FisherLogPrecisionWeights{E})(weights::AbstractVector{E}, point::BifurcationKit.BorderedArray)::AbstractVector{E} where {E <: Real}
@@ -150,41 +157,46 @@ function (::FixedWeights)(weights::AbstractVector{E}, ::BifurcationKit.BorderedA
 end
 
 """
-PALC's `θ` and `dotθ` for `geometry` over a trace of `width` gaps to precision `target_precision`. PALC's norm of `[Δx; Δρ]`, `x = [w; ρ]`, is
-`θ ⟨Δx, Δx⟩ + (1 - θ) Δρ²` at the state weight `θ`: the inner product weighs each gap by `1/k` and `ρ` by zero
-(averaged), every coordinate by one (summed), or each gap by its Fisher weight and `ρ` by one (Fisher). A
-`FisherLogPrecisionDistance` trace runs PALC at `log_precision_palc_weight` instead (`FisherLogPrecisionWeights`). Every `θ` in
-(0, 1) is valid, at every width; another throws an `ArgumentError`.
+`(; palc_state_weight, dot)`: PALC's `θ` and `dotθ` for `geometry` over a trace of `width` gaps to precision
+`target_precision`. PALC's norm of `[Δx; Δρ]`, `x = [w; ρ]`, is `palc_state_weight ⟨Δx, Δx⟩ + (1 - palc_state_weight) Δρ²`.
+`palc_state_weight` is `geometry.state_weight`, and the inner product weighs:
+
+- averaged: each gap by `1/k` and `ρ` by zero;
+- summed: every coordinate by one;
+- Fisher: each gap by its Fisher weight and `ρ` by one.
+
+A `FisherLogPrecisionDistance` trace runs PALC at `log_precision_palc_state_weight` instead (`FisherLogPrecisionWeights`).
+Every `state_weight` in (0, 1) is valid, at every width; another throws an `ArgumentError`.
 """
 function palc_geometry(geometry::TraceGeometry{E}, width::Integer, target_precision::Real)::NamedTuple where {E <: Real}
-    theta = geometry.state_weight
-    if !(zero(E) < theta < one(E))
-        throw(ArgumentError("the state weight $theta lies outside (0, 1), where PALC weights the gaps and the precision"))
+    (; state_weight) = geometry
+    if !(zero(E) < state_weight < one(E))
+        throw(ArgumentError("the state weight $state_weight lies outside (0, 1), where PALC weights the gaps and the precision"))
     end
     if geometry.distance == AveragedDistance
         weights = [fill(inv(E(width)), width); zero(E)]
-        return (; theta, dot = BifurcationKit.DotTheta(BifurcationKit.PointWeightedDot(FixedWeights(), weights)))
+        return (; palc_state_weight = state_weight, dot = BifurcationKit.DotTheta(BifurcationKit.PointWeightedDot(FixedWeights(), weights)))
     elseif geometry.distance == SummedDistance
-        return (; theta, dot = BifurcationKit.DotTheta(dot))
+        return (; palc_state_weight = state_weight, dot = BifurcationKit.DotTheta(dot))
     elseif geometry.distance == FisherLogPrecisionDistance
-        palc_weight = log_precision_palc_weight(E(target_precision))
-        weighting = FisherLogPrecisionWeights(theta / palc_weight, palc_weight, E(target_precision))
+        palc_state_weight = log_precision_palc_state_weight(E(target_precision))
+        weighting = FisherLogPrecisionWeights(state_weight / palc_state_weight, palc_state_weight, E(target_precision))
         # The flat start's logits are zero, where each Fisher weight is 1/4.
         weights = [fill(weighting.gap_scale / 4, width); precision_dot_weight(weighting, zero(E))]
-        return (; theta = palc_weight, dot = BifurcationKit.DotTheta(BifurcationKit.PointWeightedDot(weighting, weights)))
+        return (; palc_state_weight, dot = BifurcationKit.DotTheta(BifurcationKit.PointWeightedDot(weighting, weights)))
     end
     weighted = BifurcationKit.PointWeightedDot(FisherWeights(), ones(E, width + 1))
-    return (; theta, dot = BifurcationKit.DotTheta(weighted))
+    return (; palc_state_weight = state_weight, dot = BifurcationKit.DotTheta(weighted))
 end
 
-"""PALC's product `θ ⟨x, y⟩ + (1 - θ) ρₓ ρ_y` of two branch vectors `[x; ρ]` under the trace's `dot` at state weight `theta`."""
+"""PALC's product `state_weight ⟨x, y⟩ + (1 - state_weight) ρₓ ρ_y` of two branch vectors `[x; ρ]` under the trace's `dot`."""
 function palc_product(
     dot::BifurcationKit.DotTheta,
-    theta::E,
+    state_weight::E,
     left::AbstractVector{E},
     right::AbstractVector{E},
 )::E where {E <: Real}
-    return dot(left, right, last(left), last(right), theta)
+    return dot(left, right, last(left), last(right), state_weight)
 end
 
 """`vector` under the in-place operator `A` of a `DotTheta`, `⟨x, y⟩ = xᵀ A y`; `nothing` is the identity."""
@@ -196,9 +208,9 @@ function applied_operator(apply::Any, vector::AbstractVector{E})::AbstractVector
     return apply(vector)
 end
 
-"""The row `b` with `b ⋅ τ = palc_product(dot, theta, vector, τ)` for every branch vector `τ`."""
-function palc_border(dot::BifurcationKit.DotTheta, theta::E, vector::AbstractVector{E})::AbstractVector{E} where {E <: Real}
-    border = theta .* applied_operator(BifurcationKit._get_apply_dot(dot), copy(vector))
-    border[end] += (one(E) - theta) * last(vector)
+"""The row `b` with `b ⋅ τ = palc_product(dot, state_weight, vector, τ)` for every branch vector `τ`."""
+function palc_border(dot::BifurcationKit.DotTheta, state_weight::E, vector::AbstractVector{E})::AbstractVector{E} where {E <: Real}
+    border = state_weight .* applied_operator(BifurcationKit._get_apply_dot(dot), copy(vector))
+    border[end] += (one(E) - state_weight) * last(vector)
     return border
 end

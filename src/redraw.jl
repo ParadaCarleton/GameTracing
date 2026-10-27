@@ -112,22 +112,22 @@ function level_correction(
 end
 
 """
-    restart_tangent(game, point, old_tangent, dot, theta)
+    restart_tangent(game, point, old_tangent, dot, state_weight)
 
 The tangent of `game`'s branch at `point = [w; ρ]` that keeps the trace's direction: the solution of the bordered
 system `[∂F/∂x; bᵀ] τ = [0; 1]`, whose border `b` is `old_tangent` weighted as PALC's product under the trace's `dot`
-at state weight `theta` weights it (`palc_border`). So `τ` has PALC product one with the old tangent.
+at PALC state weight `state_weight` weights it (`palc_border`). So `τ` has PALC product one with the old tangent.
 """
 function restart_tangent(
     game::LogitGame,
     point::AbstractVector{E},
     old_tangent::AbstractVector{E},
     dot::BifurcationKit.DotTheta,
-    theta::E,
+    state_weight::E,
 )::AbstractVector{E} where {E <: Real}
     width = length(point) - 1
     jacobian = branch_system!(BranchWorkspace(point), game, point, last(point)).jacobian
-    border = palc_border(dot, theta, old_tangent)
+    border = palc_border(dot, state_weight, old_tangent)
     # fatou-ignore call-arity: Base `view` takes any number of indices (jolars/fatou#125)
     bordered = [view(jacobian, 1:width, :); transpose(border)]
     return bordered \ setindex!(zeros(E, width + 1), one(E), width + 1)

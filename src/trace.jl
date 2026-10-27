@@ -21,7 +21,7 @@ end
 
 BifurcationKit PALC controls for `trace_endpoint`, in `(w, ρ)` with `w = logits / ρ` the payoff gaps and `ρ` the
 relative precision. Step sizes are arclength in `geometry`'s norm (`StepDistance`); the default is PALC's
-`sqrt(θ ‖dw‖² / k + (1 - θ) dρ²)`, `θ` the state weight and `k` the number of gaps.
+`sqrt(state_weight ‖dw‖² / k + (1 - state_weight) dρ²)`, `state_weight` the gaps' weight and `k` their number.
 
 - `first_step`, `min_step`, `max_step`: first, smallest and largest arclength step. A step whose corrector fails
   halves; the trace ends as `TraceStuck` once the step reaches `min_step`.
@@ -94,7 +94,7 @@ function palc_algorithm(
     geometry = palc_geometry(settings.geometry, width, target_precision)
     return BifurcationKit.PALC(;
         tangent = settings.tangent,
-        θ = geometry.theta,
+        θ = geometry.palc_state_weight,
         dotθ = geometry.dot,
         bls = bordered_linear_solver(settings.bordered_solver, width + 1, E),
         step_control = corrector_quality(settings.step_control, settings.geometry, width),
@@ -213,11 +213,11 @@ function opened_continuation!(
     corrector::CorrectorReach,
 )::Nothing where {E <: Real}
     start = BifurcationKit.getu0(problem)
-    dot, theta = BifurcationKit.getdot(algorithm), E(BifurcationKit.getθ(algorithm))
+    dot, palc_state_weight = BifurcationKit.getdot(algorithm), E(BifurcationKit.getθ(algorithm))
     # A Fisher trace's weights are those of the point it restarts from.
     BifurcationKit.reweight!(dot, BifurcationKit.BorderedArray(start, last(start)))
-    tangent = restart_tangent(finalise.slot.game, start, old_tangent, dot, theta)
-    length_in_norm = sqrt(palc_product(dot, theta, tangent, tangent))
+    tangent = restart_tangent(finalise.slot.game, start, old_tangent, dot, palc_state_weight)
+    length_in_norm = sqrt(palc_product(dot, palc_state_weight, tangent, tangent))
     # The corrected point's tangent is the new map's; a restart that fails before a step reports it.
     copyto!(finalise.progress.gap_tangent, 1, tangent, 1, length(finalise.progress.gap_tangent))
     finalise.progress.tangent_precision = last(tangent) / length_in_norm

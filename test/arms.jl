@@ -14,5 +14,5 @@ end
 
 """Every arm at every weight, as `label => settings` pairs."""
 function arm_variants()::Vector{Pair{String, TraceSettings{Float32}}}
-    return [string(name, " θ ", weight) => arm_settings(arm, weight) for (name, arm) in pairs(ARMS) for weight in ARM_WEIGHTS]
+    return [string(name, " state_weight ", weight) => arm_settings(arm, weight) for (name, arm) in pairs(ARMS) for weight in ARM_WEIGHTS]
 end
