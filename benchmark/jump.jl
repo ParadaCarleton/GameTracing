@@ -4,7 +4,6 @@ using GameTracing
 using ErrorTypes: is_error, unwrap, unwrap_error
 using LinearAlgebra: dot, norm
 using LogitNash: LogitNash
-using Printf: @printf
 using Random: Xoshiro
 
 const TEST_DIRECTORY = joinpath(@__DIR__, "..", "test")
@@ -76,9 +75,9 @@ function report_path(label::AbstractString, draw::Integer, pass::Any, points::Ab
         cosine = dot(chord, previous_chord) / (norm(chord) * norm(previous_chord))
         flag = !left && gap > 1.0e-3
         if flag || step <= 3 || step == filled
-            @printf("PATH %s draw %d step %d ρ %.5f Δρ %.5f |Δ(w,ρ)| %.5f cos %.4f probs %s ref %s gap %.5f%s\n",
-                label, draw, step, last(here), last(chord), norm(chord), cosine,
-                string(round.(traced; digits = 5)), string(round.(reference.first_choices; digits = 5)), gap, flag ? " LEFT" : "")
+            println("PATH $label draw $draw step $step ρ $(round(last(here); digits = 5)) Δρ $(round(last(chord); digits = 5)) ",
+                "|Δ(w,ρ)| $(round(norm(chord); digits = 5)) cos $(round(cosine; digits = 4)) probs $(round.(traced; digits = 5)) ",
+                "ref $(round.(reference.first_choices; digits = 5)) gap $(round(gap; digits = 5))", flag ? " LEFT" : "")
         end
         left = left || flag
         previous, previous_chord = here, chord
@@ -96,14 +95,14 @@ function main()::Nothing
             recorder = PathRecorder(fill(NaN32, 3, POINT_CAPACITY))
             result = trace_endpoint(game, 2, settings; keep_going = recorder)
             if is_error(result)
-                @printf("RESULT %s draw %d failed %s\n", label, draw, string(unwrap_error(result).cause))
+                println("RESULT $label draw $draw failed $(unwrap_error(result).cause)")
                 continue
             end
             traced = inv.(1 .+ exp.(-unwrap(result).logits))
             gap = maximum(abs, traced .- reference.first_choices)
             jumped = reference.reached && gap > 1.0e-3
-            @printf("RESULT %s draw %d precision %.4f steps %d probs %s ref %s jumped %s\n", label, draw, precision,
-                unwrap(result).steps, string(round.(traced; digits = 5)), string(round.(reference.first_choices; digits = 5)), jumped)
+            println("RESULT $label draw $draw precision $precision steps $(unwrap(result).steps) ",
+                "probs $(round.(traced; digits = 5)) ref $(round.(reference.first_choices; digits = 5)) jumped $jumped")
             if jumped
                 println("PAYOFFS draw $draw ", repr(payoffs))
                 report_path(label, draw, pass64, recorder.points, precision)
