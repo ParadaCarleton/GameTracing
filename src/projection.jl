@@ -23,7 +23,7 @@ function projection_step(
     end
     width = length(logits)
     point = [logits ./ E(relative_precision); E(relative_precision)]
-    system = branch_system!(BranchWorkspace(point), game, point, relative_precision)
+    system = branch_system!(BranchWorkspace(game, point), game, point, relative_precision)
     jacobian = system.jacobian[1:width, :]
     scale = Diagonal([fill(E(sqrt(width / state_weight)), width); E(sqrt(1 / (1 - state_weight)))])
     return -(scale * ((jacobian * scale) \ system.residual[1:width]))

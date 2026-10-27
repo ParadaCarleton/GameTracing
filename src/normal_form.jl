@@ -7,34 +7,17 @@ The `pass!` of a normal-form game with any number of strategies per player. `pay
 the pure profile `s`; every array has one type and one size, each player's strategy count along its own axis. Player
 `p`'s logits are `z_pk = log(π_pk / π_p1)` for its strategies `k ≥ 2`, against its first strategy, stacked player by
 player (`logit_ranges`). Its gains are `G_pk = U_p(k, π) - U_p(1, π)`, its expected payoffs against the rivals' mixed
-strategies, which do not depend on the precision.
-
-A pass writes into the gains' own work arrays, so it allocates nothing and its logits must have the payoffs' float
-type. Two traces that run at once need two `NormalFormGains`.
+strategies, which do not depend on the precision. A pass writes into work arrays from `pass_workspace`; called
+without them, it builds its own.
 """
-struct NormalFormGains{N, A <: AbstractArray{<:Real, N}, E <: Real}
+struct NormalFormGains{N, A <: AbstractArray{<:Real, N}}
     payoffs::NTuple{N, A}
-    strategies::NTuple{N, Vector{E}}
-    expected::Vector{E}
-    sensitivity::Matrix{E}
-    means::Vector{E}
 
-    function NormalFormGains(
-        payoffs::NTuple{N, A},
-    )::NormalFormGains{N, A} where {N, A <: AbstractArray{<:Real, N}}
+    function NormalFormGains(payoffs::NTuple{N, A})::NormalFormGains{N, A} where {N, A <: AbstractArray{<:Real, N}}
         if !allequal(size.(payoffs))
             throw(ArgumentError("every player's payoff array must have one size; got $(size.(payoffs))"))
         end
-        payoff_zero = float(zero(eltype(A)))
-        counts = size(first(payoffs))
-        widest = maximum(counts)
-        return new{N, A, typeof(payoff_zero)}(
-            payoffs,
-            fill.(payoff_zero, counts),
-            fill(payoff_zero, widest),
-            fill(payoff_zero, widest, widest),
-            fill(payoff_zero, widest),
-        )
+        return new{N, A}(payoffs)
     end
 end
 
@@ -52,6 +35,21 @@ end
 """The number of logits of `gains`: every player's strategy count less one, summed."""
 function logit_count(gains::NormalFormGains)::Integer
     return last(last(logit_ranges(gains)))
+end
+
+"""
+The work arrays of a `gains` pass at logits of element type `E`: each player's mixed strategy, and room for one player's
+expected payoffs, its payoff sensitivities to one rival's strategies, and their means.
+"""
+function pass_workspace(gains::NormalFormGains, ::AbstractVector{E})::NamedTuple where {E <: Real}
+    counts = size(first(gains.payoffs))
+    widest = maximum(counts)
+    return (;
+        strategies = zeros.(E, counts),
+        expected = zeros(E, widest),
+        sensitivity = zeros(E, widest, widest),
+        means = zeros(E, widest),
+    )
 end
 
 """Write into `strategy` the mixed strategy `softmax([0; logits])` of a player whose logits are against its first strategy."""
@@ -84,56 +82,67 @@ function rival_weight(
     return weight
 end
 
-function (gains::NormalFormGains{N, A, E})(
+function (gains::NormalFormGains)(
+    work::NamedTuple,
     gain::AbstractVector,
     gain_slope::AbstractMatrix,
     gain_precision_slope::AbstractVector,
     logits::AbstractVector{E},
     ::Real,
-)::Nothing where {N, A, E}
+)::Nothing where {E <: Real}
     ranges = logit_ranges(gains)
-    reference_softmax!.(gains.strategies, view.((logits,), ranges))
+    reference_softmax!.(work.strategies, view.((logits,), ranges))
     fill!(gain_slope, zero(E))
     fill!(gain_precision_slope, zero(E))
     for (player, payoff) in pairs(gains.payoffs)
-        expected = view(gains.expected, axes(payoff, player))
+        expected = view(work.expected, axes(payoff, player))
         fill!(expected, zero(E))
         for profile in CartesianIndices(payoff)
-            expected[profile[player]] += payoff[profile] * rival_weight(gains.strategies, profile, player, 0)
+            expected[profile[player]] += payoff[profile] * rival_weight(work.strategies, profile, player, 0)
         end
         view(gain, ranges[player]) .= view(expected, (firstindex(expected) + 1):lastindex(expected)) .- first(expected)
         for (rival, rival_range) in pairs(ranges)
             if rival != player
                 # fatou-ignore call-arity: Base `view` takes any number of indices (jolars/fatou#125)
-                write_gain_slope!(view(gain_slope, ranges[player], rival_range), gains, player, rival)
+                write_gain_slope!(view(gain_slope, ranges[player], rival_range), payoff, work, player, rival)
             end
         end
     end
     return nothing
 end
 
-"""
-    write_gain_slope!(block, gains, player, rival)
+function (gains::NormalFormGains)(
+    gain::AbstractVector,
+    gain_slope::AbstractMatrix,
+    gain_precision_slope::AbstractVector,
+    logits::AbstractVector,
+    precision::Real,
+)::Nothing
+    return gains(pass_workspace(gains, logits), gain, gain_slope, gain_precision_slope, logits, precision)
+end
 
-`∂G_pk / ∂z_qj` of `player` `p` in the logits of `rival` `q`, into `block`, at the strategies the pass last wrote. With
-`D_ki = ∂U_p(k) / ∂π_qi` and `∂π_qi / ∂z_qj = π_qi (δ_ij - π_qj)`, `∂U_p(k) / ∂z_qj = π_qj (D_kj - Σ_i D_ki π_qi)`; a
-gain takes its strategy's row less the first strategy's.
+"""
+    write_gain_slope!(block, payoff, work, player, rival)
+
+`∂G_pk / ∂z_qj` of `player` `p` in the logits of `rival` `q`, into `block`, at the strategies in `work`. With
+`D_ki = ∂U_p(k) / ∂π_qi` and `∂π_qi / ∂z_qj = π_qi (δ_ij - π_qj)`, `∂U_p(k) / ∂z_qj = π_qj (D_kj - Σ_i D_ki π_qi)`;
+a gain takes its strategy's row less the first strategy's.
 """
 function write_gain_slope!(
     block::AbstractMatrix,
-    gains::NormalFormGains{N, A, E},
+    payoff::AbstractArray,
+    work::NamedTuple,
     player::Integer,
     rival::Integer,
-)::Nothing where {N, A, E}
-    payoff = gains.payoffs[player]
-    rival_strategy = gains.strategies[rival]
+)::Nothing
+    rival_strategy = work.strategies[rival]
     # fatou-ignore call-arity: Base `view` takes any number of indices (jolars/fatou#125)
-    sensitivity = view(gains.sensitivity, axes(payoff, player), axes(payoff, rival))
-    fill!(sensitivity, zero(E))
+    sensitivity = view(work.sensitivity, axes(payoff, player), axes(payoff, rival))
+    fill!(sensitivity, zero(eltype(sensitivity)))
     for profile in CartesianIndices(payoff)
-        sensitivity[profile[player], profile[rival]] += payoff[profile] * rival_weight(gains.strategies, profile, player, rival)
+        sensitivity[profile[player], profile[rival]] += payoff[profile] * rival_weight(work.strategies, profile, player, rival)
     end
-    means = mul!(view(gains.means, axes(payoff, player)), sensitivity, rival_strategy)
+    means = mul!(view(work.means, axes(payoff, player)), sensitivity, rival_strategy)
     own, other = axes(sensitivity)
     own_later, later = (first(own) + 1):last(own), (first(other) + 1):last(other)
     # fatou-ignore call-arity: Base `view` takes any number of indices (jolars/fatou#125)

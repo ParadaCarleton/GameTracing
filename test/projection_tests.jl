@@ -11,7 +11,7 @@ end
 """`game`'s residual `F` and its Jacobian `J` in payoff gaps `[logits / ρ; ρ]` at `point`."""
 function branch_equations(game::LogitGame, point::AbstractVector{E})::NamedTuple where {E <: Real}
     width = length(point) - 1
-    system = branch_system!(BranchWorkspace(point), game, point, last(point))
+    system = branch_system!(BranchWorkspace(game, point), game, point, last(point))
     return (; residual = system.residual[1:width], jacobian = system.jacobian[1:width, :])
 end
 

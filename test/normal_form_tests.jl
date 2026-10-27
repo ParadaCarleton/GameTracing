@@ -72,18 +72,20 @@ function summed_expected_payoffs(payoff::AbstractArray, strategies::Tuple, playe
     ]
 end
 
-"""The bytes one call of `pass` allocates at `logits` and `precision`, after a first call compiles it."""
+"""The bytes one call of `pass` on its `pass_workspace` allocates at `logits` and `precision`, after a first call compiles it."""
 function pass_bytes(pass::Any, logits::AbstractVector{E}, precision::Real)::Integer where {E <: Real}
     width = length(logits)
     gain, gain_slope, gain_precision_slope = zeros(E, width), zeros(E, width, width), zeros(E, width)
-    pass(gain, gain_slope, gain_precision_slope, logits, precision)
-    return @allocated pass(gain, gain_slope, gain_precision_slope, logits, precision)
+    work = pass_workspace(pass, logits)
+    pass(work, gain, gain_slope, gain_precision_slope, logits, precision)
+    return @allocated pass(work, gain, gain_slope, gain_precision_slope, logits, precision)
 end
 
 @testset "NormalFormGains: each player's gains, stacked in player order, are its expected payoffs less its first strategy's" begin
     rng = fresh_rng()
     for counts in ((3, 3, 3), (2, 3, 4), (4, 2, 3), (3, 2))
-        payoffs = ntuple(_ -> 3 .* randn(rng, counts), length(counts))
+        # 32-bit payoffs under 64-bit logits: the work arrays take the logits' element type.
+        payoffs = ntuple(_ -> 3 .* randn(rng, Float32, counts), length(counts))
         gains = NormalFormGains(payoffs)
         logits = randn(rng, logit_count(gains))
         strategies = mixed_strategies(gains, logits)
@@ -93,7 +95,7 @@ end
     end
 end
 
-@testset "a NormalFormGains pass allocates nothing" begin
+@testset "a NormalFormGains pass on its workspace allocates nothing" begin
     rng = fresh_rng()
     gains = NormalFormGains(ntuple(_ -> randn(rng, Float32, 3, 2, 4), 3))
     @test pass_bytes(gains, randn(rng, Float32, logit_count(gains)), 2.0f0) == 0

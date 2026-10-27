@@ -418,7 +418,7 @@ function reached_state(
     target_precision = game.target_precision
     if isnothing(outcome.exception) && progress.relative_precision == one(E)
         point = [progress.gaps; one(E)]
-        residual = maximum(abs, branch_system!(BranchWorkspace(point), game, point, one(E)).residual)
+        residual = maximum(abs, branch_system!(BranchWorkspace(game, point), game, point, one(E)).residual)
         tolerance = corrector_tolerance(settings.corrector.residual_tolerance, settings.corrector.tolerance_floor_ulps, point)
         if residual < tolerance
             return Ok(Traced(copy(progress.gaps), progress.steps))

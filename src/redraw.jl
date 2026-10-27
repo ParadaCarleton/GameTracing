@@ -46,10 +46,10 @@ end
 `game`'s branch residual `w - P G(ρ w, ρ P)` in the payoff gaps `w` at the fixed relative precision `ρ`, and its
 Jacobian `I - λ ∂G/∂z`, as NonlinearSolve's in-place functions (`level_residual!`, `level_jacobian!`).
 """
-struct LevelSystem{G <: LogitGame, E <: Real}
+struct LevelSystem{G <: LogitGame, E <: Real, W <: BranchWorkspace{E}}
     game::G
     relative_precision::E
-    workspace::BranchWorkspace{E}
+    workspace::W
 end
 
 """`system.workspace` filled at the gaps `gaps` and `system`'s relative precision."""
@@ -87,14 +87,14 @@ function level_correction(
         NonlinearProblem(
             NonlinearFunction{true}(level_residual!; jac = level_jacobian!),
             collect(state_of(point)),
-            LevelSystem(game, relative_precision, BranchWorkspace(point)),
+            LevelSystem(game, relative_precision, BranchWorkspace(game, point)),
         ),
         solver;
         abstol = settings.corrector.residual_tolerance,
         maxiters = settings.corrector.newton_iterations,
     )
     corrected_point = [solution.u; relative_precision]
-    workspace = branch_system!(BranchWorkspace(point), game, corrected_point, relative_precision)
+    workspace = branch_system!(BranchWorkspace(game, point), game, corrected_point, relative_precision)
     residual = maximum(abs, state_of(workspace.residual))
     distance = relative_precision * sqrt(sum(abs2, solution.u .- state_of(point)))
     tolerance = corrector_tolerance(
@@ -126,7 +126,7 @@ function restart_tangent(
     theta::E,
 )::AbstractVector{E} where {E <: Real}
     width = length(point) - 1
-    jacobian = branch_system!(BranchWorkspace(point), game, point, last(point)).jacobian
+    jacobian = branch_system!(BranchWorkspace(game, point), game, point, last(point)).jacobian
     border = theta .* old_tangent ./ length(point)
     border[end] += (1 - theta) * last(old_tangent)
     # fatou-ignore call-arity: Base `view` takes any number of indices (jolars/fatou#125)
