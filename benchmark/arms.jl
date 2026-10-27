@@ -263,6 +263,8 @@ Run the benchmark over `scope`: `"full"` every game and variant, `"quick"` one f
 shipped settings and the first arm, the load check CI runs. Throws unless every game and variant gave a row.
 """
 function main(output::AbstractString, scope::AbstractString)::Nothing
+    # Step counts can differ between runners; the CPU and its LLVM target name the hardware each run used.
+    println("RUNNER | ", first(Sys.cpu_info()).model, " | target ", Sys.CPU_NAME, " | threads ", Threads.nthreads(), " | Julia ", VERSION)
     variants = ["shipped" => TraceSettings{Float32}(); arm_variants()]
     cases = vcat(fixed_cases(), swap_cases())
     if scope == "quick"
