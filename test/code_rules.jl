@@ -46,6 +46,11 @@ const SOURCE_FILES = [
 @testset "code rules find nothing" begin
     sources = Dict(file => located_source(file) for file in SOURCE_FILES)
     inferred = inferred_methods(GameTracing)
+    for item in inferred
+        if item.method.name in (:BranchWorkspace, :write_gain_slope!)
+            @info "abstract-locals diagnostic" item.method.line item.code.parent.specTypes collect(zip(item.code.slotnames, item.code.slottypes))
+        end
+    end
     structs = module_structs(GameTracing)
     locations = struct_locations(SOURCE_FILES)
     @testset "a function reads only its arguments and immutable constants" begin
