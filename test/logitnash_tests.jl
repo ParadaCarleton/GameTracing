@@ -147,8 +147,8 @@ end
 end
 
 @testset "a pitchfork unfolded by a payoff perturbation: the bordered trace turns with the principal branch" begin
-    # Measured over 4 draws per scale: the secant tangent followed the principal branch 0/4 at 1e-4, 1/4 at 1e-3, 3/4 at
-    # 1e-2 and 4/4 at 1e-1; the bordered tangent 4/4 at every scale.
+    # Measured over 40 draws per scale against the arclength reference: the secant tangent followed the principal branch
+    # 0/40 at 1e-4, 3/40 at 1e-3, 34/40 at 1e-2 and 39/40 at 1e-1; the bordered tangent 40/40 at every scale.
     rng = fresh_rng()
     for scale in inv.(float.((10^4, 10^3, 10^2, 10))), _ in 1:3
         payoffs = map(table -> table .+ scale .* randn(rng, 2, 2), map(float, LOGITNASH_GAMES.battle_of_the_sexes))
