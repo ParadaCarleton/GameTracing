@@ -116,7 +116,9 @@ end
 @testset "every state weight in (0, 1) traces, a one-logit game at the default settings included" begin
     for state_weight in (0.1f0, 0.5f0, 0.9f0), distance in instances(StepDistance)
         geometry = TraceGeometry{Float32}(; distance, state_weight)
-        @test GameTracing.palc_geometry(geometry, 1).theta == state_weight
+        # A log-precision trace carries its state weight in its dot and runs PALC at a fixed weight.
+        palc_theta = ifelse(distance == LogPrecisionDistance, Float32(GameTracing.LOG_PRECISION_THETA), state_weight)
+        @test GameTracing.palc_geometry(geometry, 1).theta == palc_theta
     end
     for state_weight in (0.0f0, 1.0f0, -0.5f0, NaN32)
         @test_throws ArgumentError GameTracing.palc_geometry(TraceGeometry{Float32}(; state_weight), 1)

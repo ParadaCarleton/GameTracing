@@ -21,9 +21,12 @@ end
     @test GameTracing.chord_angle(start, Float32[1, 0, 0], start, geometry) == 0
 end
 
-@testset "each distance weighs coordinates and precision as documented, Fisher measuring in the summed norm" begin
+@testset "each distance weighs coordinates and precision as documented, Fisher and log precision measuring in the summed norm" begin
     displacement = Float32[1, 2, 3]
-    for (distance, expected) in ((AveragedDistance, 0.4f0 * 5 / 2 + 0.6f0 * 9), (SummedDistance, 0.4f0 * 5 + 9), (FisherDistance, 0.4f0 * 5 + 9))
+    for (distance, expected) in (
+            (AveragedDistance, 0.4f0 * 5 / 2 + 0.6f0 * 9), (SummedDistance, 0.4f0 * 5 + 9), (FisherDistance, 0.4f0 * 5 + 9),
+            (LogPrecisionDistance, 0.4f0 * 5 + 9),
+        )
         geometry = TraceGeometry{Float32}(; distance, state_weight = 0.4f0)
         @test GameTracing.arclength_distance(zeros(Float32, 3), displacement, geometry)^2 ≈ expected
     end
@@ -40,9 +43,18 @@ end
         palc_square = palc.dot(displacement, displacement, last(displacement), last(displacement), palc.theta)
         logits = GameTracing.logits_at(point)
         weights = ifelse(distance == FisherDistance, inv.(1 .+ exp.(-logits)) .* inv.(1 .+ exp.(logits)), ones(Float32, 2))
-        plain = TraceGeometry{Float32}(; distance = ifelse(distance == FisherDistance, SummedDistance, distance), state_weight = 0.3f0)
-        weighted = [sqrt.(weights) .* displacement[1:2]; last(displacement)]
+        # A log-precision step in ρ is the step in log(1 + ρ) to first order.
+        precision_weight = ifelse(distance == LogPrecisionDistance, inv(1 + last(point)), 1.0f0)
+        frozen = distance in (FisherDistance, LogPrecisionDistance)
+        plain = TraceGeometry{Float32}(; distance = ifelse(frozen, SummedDistance, distance), state_weight = 0.3f0)
+        weighted = [sqrt.(weights) .* displacement[1:2]; precision_weight * last(displacement)]
         @test palc_square ≈ GameTracing.arclength_distance(zeros(Float32, 3), weighted, plain)^2 rtol = 1.0f-5
+    end
+end
+
+@testset "a log-precision trace weighs the relative precision positively over its range" begin
+    for relative_precision in range(0.0f0, 1.0f0; length = 101)
+        @test GameTracing.log_precision_weight(relative_precision) > 0
     end
 end
 
