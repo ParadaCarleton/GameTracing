@@ -173,7 +173,7 @@ end
 
 """
 What one trace did: first-action probabilities (empty on failure), its status, accepted steps, corrector iterates,
-bytes, refusals per check (`REFUSAL_CHECKS`) and the check that refused last (`:none` if none did).
+bytes, refusals per check (`REFUSAL_CHECKS`), the check that refused last and the reason it stopped short (`:none` if none).
 """
 function traced(case::Union{Case, SwapCase}, settings::TraceSettings)::NamedTuple
     trace_run = TraceRun(case, settings)
@@ -187,7 +187,8 @@ function traced(case::Union{Case, SwapCase}, settings::TraceSettings)::NamedTupl
     refusals = [last(record) for record in records if first(record) in REFUSAL_MESSAGES]
     counts = NamedTuple{REFUSAL_CHECKS}(map(RefusalCount(refusals), REFUSAL_CHECKS))
     last_refusal = last([:none; refusals])
-    common = (; steps, iterations, bytes, refusals = counts, last_refusal)
+    stop_reason = last([:none; [last(record) for record in records if first(record) == "trace stopped"]])
+    common = (; steps, iterations, bytes, refusals = counts, last_refusal, stop_reason)
     if is_error(result)
         return (; choices = Float32[], status = string(unwrap_error(result).cause), common...)
     end
@@ -230,6 +231,7 @@ function logitnash_row(case::Case)::NamedTuple
         case = case.name, label = "logitnash", choices = ifelse(reached, choices, empty(choices)),
         status = ifelse(reached, "reached", "stalled"), steps = status.iteration, iterations = 0, bytes,
         refusals = NamedTuple{REFUSAL_CHECKS}(map(Returns(0), REFUSAL_CHECKS)), last_refusal = :none,
+        stop_reason = ifelse(reached, :none, :stall),
         kind = ifelse(reference.reached, "reference", "folded"), pitchfork = Symbol(case.name) in PITCHFORK_GAMES, swapped = false,
         gap = profile_gap(ifelse(reached && reference.reached, choices, empty(choices)), reference.first_choices),
     )
@@ -265,8 +267,8 @@ function case_rows(case::Union{Case, SwapCase}, variants::AbstractVector)::Vecto
     rows = vcat(rows, logitnash_rows(case))
     for row in rows
         @printf(
-            "ROW | %-24s | %-14s | %-13s | steps %5d | iterations %6d | refused reach %d kl %d angle %d nonfinite %d, last %s | gap %.2e (%s) | bytes %d\n",
-            row.case, row.label, row.status, row.steps, row.iterations, row.refusals..., row.last_refusal, row.gap, row.kind, row.bytes,
+            "ROW | %-24s | %-14s | %-13s | steps %5d | iterations %6d | refused reach %d kl %d angle %d nonfinite %d, last %s | stopped %s | gap %.2e (%s) | bytes %d\n",
+            row.case, row.label, row.status, row.steps, row.iterations, row.refusals..., row.last_refusal, row.stop_reason, row.gap, row.kind, row.bytes,
         )
     end
     for (index, left) in pairs(reached), right in reached[(index + 1):end]
@@ -291,12 +293,12 @@ reached_row(row::NamedTuple)::Bool = row.status == "reached"
 
 """
 One SUMMARY line for variant `label` over the `rows` of one game group (`group` names it); the gap statistics skip
-pitchfork games, whose branch is ambiguous. Failures list the check that refused last before each stall.
+pitchfork games, whose branch is ambiguous. Failures list each stall's stop reason and the check that refused last.
 """
 function print_summary(group::AbstractString, label::AbstractString, rows::AbstractVector)::Nothing
     mine = [row for row in rows if row.label == label]
     gaps = [row.gap for row in mine if row.status == "reached" && !isnan(row.gap) && !row.pitchfork]
-    failures = join(sort([string(row.status, ":", row.last_refusal) for row in mine if row.status != "reached"]), " ")
+    failures = join(sort([string(row.status, ":", row.stop_reason, ":", row.last_refusal) for row in mine if row.status != "reached"]), " ")
     @printf(
         "SUMMARY %-5s | %-14s | reached %2d/%2d | off-reference %2d | steps %6d | iterations %7d | gap median %.1e worst %.1e | bytes mean %d | failed %s\n",
         group, label, count(reached_row, mine), length(mine), count(>(1.0f-3), gaps),
@@ -326,9 +328,9 @@ function main(output::AbstractString, scope::AbstractString)::Nothing
         error("expected $expected rows, got $(length(rows))")
     end
     io = open(output, "w")
-    println(io, "game,variant,status,steps,iterations,refused_reach,refused_kl,refused_angle,refused_nonfinite,last_refusal,gap,bytes,reference,swapped")
+    println(io, "game,variant,status,steps,iterations,refused_reach,refused_kl,refused_angle,refused_nonfinite,last_refusal,stop_reason,gap,bytes,reference,swapped")
     for row in rows
-        println(io, join((row.case, row.label, row.status, row.steps, row.iterations, row.refusals..., row.last_refusal, row.gap, row.bytes, row.kind, row.swapped), ','))
+        println(io, join((row.case, row.label, row.status, row.steps, row.iterations, row.refusals..., row.last_refusal, row.stop_reason, row.gap, row.bytes, row.kind, row.swapped), ','))
     end
     close(io)
     # Fixed-map and map-swap games are summarized apart: a swap's refusals come from the redraw, not the geometry.
