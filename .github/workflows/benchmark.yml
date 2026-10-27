@@ -7,6 +7,10 @@ on:
     paths: ['src/**', 'test/arms.jl', 'test/games.jl', 'test/fixtures.jl', 'benchmark/**', '.github/workflows/benchmark.yml']
   pull_request:
     paths: ['src/**', 'test/arms.jl', 'test/games.jl', 'test/fixtures.jl', 'benchmark/**', '.github/workflows/benchmark.yml']
+# An explicit bash runs with -eo pipefail, so a failed benchmark fails its step through `tee`.
+defaults:
+  run:
+    shell: bash
 jobs:
   arms:
     runs-on: ubuntu-latest
