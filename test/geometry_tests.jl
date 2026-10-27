@@ -73,7 +73,7 @@ end
         check = GameTracing.CorrectorReach(
             GameTracing.AcceptAll(),
             corrector,
-            TraceGeometry{Float32}(distance = SummedDistance),
+            TraceGeometry{Float32}(distance = SummedDistance, state_weight = 0.5f0),
             Float32[0, 0, 0.5f0],
             predicted,
             1.0f0,
