@@ -290,15 +290,16 @@ end
 """
     branch_reference(pass, width, precision; start, start_precision)
 
-`(; reached, logits, first_choices)`: an independent reference for the branch of `pass` at `precision`, by pseudo-arclength
+`(; reached, logits, first_choices, crossings)`: an independent reference for the branch of `pass` at `precision`, by pseudo-arclength
 continuation in `Float64` over `[z; λ]` from the root `level_root` reaches from `start` at `start_precision` (default:
 zero logits at zero precision, the principal branch). It ends where λ first reaches `precision`, through folds included.
 
 A step of arclength at most `1/100` halves until its corrector settles near the predictor, the tangent turns under
 `acos(0.99)`, and `reference_orientation` keeps its sign. A sign change marks a step onto another sheet: on
 `UNFOLDED_PITCHFORK_GAME` the principal branch turns steeply past the middle arm, which a step in λ alone lands on.
-A sign change that persists to a step of `1e-6` is a crossing of a singular point, as at an exact pitchfork, and is
-taken. `reached = false` when the step underflows or `10^6` steps do not reach `precision`.
+A sign change that persists to a step of `1e-6` is taken as a crossing of a singular point, as at an exact pitchfork;
+`crossings` counts them, and a generic game's branch has none. `reached = false` when the step underflows or `10^6`
+steps do not reach `precision`.
 """
 function branch_reference(
     pass::Any,
@@ -313,6 +314,7 @@ function branch_reference(
     tangent = reference_tangent(pass, point, [zeros(width); one(target)])
     side = reference_orientation(pass, point, tangent)
     step, largest, singular_step = inv(float(1000)), inv(float(100)), inv(float(10^6))
+    crossings = 0
     for _ in 1:(10^6)
         if !(last(point) < target) || !(step > eps(target))
             break
@@ -322,11 +324,12 @@ function branch_reference(
             next_tangent = reference_tangent(pass, corrected.point, tangent)
             next_side = reference_orientation(pass, corrected.point, next_tangent)
             if dot(next_tangent, tangent) >= 99 // 100 && (next_side == side || step <= singular_step)
+                crossings += next_side != side
                 if !(last(corrected.point) < target)
                     # The step brackets the target: Newton at the target from the bracket's interpolation.
                     weight = (target - last(point)) / (last(corrected.point) - last(point))
                     logits = level_root(pass, point[1:width] .+ weight .* (corrected.point[1:width] .- point[1:width]), target)
-                    return (; reached = true, logits, first_choices = inv.(1 .+ exp.(-logits)))
+                    return (; reached = true, logits, first_choices = inv.(1 .+ exp.(-logits)), crossings)
                 end
                 point, tangent, side, step = corrected.point, next_tangent, next_side, min(2 * step, largest)
                 continue
@@ -335,7 +338,7 @@ function branch_reference(
         step /= 2
     end
     logits = point[1:width]
-    return (; reached = last(point) == target, logits, first_choices = inv.(1 .+ exp.(-logits)))
+    return (; reached = last(point) == target, logits, first_choices = inv.(1 .+ exp.(-logits)), crossings)
 end
 
 """
