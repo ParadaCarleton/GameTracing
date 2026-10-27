@@ -1,3 +1,4 @@
+using LinearAlgebra: det, dot, norm
 using Random: RandomDevice, Xoshiro
 
 """A generator on a fresh seed, logged so a failing draw can be replayed with `Xoshiro(seed)`."""
@@ -246,14 +247,61 @@ function level_root(pass::Any, logits::AbstractVector, precision::Real)::Abstrac
     error("level_root: Newton did not settle at precision $level")
 end
 
+"""`(; residual, jacobian)` of the branch equations `z - T(z, λ) = 0` of `pass` at `point = [z; λ]`."""
+function reference_system(pass::Any, point::AbstractVector{E})::NamedTuple where {E <: Real}
+    logits, level = point[1:(end - 1)], last(point)
+    gains = evaluated(pass, logits, level)
+    return (; residual = logits .- gains.response, jacobian = [one(gains.logit_slope) .- gains.logit_slope -gains.precision_slope])
+end
+
+"""The unit tangent of the branch of `pass` at `point`, oriented along `previous`."""
+function reference_tangent(pass::Any, point::AbstractVector{E}, previous::AbstractVector{E})::Vector{E} where {E <: Real}
+    jacobian = reference_system(pass, point).jacobian
+    tangent = [jacobian; transpose(previous)] \ [zeros(E, size(jacobian, 1)); one(E)]
+    return tangent ./ norm(tangent)
+end
+
+"""The sign of `det(∂F/∂z)` times that of `dλ/ds`: constant along a smooth branch, through folds included."""
+function reference_orientation(pass::Any, point::AbstractVector{E}, tangent::AbstractVector{E})::E where {E <: Real}
+    jacobian = reference_system(pass, point).jacobian
+    return sign(det(jacobian[:, 1:(end - 1)])) * sign(last(tangent))
+end
+
+"""
+`(; settled, point)`: Newton on the branch equations and the arclength condition `τ ⋅ (y - point) = step`, from the
+predictor `point + step τ`; `settled` when it solves the map to `settled_root` at `scale` within `step / 10` of the predictor.
+"""
+function corrected_point(
+    pass::Any,
+    point::AbstractVector{E},
+    tangent::AbstractVector{E},
+    step::E,
+    scale::E,
+)::NamedTuple where {E <: Real}
+    predicted = point .+ step .* tangent
+    candidate = copy(predicted)
+    for _ in 1:6
+        system = reference_system(pass, candidate)
+        candidate = candidate .- [system.jacobian; transpose(tangent)] \ [system.residual; dot(tangent, candidate .- point) - step]
+        if settled_root(pass, candidate[1:(end - 1)], last(candidate), scale)
+            return (; settled = norm(candidate .- predicted) <= step / 10, point = candidate)
+        end
+    end
+    return (; settled = false, point = candidate)
+end
+
 """
     branch_reference(pass, width, precision; start, start_precision)
 
-`(; reached, logits, first_choices)`: an independent reference for the branch of `pass` at `precision`, by natural
-continuation in `Float64` from the root `level_root` reaches from `start` at `start_precision` (default: zero logits at
-zero precision, the principal branch). Each step runs Newton from the last point and halves until Newton converges with
-no logit moving more than `1/1000`, so it creeps through the sharp turn of an unfolded pitchfork. A branch that folds
-back in precision has no next point, and the reference stops short (`reached = false`).
+`(; reached, logits, first_choices)`: an independent reference for the branch of `pass` at `precision`, by pseudo-arclength
+continuation in `Float64` over `[z; λ]` from the root `level_root` reaches from `start` at `start_precision` (default:
+zero logits at zero precision, the principal branch). It ends where λ first reaches `precision`, through folds included.
+
+A step of arclength at most `1/100` halves until its corrector settles near the predictor, the tangent turns under
+`acos(0.99)`, and `reference_orientation` keeps its sign. A sign change marks a step onto another sheet: on
+`UNFOLDED_PITCHFORK_GAME` the principal branch turns steeply past the middle arm, which a step in λ alone lands on.
+A sign change that persists to a step of `1e-6` is a crossing of a singular point, as at an exact pitchfork, and is
+taken. `reached = false` when the step underflows or `10^6` steps do not reach `precision`.
 """
 function branch_reference(
     pass::Any,
@@ -262,24 +310,35 @@ function branch_reference(
     start::AbstractVector = zeros(width),
     start_precision::Real = 0,
 )::NamedTuple
-    logits = level_root(pass, start, start_precision)
     # `float(1)` widens a 32-bit precision, which no Float64 literal names.
     target = precision * float(1)
-    level, step = start_precision * float(1), inv(float(1000))
-    while level < target && step > eps(target)
-        next = min(level + step, target)
-        candidate = copy(logits)
-        for _ in 1:4
-            gains = evaluated(pass, candidate, next)
-            candidate = candidate .- (one(gains.logit_slope) .- gains.logit_slope) \ (candidate .- gains.response)
+    point = [level_root(pass, start, start_precision); start_precision * float(1)]
+    tangent = reference_tangent(pass, point, [zeros(width); one(target)])
+    side = reference_orientation(pass, point, tangent)
+    step, largest, singular_step = inv(float(1000)), inv(float(100)), inv(float(10^6))
+    for _ in 1:(10^6)
+        if !(last(point) < target) || !(step > eps(target))
+            break
         end
-        if settled_root(pass, candidate, next, target) && maximum(abs, candidate .- logits) <= inv(float(1000))
-            logits, level, step = candidate, next, min(2 * step, inv(float(100)))
-        else
-            step /= 2
+        corrected = corrected_point(pass, point, tangent, step, target)
+        if corrected.settled
+            next_tangent = reference_tangent(pass, corrected.point, tangent)
+            next_side = reference_orientation(pass, corrected.point, next_tangent)
+            if dot(next_tangent, tangent) >= 99 // 100 && (next_side == side || step <= singular_step)
+                if !(last(corrected.point) < target)
+                    # The step brackets the target: Newton at the target from the bracket's interpolation.
+                    weight = (target - last(point)) / (last(corrected.point) - last(point))
+                    logits = level_root(pass, point[1:width] .+ weight .* (corrected.point[1:width] .- point[1:width]), target)
+                    return (; reached = true, logits, first_choices = inv.(1 .+ exp.(-logits)))
+                end
+                point, tangent, side, step = corrected.point, next_tangent, next_side, min(2 * step, largest)
+                continue
+            end
         end
+        step /= 2
     end
-    return (; reached = level == target, logits, first_choices = inv.(1 .+ exp.(-logits)))
+    logits = point[1:width]
+    return (; reached = last(point) == target, logits, first_choices = inv.(1 .+ exp.(-logits)))
 end
 
 """
