@@ -165,12 +165,15 @@ function traced(case::Union{Case, SwapCase}, settings::TraceSettings)::NamedTupl
     return (; choices = first_choices(unwrap(result).logits), status = "reached", common...)
 end
 
-"""The largest probability gap between two profiles, NaN when either is empty."""
-function profile_gap(left::AbstractVector, right::AbstractVector)::Float32
+"""
+The largest probability gap between `left` and `right`, NaN when either is empty, in `right`'s element type: against
+a Float64 reference that resolves gaps below Float32's 6e-8 spacing near 1.
+"""
+function profile_gap(left::AbstractVector, right::AbstractVector{E})::E where {E <: Real}
     if isempty(left) || isempty(right)
-        return NaN32
+        return E(NaN32)
     end
-    return Float32(maximum(abs, left .- right))
+    return maximum(abs, E.(left) .- right)
 end
 
 """Every variant's row on `case`, printed, with a SIGNAL for each pair of reached endpoints over 1e-3 apart."""
@@ -181,7 +184,7 @@ function case_rows(case::Union{Case, SwapCase}, variants::AbstractVector)::Vecto
     rows = NamedTuple[
         (; case = case_name(case), label, outcome..., kind, pitchfork = Symbol(case_name(case)) in PITCHFORK_GAMES,
             swapped = case isa SwapCase,
-            gap = ifelse(reference.reached, profile_gap(outcome.choices, reference.first_choices), NaN32))
+            gap = profile_gap(reference.reached ? outcome.choices : empty(outcome.choices), reference.first_choices))
         for (label, outcome) in (label => traced(case, settings) for (label, settings) in variants)
     ]
     for row in rows
@@ -201,11 +204,11 @@ function case_rows(case::Union{Case, SwapCase}, variants::AbstractVector)::Vecto
 end
 
 """`reduction` of `values`, NaN when there are none."""
-function statistic(reduction::Any, values::AbstractVector)::Float32
+function statistic(reduction::Any, values::AbstractVector)::Real
     if isempty(values)
         return NaN32
     end
-    return Float32(reduction(values))
+    return reduction(values)
 end
 
 """
