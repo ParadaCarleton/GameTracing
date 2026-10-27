@@ -111,12 +111,12 @@ function fixed_cases()::Vector{Case}
     )
 end
 
-"""The map-swap games: the near, far and fold swaps and random ones."""
+"""The map-swap games: the near and far swaps and random ones. The fold swap has no reference past its fold."""
 function swap_cases()::Vector{SwapCase}
     return vcat(
         SwapCase[
             swap_case(name, swap, widened(swap.before), widened(swap.after))
-            for (name, swap) in (("near swap", NEAR_SWAP), ("far swap", FAR_SWAP), ("fold swap", FOLD_SWAP))
+            for (name, swap) in (("near swap", NEAR_SWAP), ("far swap", FAR_SWAP))
         ],
         SwapCase[swap_case(seed) for seed in 1:6],
     )

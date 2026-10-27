@@ -84,12 +84,18 @@ function homotopy_crossing(
     callback_newton::Any = BifurcationKit.cb_default,
 )::NamedTuple where {E <: Real}
     homotopy = HomotopyMap(start_problem, end_problem)
+    watch = CrossingWatch(HomotopyJacobian(homotopy), sign(det(HomotopyJacobian(homotopy)(point, zero(E)))), copy(point), 0, :stopped)
     # BifurcationKit's constructors are not inferable, so each is built in its own function and passed on unnamed.
-    return crossing_walk(
-        homotopy_iterable(homotopy_problem(homotopy, point), algorithm, options, callback_newton),
-        HomotopyJacobian(homotopy),
-        point,
+    BifurcationKit.continuation(
+        homotopy_problem(homotopy, point),
+        algorithm,
+        options;
+        normC = BifurcationKit.norminf,
+        verbosity = 0,
+        finalise_solution = watch,
+        callback_newton,
     )
+    return (; watch.point, watch.reason, watch.steps)
 end
 
 """BifurcationKit's problem for `homotopy` from `point` at `s = 0`, with its Jacobian and exact `∂H/∂s`."""
@@ -105,50 +111,39 @@ function homotopy_problem(homotopy::HomotopyMap, point::AbstractVector{E})::Bifu
     )
 end
 
-"""BifurcationKit's continuation iterator of `problem` under `algorithm` and `options`, with `callback_newton`."""
-function homotopy_iterable(
-    problem::BifurcationKit.AbstractBifurcationProblem,
-    algorithm::BifurcationKit.AbstractContinuationAlgorithm,
-    options::BifurcationKit.ContinuationPar,
-    callback_newton::Any,
-)::BifurcationKit.ContIterable
-    return BifurcationKit.ContIterable(
-        problem,
-        BifurcationKit.update(algorithm, options, nothing),
-        options;
-        normC = BifurcationKit.norminf,
-        verbosity = 0,
-        callback_newton,
-    )
+"""
+    CrossingWatch(jacobian, start_sign, point, steps, reason)
+
+BifurcationKit's `finalise_solution` of a homotopy crossing: at each accepted point it stops the run with `reason`
+`:fold` when the tangent turns back in `s`, `:crossing` when `det jacobian` leaves `start_sign`, else records the
+point and its step count, `:crossed` once `s = 1`. A run that ends otherwise keeps `:stopped`.
+"""
+mutable struct CrossingWatch{J <: HomotopyJacobian, E <: Real}
+    # Mutable because BifurcationKit's finalise callback returns only a `Bool`, as for `TraceProgress`.
+    jacobian::J
+    start_sign::E
+    point::Vector{E}
+    steps::Int
+    reason::Symbol
 end
 
-"""
-    crossing_walk(iterable, jacobian, point)
-
-`homotopy_crossing`'s result: the accepted points of BifurcationKit's `iterable` from `point` at `s = 0`, each checked
-for a turn in `s` and a sign change of `det jacobian` against the start's.
-"""
-function crossing_walk(iterable::BifurcationKit.ContIterable, jacobian::HomotopyJacobian, point::AbstractVector{E})::NamedTuple where {E <: Real}
-    start_sign = sign(det(jacobian(point, zero(E))))
-    # The first state is the start, step 0; each later accepted point advances `state.step`. While `done` holds,
-    # `iterate` returns a state.
-    state = first(iterate(iterable))
-    steps = 0
-    while BifurcationKit.done(iterable, state)
-        state = first(iterate(iterable, state))
-        if BifurcationKit.converged(state) && state.step > steps
-            steps = state.step
-            here = BifurcationKit.getx(state)
-            @debug "crossing point" _group = :homotopy_crossing blend = BifurcationKit.getp(state)
-            # The tangent at the new point is set by the step that accepted it.
-            if BifurcationKit.gettangent(state).p < 0
-                return (; point = copy(here), reason = :fold, steps)
-            end
-            if sign(det(jacobian(here, BifurcationKit.getp(state)))) != start_sign
-                return (; point = copy(here), reason = :crossing, steps)
-            end
-        end
+function (watch::CrossingWatch)(point::P, tangent::T, step::S, ::Any;
+    # fatou-ignore unused-argument: BifurcationKit passes keyword arguments this callback ignores
+    keywords...,
+)::Bool where {P, T, S <: Integer}
+    @debug "crossing point" _group = :homotopy_crossing blend = point.p
+    copyto!(watch.point, point.u)
+    watch.steps = step
+    if tangent.p < 0
+        watch.reason = :fold
+        return false
     end
-    reached = BifurcationKit.converged(state) && BifurcationKit.getp(state) == one(E)
-    return (; point = copy(BifurcationKit.getx(state)), reason = ifelse(reached, :crossed, :stopped), steps)
+    if sign(det(watch.jacobian(point.u, point.p))) != watch.start_sign
+        watch.reason = :crossing
+        return false
+    end
+    if point.p == one(point.p)
+        watch.reason = :crossed
+    end
+    return true
 end
