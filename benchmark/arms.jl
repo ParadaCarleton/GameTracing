@@ -289,14 +289,18 @@ function main(output::AbstractString, scope::AbstractString)::Nothing
     return nothing
 end
 
-"""SCRATCH: swap 6 under fisher_reach θ 0.9 and θ 0.5, every trace record and the failure context printed."""
+"""SCRATCH: swap 6's redraw correction from the Float64 reference point of the map before, at several levels."""
 function diagnose()::Nothing
     swap = swap_cases()[8]
-    println("CASE | ", case_name(swap))
-    for weight in (0.9f0, 0.5f0)
-        settings = arm_settings(ARMS.fisher_reach, weight)
-        result = with_logger(TraceRun(swap, settings), Logging.ConsoleLogger(stdout, Debug))
-        println("WEIGHT ", weight, " | ", is_error(result) ? unwrap_error(result) : unwrap(result))
+    (; case) = swap
+    settings = TraceSettings{Float32}()
+    for level in (0.5f0, 0.6f0, 0.7f0, 0.73380494f0)
+        before = branch_reference(case.reference_pass, case.width, case.precision * level)
+        point = [Float32.(before.logits) ./ level; level]
+        correction = GameTracing.level_correction(LogitGame(swap.after, case.precision), point, settings, GameTracing.NewtonRaphson())
+        moved_choices = maximum(abs, first_choices(GameTracing.logits_at(correction.point)) .- first_choices(GameTracing.logits_at(point)))
+        println("LEVEL ", level, " | reached ", before.reached, " | logits ", Float32.(before.logits), " | distance ", correction.distance,
+            " | residual ", correction.residual, " | corrected ", correction.corrected, " | largest choice move ", moved_choices)
     end
     return nothing
 end
