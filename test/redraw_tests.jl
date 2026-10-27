@@ -58,6 +58,17 @@ end
     )
 end
 
+"""Whether the logits of `result` solve `pass` at `precision` to twice the corrector tolerance at `ρ = 1`."""
+function on_map(result::TraceResult{Float32}, pass::Any, precision::Real)::Bool
+    logits = unwrap(result).logits
+    tolerance = GameTracing.corrector_tolerance(
+        REDRAW_SETTINGS.corrector.residual_tolerance,
+        REDRAW_SETTINGS.corrector.tolerance_floor_ulps,
+        [logits; 1.0f0],
+    )
+    return residual_norm(pass, logits, precision) < 2 * tolerance
+end
+
 @testset "a redraw whose homotopy rises to the new map's only root crosses there, 3.5 logits on" begin
     swap = swap_point(FAR_SWAP)
     @test rising_homotopy(FAR_SWAP.before, FAR_SWAP.after, swap.relative_precision * FAR_SWAP.precision, only(swap.logits))
@@ -140,17 +151,6 @@ function probability_bound(pass::Any, logits::AbstractVector, precision::Real, r
     jacobian = reference_system(pass, [logits; precision * float(1)]).jacobian[:, 1:(end - 1)]
     logit_error = opnorm(inv(jacobian), Inf32) * residual + 32 * eps(Float32) * maximum(abs, logits)
     return logit_error / 4
-end
-
-"""Whether the logits of `result` solve `pass` at `precision` to twice the corrector tolerance at `ρ = 1`."""
-function on_map(result::TraceResult{Float32}, pass::Any, precision::Real)::Bool
-    logits = unwrap(result).logits
-    tolerance = GameTracing.corrector_tolerance(
-        REDRAW_SETTINGS.corrector.residual_tolerance,
-        REDRAW_SETTINGS.corrector.tolerance_floor_ulps,
-        [logits; 1.0f0],
-    )
-    return residual_norm(pass, logits, precision) < 2 * tolerance
 end
 
 @testset "every endpoint solves the map in effect at the target, whatever the swap level" begin

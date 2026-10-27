@@ -130,10 +130,12 @@ for a turn in `s` and a sign change of `det jacobian` against the start's.
 """
 function crossing_walk(iterable::BifurcationKit.ContIterable, jacobian::HomotopyJacobian, point::AbstractVector{E})::NamedTuple where {E <: Real}
     start_sign = sign(det(jacobian(point, zero(E))))
-    # The first state is the start, step 0; each later accepted point advances `state.step`.
+    # The first state is the start, step 0; each later accepted point advances `state.step`. While `done` holds,
+    # `iterate` returns a state.
     state = first(iterate(iterable))
     steps = 0
-    while true
+    while BifurcationKit.done(iterable, state)
+        state = first(iterate(iterable, state))
         if BifurcationKit.converged(state) && state.step > steps
             steps = state.step
             here = BifurcationKit.getx(state)
@@ -146,11 +148,6 @@ function crossing_walk(iterable::BifurcationKit.ContIterable, jacobian::Homotopy
                 return (; point = copy(here), reason = :crossing, steps)
             end
         end
-        next = iterate(iterable, state)
-        if isnothing(next)
-            break
-        end
-        state = first(next)
     end
     reached = BifurcationKit.converged(state) && BifurcationKit.getp(state) == one(E)
     return (; point = copy(BifurcationKit.getx(state)), reason = ifelse(reached, :crossed, :stopped), steps)
