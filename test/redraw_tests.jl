@@ -1,7 +1,8 @@
 using ErrorTypes: is_error, unwrap, unwrap_error
+using Logging: Debug
+using Test: collect_test_logs
 
-# State weight 0.4, as the fold tests use: a one-logit trace needs it below 1/2 (`augmented_theta`).
-const REDRAW_SETTINGS = TraceSettings{Float32}(state_weight = 0.4f0)
+const REDRAW_SETTINGS = TraceSettings{Float32}()
 
 """The trace of `swap` that redraws its game from `before` to `after` at `swap.swap_level`."""
 function swapped_trace(swap::MapSwap)::TraceResult{Float32}
@@ -70,6 +71,40 @@ end
         1.0f-3
 end
 
+"""`game` traced over `width` logits with `redraw`, a `Function` as `collect_test_logs` takes."""
+struct LoggedTrace{G, R} <: Function
+    game::G
+    width::Int
+    redraw::R
+end
+
+(trace::LoggedTrace)()::TraceResult{Float32} = trace_endpoint(trace.game, trace.width, REDRAW_SETTINGS; redraw = trace.redraw)
+
+"""`swap`'s redrawn trace as a `LoggedTrace`."""
+function logged_swap(swap::MapSwap)::LoggedTrace
+    redraw = SwapAt(LogitGame(swap.after, swap.precision), swap.swap_level)
+    return LoggedTrace(LogitGame(swap.before, swap.precision), swap.width, redraw)
+end
+
+"""The `reason` of each "trace stopped" record that `trace` logs, and its result."""
+function stop_reasons(trace::LoggedTrace)::NamedTuple
+    logs, result = collect_test_logs(trace; min_level = Debug)
+    return (; reasons = [record.kwargs[:reason] for record in logs if record.message == "trace stopped"], result)
+end
+
+@testset "a trace that stops short logs why, once: a redraw past its reach, a non-finite game; a reached trace logs no stop" begin
+    far = stop_reasons(logged_swap(FAR_SWAP))
+    @test unwrap_error(far.result).context.projected
+    @test far.reasons == [:redraw_reach]
+    poisoned = stop_reasons(LoggedTrace(LogitGame(PoisonedPass(GAME, 1.0f0), TARGET_PRECISION), WIDTH, GameTracing.NoRedraw()))
+    @test unwrap_error(poisoned.result).cause == GameTracing.TraceStuck
+    @test length(poisoned.reasons) == 1
+    @test GameTracing.STOP_CAUSES[only(poisoned.reasons)] == GameTracing.TraceStuck
+    near = stop_reasons(logged_swap(NEAR_SWAP))
+    @test !is_error(near.result)
+    @test isempty(near.reasons)
+end
+
 @testset "a redraw at the target precision ends on a root of the new map" begin
     swap = MapSwap(NEAR_SWAP.before, NEAR_SWAP.after, NEAR_SWAP.precision, 1.0f0, NEAR_SWAP.width)
     result = swapped_trace(swap)
@@ -110,7 +145,7 @@ end
     last_step = trace_endpoint(
         LogitGame(NEAR_SWAP.before, NEAR_SWAP.precision),
         NEAR_SWAP.width,
-        TraceSettings{Float32}(; state_weight = REDRAW_SETTINGS.state_weight, max_steps = budget);
+        TraceSettings{Float32}(; max_steps = budget);
         redraw = SwapAt(LogitGame(NEAR_SWAP.after, NEAR_SWAP.precision), 1.0f0),
     )
     @test !is_error(last_step)

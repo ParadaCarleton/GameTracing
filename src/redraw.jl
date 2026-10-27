@@ -59,7 +59,7 @@ function level_system!(system::LevelSystem, gaps::AbstractVector{E})::typeof(sys
 end
 
 function level_residual!(residual::AbstractVector{E}, gaps::AbstractVector{E}, system::LevelSystem)::Nothing where {E <: Real}
-    residual .= state_of(level_system!(system, gaps).residual)
+    residual .= payoff_gaps(level_system!(system, gaps).residual)
     return nothing
 end
 
@@ -86,7 +86,7 @@ function level_correction(
     solution = SciMLBase.solve(
         NonlinearProblem(
             NonlinearFunction{true}(level_residual!; jac = level_jacobian!),
-            collect(state_of(point)),
+            collect(payoff_gaps(point)),
             LevelSystem(game, relative_precision, BranchWorkspace(game, point)),
         ),
         solver;
@@ -95,8 +95,8 @@ function level_correction(
     )
     corrected_point = [solution.u; relative_precision]
     workspace = branch_system!(BranchWorkspace(game, point), game, corrected_point, relative_precision)
-    residual = maximum(abs, state_of(workspace.residual))
-    distance = relative_precision * sqrt(sum(abs2, solution.u .- state_of(point)))
+    residual = maximum(abs, payoff_gaps(workspace.residual))
+    distance = relative_precision * sqrt(sum(abs2, solution.u .- payoff_gaps(point)))
     tolerance = corrector_tolerance(
         settings.corrector.residual_tolerance,
         settings.corrector.tolerance_floor_ulps,
@@ -112,23 +112,22 @@ function level_correction(
 end
 
 """
-    restart_tangent(game, point, old_tangent, theta)
+    restart_tangent(game, point, old_tangent, dot, state_weight)
 
 The tangent of `game`'s branch at `point = [w; ρ]` that keeps the trace's direction: the solution of the bordered
-system `[∂F/∂x; bᵀ] τ = [0; 1]`, whose border `b` is `old_tangent` weighted as PALC's product weights it (`theta`
-over the point's coordinates, `1 - theta` on the relative precision again as the continuation parameter). So `τ`
-has PALC product one with the old tangent.
+system `[∂F/∂x; bᵀ] τ = [0; 1]`, whose border `b` is `old_tangent` weighted as PALC's product under the trace's `dot`
+at PALC state weight `state_weight` weights it (`palc_border`). So `τ` has PALC product one with the old tangent.
 """
 function restart_tangent(
     game::LogitGame,
     point::AbstractVector{E},
     old_tangent::AbstractVector{E},
-    theta::E,
+    dot::BifurcationKit.DotTheta,
+    state_weight::E,
 )::AbstractVector{E} where {E <: Real}
     width = length(point) - 1
     jacobian = branch_system!(BranchWorkspace(game, point), game, point, last(point)).jacobian
-    border = theta .* old_tangent ./ length(point)
-    border[end] += (1 - theta) * last(old_tangent)
+    border = palc_border(dot, state_weight, old_tangent)
     # fatou-ignore call-arity: Base `view` takes any number of indices (jolars/fatou#125)
     bordered = [view(jacobian, 1:width, :); transpose(border)]
     return bordered \ setindex!(zeros(E, width + 1), one(E), width + 1)

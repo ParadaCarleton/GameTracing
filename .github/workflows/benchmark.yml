@@ -1,0 +1,31 @@
+name: Arm benchmark
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: ['src/**', 'test/arms.jl', 'test/games.jl', 'test/fixtures.jl', 'benchmark/**', '.github/workflows/benchmark.yml']
+# An explicit bash runs with -eo pipefail, so a failed benchmark fails its step through `tee`.
+defaults:
+  run:
+    shell: bash
+jobs:
+  arms:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1'
+      - uses: julia-actions/cache@v2
+      - run: julia --project=benchmark -e 'using Pkg; Pkg.instantiate()'
+      - run: julia --project=benchmark benchmark/arms.jl arms.csv | tee arms.log
+      - run: julia --project=benchmark benchmark/arms.jl pitchfork.csv pitchfork | tee pitchfork.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: arm-benchmark
+          path: |
+            arms.csv
+            arms.log
+            pitchfork.csv
+            pitchfork.log

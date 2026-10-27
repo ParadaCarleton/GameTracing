@@ -1,0 +1,641 @@
+scale,draw,variant,status,steps,crossings,principal
+0.0001,1,shipped,reached,28,0,true
+0.0001,1,fisher_reach state_weight 0.01,reached,25,0,true
+0.0001,1,fisher_reach state_weight 0.03,reached,23,0,true
+0.0001,1,fisher_reach state_weight 0.1,reached,23,0,true
+0.0001,2,shipped,reached,30,0,true
+0.0001,2,fisher_reach state_weight 0.01,reached,25,0,true
+0.0001,2,fisher_reach state_weight 0.03,reached,25,0,true
+0.0001,2,fisher_reach state_weight 0.1,reached,26,0,true
+0.0001,3,shipped,reached,28,0,true
+0.0001,3,fisher_reach state_weight 0.01,reached,25,0,true
+0.0001,3,fisher_reach state_weight 0.03,reached,23,0,true
+0.0001,3,fisher_reach state_weight 0.1,reached,23,0,true
+0.0001,4,shipped,reached,21,0,true
+0.0001,4,fisher_reach state_weight 0.01,reached,23,0,true
+0.0001,4,fisher_reach state_weight 0.03,reached,23,0,true
+0.0001,4,fisher_reach state_weight 0.1,reached,23,0,true
+0.0001,5,shipped,reached,21,0,true
+0.0001,5,fisher_reach state_weight 0.01,reached,23,0,true
+0.0001,5,fisher_reach state_weight 0.03,reached,21,0,true
+0.0001,5,fisher_reach state_weight 0.1,reached,23,0,true
+0.0001,6,shipped,reached,21,0,true
+0.0001,6,fisher_reach state_weight 0.01,reached,23,0,true
+0.0001,6,fisher_reach state_weight 0.03,reached,21,0,true
+0.0001,6,fisher_reach state_weight 0.1,reached,23,0,true
+0.0001,7,shipped,reached,28,0,true
+0.0001,7,fisher_reach state_weight 0.01,reached,25,0,true
+0.0001,7,fisher_reach state_weight 0.03,reached,23,0,true
+0.0001,7,fisher_reach state_weight 0.1,reached,22,0,true
+0.0001,8,shipped,reached,28,0,true
+0.0001,8,fisher_reach state_weight 0.01,reached,25,0,true
+0.0001,8,fisher_reach state_weight 0.03,reached,21,0,true
+0.0001,8,fisher_reach state_weight 0.1,reached,23,0,true
+0.0001,9,shipped,reached,29,0,true
+0.0001,9,fisher_reach state_weight 0.01,reached,25,0,true
+0.0001,9,fisher_reach state_weight 0.03,reached,25,0,true
+0.0001,9,fisher_reach state_weight 0.1,reached,28,0,true
+0.0001,10,shipped,reached,21,0,true
+0.0001,10,fisher_reach state_weight 0.01,reached,23,0,true
+0.0001,10,fisher_reach state_weight 0.03,reached,23,0,true
+0.0001,10,fisher_reach state_weight 0.1,reached,23,0,true
+0.0001,11,shipped,reached,21,0,true
+0.0001,11,fisher_reach state_weight 0.01,reached,23,0,true
+0.0001,11,fisher_reach state_weight 0.03,reached,23,0,true
+0.0001,11,fisher_reach state_weight 0.1,reached,23,0,true
+0.0001,12,shipped,reached,21,0,true
+0.0001,12,fisher_reach state_weight 0.01,reached,25,0,true
+0.0001,12,fisher_reach state_weight 0.03,reached,21,0,true
+0.0001,12,fisher_reach state_weight 0.1,reached,23,0,true
+0.0001,13,shipped,reached,30,0,true
+0.0001,13,fisher_reach state_weight 0.01,reached,27,0,true
+0.0001,13,fisher_reach state_weight 0.03,reached,25,0,true
+0.0001,13,fisher_reach state_weight 0.1,reached,29,0,true
+0.0001,14,shipped,reached,21,0,true
+0.0001,14,fisher_reach state_weight 0.01,reached,23,0,true
+0.0001,14,fisher_reach state_weight 0.03,reached,23,0,true
+0.0001,14,fisher_reach state_weight 0.1,reached,23,0,true
+0.0001,15,shipped,reached,30,0,true
+0.0001,15,fisher_reach state_weight 0.01,reached,25,0,true
+0.0001,15,fisher_reach state_weight 0.03,reached,25,0,true
+0.0001,15,fisher_reach state_weight 0.1,reached,23,0,true
+0.0001,16,shipped,reached,21,0,true
+0.0001,16,fisher_reach state_weight 0.01,reached,23,0,true
+0.0001,16,fisher_reach state_weight 0.03,reached,23,0,true
+0.0001,16,fisher_reach state_weight 0.1,reached,23,0,true
+0.0001,17,shipped,reached,21,0,true
+0.0001,17,fisher_reach state_weight 0.01,reached,21,0,true
+0.0001,17,fisher_reach state_weight 0.03,reached,23,0,true
+0.0001,17,fisher_reach state_weight 0.1,reached,23,0,true
+0.0001,18,shipped,reached,30,0,true
+0.0001,18,fisher_reach state_weight 0.01,reached,25,0,true
+0.0001,18,fisher_reach state_weight 0.03,reached,25,0,true
+0.0001,18,fisher_reach state_weight 0.1,reached,24,0,true
+0.0001,19,shipped,reached,21,0,true
+0.0001,19,fisher_reach state_weight 0.01,reached,23,0,true
+0.0001,19,fisher_reach state_weight 0.03,reached,21,0,true
+0.0001,19,fisher_reach state_weight 0.1,reached,23,0,true
+0.0001,20,shipped,reached,21,0,true
+0.0001,20,fisher_reach state_weight 0.01,reached,23,0,true
+0.0001,20,fisher_reach state_weight 0.03,reached,21,0,true
+0.0001,20,fisher_reach state_weight 0.1,reached,23,0,true
+0.0001,21,shipped,reached,30,0,true
+0.0001,21,fisher_reach state_weight 0.01,reached,25,0,true
+0.0001,21,fisher_reach state_weight 0.03,reached,25,0,true
+0.0001,21,fisher_reach state_weight 0.1,reached,23,0,true
+0.0001,22,shipped,reached,30,0,true
+0.0001,22,fisher_reach state_weight 0.01,reached,25,0,true
+0.0001,22,fisher_reach state_weight 0.03,reached,25,0,true
+0.0001,22,fisher_reach state_weight 0.1,reached,26,0,true
+0.0001,23,shipped,reached,32,0,true
+0.0001,23,fisher_reach state_weight 0.01,reached,25,0,true
+0.0001,23,fisher_reach state_weight 0.03,reached,25,0,true
+0.0001,23,fisher_reach state_weight 0.1,reached,28,0,true
+0.0001,24,shipped,reached,28,0,true
+0.0001,24,fisher_reach state_weight 0.01,reached,25,0,true
+0.0001,24,fisher_reach state_weight 0.03,reached,23,0,true
+0.0001,24,fisher_reach state_weight 0.1,reached,23,0,true
+0.0001,25,shipped,reached,28,0,true
+0.0001,25,fisher_reach state_weight 0.01,reached,25,0,true
+0.0001,25,fisher_reach state_weight 0.03,reached,23,0,true
+0.0001,25,fisher_reach state_weight 0.1,reached,23,0,true
+0.0001,26,shipped,reached,30,0,true
+0.0001,26,fisher_reach state_weight 0.01,reached,25,0,true
+0.0001,26,fisher_reach state_weight 0.03,reached,25,0,true
+0.0001,26,fisher_reach state_weight 0.1,reached,22,0,true
+0.0001,27,shipped,reached,21,0,true
+0.0001,27,fisher_reach state_weight 0.01,reached,23,0,true
+0.0001,27,fisher_reach state_weight 0.03,reached,21,0,true
+0.0001,27,fisher_reach state_weight 0.1,reached,23,0,true
+0.0001,28,shipped,reached,21,0,true
+0.0001,28,fisher_reach state_weight 0.01,reached,25,0,true
+0.0001,28,fisher_reach state_weight 0.03,reached,21,0,true
+0.0001,28,fisher_reach state_weight 0.1,reached,23,0,true
+0.0001,29,shipped,reached,28,0,true
+0.0001,29,fisher_reach state_weight 0.01,reached,25,0,true
+0.0001,29,fisher_reach state_weight 0.03,reached,23,0,true
+0.0001,29,fisher_reach state_weight 0.1,reached,23,0,true
+0.0001,30,shipped,reached,28,0,true
+0.0001,30,fisher_reach state_weight 0.01,reached,25,0,true
+0.0001,30,fisher_reach state_weight 0.03,reached,23,0,true
+0.0001,30,fisher_reach state_weight 0.1,reached,22,0,true
+0.0001,31,shipped,reached,30,0,true
+0.0001,31,fisher_reach state_weight 0.01,reached,25,0,true
+0.0001,31,fisher_reach state_weight 0.03,reached,25,0,true
+0.0001,31,fisher_reach state_weight 0.1,reached,23,0,true
+0.0001,32,shipped,reached,21,0,true
+0.0001,32,fisher_reach state_weight 0.01,reached,21,0,true
+0.0001,32,fisher_reach state_weight 0.03,reached,23,0,true
+0.0001,32,fisher_reach state_weight 0.1,reached,22,0,true
+0.0001,33,shipped,reached,21,0,true
+0.0001,33,fisher_reach state_weight 0.01,reached,23,0,true
+0.0001,33,fisher_reach state_weight 0.03,reached,23,0,true
+0.0001,33,fisher_reach state_weight 0.1,reached,23,0,true
+0.0001,34,shipped,reached,30,0,true
+0.0001,34,fisher_reach state_weight 0.01,reached,25,0,true
+0.0001,34,fisher_reach state_weight 0.03,reached,25,0,true
+0.0001,34,fisher_reach state_weight 0.1,reached,29,0,true
+0.0001,35,shipped,reached,31,0,true
+0.0001,35,fisher_reach state_weight 0.01,reached,31,0,true
+0.0001,35,fisher_reach state_weight 0.03,reached,25,0,true
+0.0001,35,fisher_reach state_weight 0.1,reached,30,0,true
+0.0001,36,shipped,reached,30,0,true
+0.0001,36,fisher_reach state_weight 0.01,reached,25,0,true
+0.0001,36,fisher_reach state_weight 0.03,reached,25,0,true
+0.0001,36,fisher_reach state_weight 0.1,reached,23,0,true
+0.0001,37,shipped,reached,28,0,true
+0.0001,37,fisher_reach state_weight 0.01,reached,25,0,true
+0.0001,37,fisher_reach state_weight 0.03,reached,23,0,true
+0.0001,37,fisher_reach state_weight 0.1,reached,23,0,true
+0.0001,38,shipped,reached,30,0,true
+0.0001,38,fisher_reach state_weight 0.01,reached,25,0,true
+0.0001,38,fisher_reach state_weight 0.03,reached,25,0,true
+0.0001,38,fisher_reach state_weight 0.1,reached,23,0,true
+0.0001,39,shipped,reached,28,0,true
+0.0001,39,fisher_reach state_weight 0.01,reached,25,0,true
+0.0001,39,fisher_reach state_weight 0.03,reached,23,0,true
+0.0001,39,fisher_reach state_weight 0.1,reached,23,0,true
+0.0001,40,shipped,reached,28,0,true
+0.0001,40,fisher_reach state_weight 0.01,reached,25,0,true
+0.0001,40,fisher_reach state_weight 0.03,reached,23,0,true
+0.0001,40,fisher_reach state_weight 0.1,reached,23,0,true
+0.001,1,shipped,reached,21,0,true
+0.001,1,fisher_reach state_weight 0.01,reached,19,0,true
+0.001,1,fisher_reach state_weight 0.03,reached,19,0,true
+0.001,1,fisher_reach state_weight 0.1,reached,18,0,true
+0.001,2,shipped,reached,21,0,true
+0.001,2,fisher_reach state_weight 0.01,reached,17,0,true
+0.001,2,fisher_reach state_weight 0.03,reached,15,0,true
+0.001,2,fisher_reach state_weight 0.1,reached,18,0,true
+0.001,3,shipped,reached,21,0,true
+0.001,3,fisher_reach state_weight 0.01,reached,19,0,true
+0.001,3,fisher_reach state_weight 0.03,reached,21,0,true
+0.001,3,fisher_reach state_weight 0.1,reached,18,0,true
+0.001,4,shipped,reached,21,0,true
+0.001,4,fisher_reach state_weight 0.01,reached,19,0,true
+0.001,4,fisher_reach state_weight 0.03,reached,17,0,true
+0.001,4,fisher_reach state_weight 0.1,reached,18,0,true
+0.001,5,shipped,reached,21,0,true
+0.001,5,fisher_reach state_weight 0.01,reached,19,0,true
+0.001,5,fisher_reach state_weight 0.03,reached,19,0,true
+0.001,5,fisher_reach state_weight 0.1,reached,18,0,true
+0.001,6,shipped,reached,21,0,true
+0.001,6,fisher_reach state_weight 0.01,reached,19,0,true
+0.001,6,fisher_reach state_weight 0.03,reached,17,0,true
+0.001,6,fisher_reach state_weight 0.1,reached,17,0,true
+0.001,7,shipped,reached,23,0,true
+0.001,7,fisher_reach state_weight 0.01,reached,21,0,true
+0.001,7,fisher_reach state_weight 0.03,reached,21,0,true
+0.001,7,fisher_reach state_weight 0.1,reached,20,0,true
+0.001,8,shipped,reached,21,0,true
+0.001,8,fisher_reach state_weight 0.01,reached,21,0,true
+0.001,8,fisher_reach state_weight 0.03,reached,23,0,true
+0.001,8,fisher_reach state_weight 0.1,reached,23,0,true
+0.001,9,shipped,reached,21,0,true
+0.001,9,fisher_reach state_weight 0.01,reached,19,0,true
+0.001,9,fisher_reach state_weight 0.03,reached,17,0,true
+0.001,9,fisher_reach state_weight 0.1,reached,17,0,true
+0.001,10,shipped,reached,21,0,true
+0.001,10,fisher_reach state_weight 0.01,reached,23,0,true
+0.001,10,fisher_reach state_weight 0.03,reached,21,0,true
+0.001,10,fisher_reach state_weight 0.1,reached,23,0,true
+0.001,11,shipped,reached,21,0,true
+0.001,11,fisher_reach state_weight 0.01,reached,19,0,true
+0.001,11,fisher_reach state_weight 0.03,reached,17,0,true
+0.001,11,fisher_reach state_weight 0.1,reached,17,0,true
+0.001,12,shipped,reached,21,0,true
+0.001,12,fisher_reach state_weight 0.01,reached,19,0,true
+0.001,12,fisher_reach state_weight 0.03,reached,17,0,true
+0.001,12,fisher_reach state_weight 0.1,reached,18,0,true
+0.001,13,shipped,reached,21,0,true
+0.001,13,fisher_reach state_weight 0.01,reached,21,0,true
+0.001,13,fisher_reach state_weight 0.03,reached,23,0,true
+0.001,13,fisher_reach state_weight 0.1,reached,21,0,true
+0.001,14,shipped,reached,21,0,true
+0.001,14,fisher_reach state_weight 0.01,reached,17,0,true
+0.001,14,fisher_reach state_weight 0.03,reached,17,0,true
+0.001,14,fisher_reach state_weight 0.1,reached,18,0,true
+0.001,15,shipped,reached,23,0,true
+0.001,15,fisher_reach state_weight 0.01,reached,19,0,true
+0.001,15,fisher_reach state_weight 0.03,reached,17,0,true
+0.001,15,fisher_reach state_weight 0.1,reached,17,0,true
+0.001,16,shipped,reached,23,0,true
+0.001,16,fisher_reach state_weight 0.01,reached,19,0,true
+0.001,16,fisher_reach state_weight 0.03,reached,21,0,true
+0.001,16,fisher_reach state_weight 0.1,reached,18,0,true
+0.001,17,shipped,reached,21,0,true
+0.001,17,fisher_reach state_weight 0.01,reached,19,0,true
+0.001,17,fisher_reach state_weight 0.03,reached,17,0,true
+0.001,17,fisher_reach state_weight 0.1,reached,17,0,true
+0.001,18,shipped,reached,21,0,true
+0.001,18,fisher_reach state_weight 0.01,reached,19,0,true
+0.001,18,fisher_reach state_weight 0.03,reached,21,0,true
+0.001,18,fisher_reach state_weight 0.1,reached,18,0,true
+0.001,19,shipped,reached,30,0,true
+0.001,19,fisher_reach state_weight 0.01,reached,25,0,true
+0.001,19,fisher_reach state_weight 0.03,reached,25,0,true
+0.001,19,fisher_reach state_weight 0.1,reached,22,0,true
+0.001,20,shipped,reached,23,0,true
+0.001,20,fisher_reach state_weight 0.01,reached,19,0,true
+0.001,20,fisher_reach state_weight 0.03,reached,17,0,true
+0.001,20,fisher_reach state_weight 0.1,reached,17,0,true
+0.001,21,shipped,reached,21,0,true
+0.001,21,fisher_reach state_weight 0.01,reached,23,0,true
+0.001,21,fisher_reach state_weight 0.03,reached,21,0,true
+0.001,21,fisher_reach state_weight 0.1,reached,23,0,true
+0.001,22,shipped,reached,23,0,true
+0.001,22,fisher_reach state_weight 0.01,reached,19,0,true
+0.001,22,fisher_reach state_weight 0.03,reached,17,0,true
+0.001,22,fisher_reach state_weight 0.1,reached,18,0,true
+0.001,23,shipped,reached,21,0,true
+0.001,23,fisher_reach state_weight 0.01,reached,19,0,true
+0.001,23,fisher_reach state_weight 0.03,reached,19,0,true
+0.001,23,fisher_reach state_weight 0.1,reached,17,0,true
+0.001,24,shipped,reached,21,0,true
+0.001,24,fisher_reach state_weight 0.01,reached,17,0,true
+0.001,24,fisher_reach state_weight 0.03,reached,17,0,true
+0.001,24,fisher_reach state_weight 0.1,reached,17,0,true
+0.001,25,shipped,reached,21,0,true
+0.001,25,fisher_reach state_weight 0.01,reached,25,0,true
+0.001,25,fisher_reach state_weight 0.03,reached,21,0,true
+0.001,25,fisher_reach state_weight 0.1,reached,23,0,true
+0.001,26,shipped,reached,21,0,true
+0.001,26,fisher_reach state_weight 0.01,reached,19,0,true
+0.001,26,fisher_reach state_weight 0.03,reached,19,0,true
+0.001,26,fisher_reach state_weight 0.1,reached,18,0,true
+0.001,27,shipped,reached,21,0,true
+0.001,27,fisher_reach state_weight 0.01,reached,19,0,true
+0.001,27,fisher_reach state_weight 0.03,reached,17,0,true
+0.001,27,fisher_reach state_weight 0.1,reached,17,0,true
+0.001,28,shipped,reached,21,0,true
+0.001,28,fisher_reach state_weight 0.01,reached,23,0,true
+0.001,28,fisher_reach state_weight 0.03,reached,23,0,true
+0.001,28,fisher_reach state_weight 0.1,reached,23,0,true
+0.001,29,shipped,reached,21,0,true
+0.001,29,fisher_reach state_weight 0.01,reached,19,0,true
+0.001,29,fisher_reach state_weight 0.03,reached,17,0,true
+0.001,29,fisher_reach state_weight 0.1,reached,18,0,true
+0.001,30,shipped,reached,21,0,true
+0.001,30,fisher_reach state_weight 0.01,reached,19,0,true
+0.001,30,fisher_reach state_weight 0.03,reached,21,0,true
+0.001,30,fisher_reach state_weight 0.1,reached,18,0,true
+0.001,31,shipped,reached,21,0,true
+0.001,31,fisher_reach state_weight 0.01,reached,19,0,true
+0.001,31,fisher_reach state_weight 0.03,reached,17,0,true
+0.001,31,fisher_reach state_weight 0.1,reached,18,0,true
+0.001,32,shipped,reached,21,0,true
+0.001,32,fisher_reach state_weight 0.01,reached,19,0,true
+0.001,32,fisher_reach state_weight 0.03,reached,19,0,true
+0.001,32,fisher_reach state_weight 0.1,reached,18,0,true
+0.001,33,shipped,reached,21,0,true
+0.001,33,fisher_reach state_weight 0.01,reached,17,0,true
+0.001,33,fisher_reach state_weight 0.03,reached,17,0,true
+0.001,33,fisher_reach state_weight 0.1,reached,18,0,true
+0.001,34,shipped,reached,23,0,true
+0.001,34,fisher_reach state_weight 0.01,reached,19,0,true
+0.001,34,fisher_reach state_weight 0.03,reached,17,0,true
+0.001,34,fisher_reach state_weight 0.1,reached,18,0,true
+0.001,35,shipped,reached,21,0,true
+0.001,35,fisher_reach state_weight 0.01,reached,19,0,true
+0.001,35,fisher_reach state_weight 0.03,reached,17,0,true
+0.001,35,fisher_reach state_weight 0.1,reached,17,0,true
+0.001,36,shipped,reached,21,0,true
+0.001,36,fisher_reach state_weight 0.01,reached,21,0,true
+0.001,36,fisher_reach state_weight 0.03,reached,23,0,true
+0.001,36,fisher_reach state_weight 0.1,reached,21,0,true
+0.001,37,shipped,reached,21,0,true
+0.001,37,fisher_reach state_weight 0.01,reached,21,0,true
+0.001,37,fisher_reach state_weight 0.03,reached,21,0,true
+0.001,37,fisher_reach state_weight 0.1,reached,22,0,true
+0.001,38,shipped,reached,23,0,true
+0.001,38,fisher_reach state_weight 0.01,reached,19,0,true
+0.001,38,fisher_reach state_weight 0.03,reached,17,0,true
+0.001,38,fisher_reach state_weight 0.1,reached,18,0,true
+0.001,39,shipped,reached,21,0,true
+0.001,39,fisher_reach state_weight 0.01,reached,23,0,true
+0.001,39,fisher_reach state_weight 0.03,reached,23,0,true
+0.001,39,fisher_reach state_weight 0.1,reached,23,0,true
+0.001,40,shipped,reached,21,0,true
+0.001,40,fisher_reach state_weight 0.01,reached,19,0,true
+0.001,40,fisher_reach state_weight 0.03,reached,21,0,true
+0.001,40,fisher_reach state_weight 0.1,reached,18,0,true
+0.01,1,shipped,reached,19,0,true
+0.01,1,fisher_reach state_weight 0.01,reached,15,0,true
+0.01,1,fisher_reach state_weight 0.03,reached,15,0,true
+0.01,1,fisher_reach state_weight 0.1,reached,18,0,true
+0.01,2,shipped,reached,19,0,true
+0.01,2,fisher_reach state_weight 0.01,reached,11,0,true
+0.01,2,fisher_reach state_weight 0.03,reached,17,0,true
+0.01,2,fisher_reach state_weight 0.1,reached,16,0,true
+0.01,3,shipped,reached,19,0,true
+0.01,3,fisher_reach state_weight 0.01,reached,13,0,true
+0.01,3,fisher_reach state_weight 0.03,reached,17,0,true
+0.01,3,fisher_reach state_weight 0.1,reached,18,0,true
+0.01,4,shipped,reached,19,0,true
+0.01,4,fisher_reach state_weight 0.01,reached,13,0,true
+0.01,4,fisher_reach state_weight 0.03,reached,17,0,true
+0.01,4,fisher_reach state_weight 0.1,reached,18,0,true
+0.01,5,shipped,reached,17,0,true
+0.01,5,fisher_reach state_weight 0.01,reached,13,0,true
+0.01,5,fisher_reach state_weight 0.03,reached,14,0,true
+0.01,5,fisher_reach state_weight 0.1,reached,18,0,true
+0.01,6,shipped,reached,21,0,true
+0.01,6,fisher_reach state_weight 0.01,reached,17,0,true
+0.01,6,fisher_reach state_weight 0.03,reached,17,0,true
+0.01,6,fisher_reach state_weight 0.1,reached,18,0,true
+0.01,7,shipped,reached,18,0,true
+0.01,7,fisher_reach state_weight 0.01,reached,11,0,true
+0.01,7,fisher_reach state_weight 0.03,reached,15,0,true
+0.01,7,fisher_reach state_weight 0.1,reached,16,0,true
+0.01,8,shipped,reached,19,0,true
+0.01,8,fisher_reach state_weight 0.01,reached,13,0,true
+0.01,8,fisher_reach state_weight 0.03,reached,17,0,true
+0.01,8,fisher_reach state_weight 0.1,reached,14,0,true
+0.01,9,shipped,reached,22,0,true
+0.01,9,fisher_reach state_weight 0.01,reached,15,0,true
+0.01,9,fisher_reach state_weight 0.03,reached,17,0,true
+0.01,9,fisher_reach state_weight 0.1,reached,18,0,true
+0.01,10,shipped,reached,19,0,true
+0.01,10,fisher_reach state_weight 0.01,reached,11,0,true
+0.01,10,fisher_reach state_weight 0.03,reached,17,0,true
+0.01,10,fisher_reach state_weight 0.1,reached,16,0,true
+0.01,11,shipped,reached,19,0,true
+0.01,11,fisher_reach state_weight 0.01,reached,13,0,true
+0.01,11,fisher_reach state_weight 0.03,reached,17,0,true
+0.01,11,fisher_reach state_weight 0.1,reached,18,0,true
+0.01,12,shipped,reached,21,0,true
+0.01,12,fisher_reach state_weight 0.01,reached,17,0,true
+0.01,12,fisher_reach state_weight 0.03,reached,17,0,true
+0.01,12,fisher_reach state_weight 0.1,reached,18,0,true
+0.01,13,shipped,reached,19,0,true
+0.01,13,fisher_reach state_weight 0.01,reached,11,0,true
+0.01,13,fisher_reach state_weight 0.03,reached,17,0,true
+0.01,13,fisher_reach state_weight 0.1,reached,16,0,true
+0.01,14,shipped,reached,18,0,true
+0.01,14,fisher_reach state_weight 0.01,reached,13,0,true
+0.01,14,fisher_reach state_weight 0.03,reached,17,0,true
+0.01,14,fisher_reach state_weight 0.1,reached,18,0,true
+0.01,15,shipped,reached,19,0,true
+0.01,15,fisher_reach state_weight 0.01,reached,12,0,true
+0.01,15,fisher_reach state_weight 0.03,reached,17,0,true
+0.01,15,fisher_reach state_weight 0.1,reached,18,0,true
+0.01,16,shipped,reached,19,0,true
+0.01,16,fisher_reach state_weight 0.01,reached,15,0,true
+0.01,16,fisher_reach state_weight 0.03,reached,17,0,true
+0.01,16,fisher_reach state_weight 0.1,reached,18,0,true
+0.01,17,shipped,reached,19,0,true
+0.01,17,fisher_reach state_weight 0.01,reached,13,0,true
+0.01,17,fisher_reach state_weight 0.03,reached,17,0,true
+0.01,17,fisher_reach state_weight 0.1,reached,18,0,true
+0.01,18,shipped,reached,21,0,true
+0.01,18,fisher_reach state_weight 0.01,reached,15,0,true
+0.01,18,fisher_reach state_weight 0.03,reached,17,0,true
+0.01,18,fisher_reach state_weight 0.1,reached,18,0,true
+0.01,19,shipped,reached,19,0,true
+0.01,19,fisher_reach state_weight 0.01,reached,13,0,true
+0.01,19,fisher_reach state_weight 0.03,reached,17,0,true
+0.01,19,fisher_reach state_weight 0.1,reached,18,0,true
+0.01,20,shipped,reached,18,0,true
+0.01,20,fisher_reach state_weight 0.01,reached,15,0,true
+0.01,20,fisher_reach state_weight 0.03,reached,15,0,true
+0.01,20,fisher_reach state_weight 0.1,reached,16,0,true
+0.01,21,shipped,reached,19,0,true
+0.01,21,fisher_reach state_weight 0.01,reached,13,0,true
+0.01,21,fisher_reach state_weight 0.03,reached,17,0,true
+0.01,21,fisher_reach state_weight 0.1,reached,18,0,true
+0.01,22,shipped,reached,19,0,true
+0.01,22,fisher_reach state_weight 0.01,reached,15,0,true
+0.01,22,fisher_reach state_weight 0.03,reached,17,0,true
+0.01,22,fisher_reach state_weight 0.1,reached,18,0,true
+0.01,23,shipped,reached,23,0,true
+0.01,23,fisher_reach state_weight 0.01,reached,19,0,true
+0.01,23,fisher_reach state_weight 0.03,reached,17,0,true
+0.01,23,fisher_reach state_weight 0.1,reached,18,0,true
+0.01,24,shipped,reached,18,0,true
+0.01,24,fisher_reach state_weight 0.01,reached,13,0,true
+0.01,24,fisher_reach state_weight 0.03,reached,17,0,true
+0.01,24,fisher_reach state_weight 0.1,reached,18,0,true
+0.01,25,shipped,reached,19,0,true
+0.01,25,fisher_reach state_weight 0.01,reached,11,0,true
+0.01,25,fisher_reach state_weight 0.03,reached,17,0,true
+0.01,25,fisher_reach state_weight 0.1,reached,16,0,true
+0.01,26,shipped,reached,18,0,true
+0.01,26,fisher_reach state_weight 0.01,reached,11,0,true
+0.01,26,fisher_reach state_weight 0.03,reached,15,0,true
+0.01,26,fisher_reach state_weight 0.1,reached,15,0,true
+0.01,27,shipped,reached,19,0,true
+0.01,27,fisher_reach state_weight 0.01,reached,13,0,true
+0.01,27,fisher_reach state_weight 0.03,reached,17,0,true
+0.01,27,fisher_reach state_weight 0.1,reached,16,0,true
+0.01,28,shipped,reached,19,0,true
+0.01,28,fisher_reach state_weight 0.01,reached,11,0,true
+0.01,28,fisher_reach state_weight 0.03,reached,17,0,true
+0.01,28,fisher_reach state_weight 0.1,reached,16,0,true
+0.01,29,shipped,reached,19,0,true
+0.01,29,fisher_reach state_weight 0.01,reached,13,0,true
+0.01,29,fisher_reach state_weight 0.03,reached,17,0,true
+0.01,29,fisher_reach state_weight 0.1,reached,18,0,true
+0.01,30,shipped,reached,19,0,true
+0.01,30,fisher_reach state_weight 0.01,reached,11,0,true
+0.01,30,fisher_reach state_weight 0.03,reached,17,0,true
+0.01,30,fisher_reach state_weight 0.1,reached,16,0,true
+0.01,31,shipped,reached,19,0,true
+0.01,31,fisher_reach state_weight 0.01,reached,12,0,true
+0.01,31,fisher_reach state_weight 0.03,reached,17,0,true
+0.01,31,fisher_reach state_weight 0.1,reached,18,0,true
+0.01,32,shipped,reached,19,0,true
+0.01,32,fisher_reach state_weight 0.01,reached,15,0,true
+0.01,32,fisher_reach state_weight 0.03,reached,15,0,true
+0.01,32,fisher_reach state_weight 0.1,reached,16,0,true
+0.01,33,shipped,reached,19,0,true
+0.01,33,fisher_reach state_weight 0.01,reached,11,0,true
+0.01,33,fisher_reach state_weight 0.03,reached,13,0,true
+0.01,33,fisher_reach state_weight 0.1,reached,16,0,true
+0.01,34,shipped,reached,19,0,true
+0.01,34,fisher_reach state_weight 0.01,reached,15,0,true
+0.01,34,fisher_reach state_weight 0.03,reached,17,0,true
+0.01,34,fisher_reach state_weight 0.1,reached,18,0,true
+0.01,35,shipped,reached,19,0,true
+0.01,35,fisher_reach state_weight 0.01,reached,11,0,true
+0.01,35,fisher_reach state_weight 0.03,reached,12,0,true
+0.01,35,fisher_reach state_weight 0.1,reached,15,0,true
+0.01,36,shipped,reached,18,0,true
+0.01,36,fisher_reach state_weight 0.01,reached,13,0,true
+0.01,36,fisher_reach state_weight 0.03,reached,17,0,true
+0.01,36,fisher_reach state_weight 0.1,reached,18,0,true
+0.01,37,shipped,reached,18,0,true
+0.01,37,fisher_reach state_weight 0.01,reached,13,0,true
+0.01,37,fisher_reach state_weight 0.03,reached,17,0,true
+0.01,37,fisher_reach state_weight 0.1,reached,16,0,true
+0.01,38,shipped,reached,19,0,true
+0.01,38,fisher_reach state_weight 0.01,reached,11,0,true
+0.01,38,fisher_reach state_weight 0.03,reached,17,0,true
+0.01,38,fisher_reach state_weight 0.1,reached,16,0,true
+0.01,39,shipped,reached,19,0,true
+0.01,39,fisher_reach state_weight 0.01,reached,15,0,true
+0.01,39,fisher_reach state_weight 0.03,reached,17,0,true
+0.01,39,fisher_reach state_weight 0.1,reached,18,0,true
+0.01,40,shipped,reached,19,0,true
+0.01,40,fisher_reach state_weight 0.01,reached,13,0,true
+0.01,40,fisher_reach state_weight 0.03,reached,17,0,true
+0.01,40,fisher_reach state_weight 0.1,reached,16,0,true
+0.1,1,shipped,reached,15,0,true
+0.1,1,fisher_reach state_weight 0.01,reached,10,0,true
+0.1,1,fisher_reach state_weight 0.03,reached,11,0,true
+0.1,1,fisher_reach state_weight 0.1,reached,13,0,true
+0.1,2,shipped,reached,17,0,true
+0.1,2,fisher_reach state_weight 0.01,reached,15,0,true
+0.1,2,fisher_reach state_weight 0.03,reached,13,0,true
+0.1,2,fisher_reach state_weight 0.1,reached,14,0,true
+0.1,3,shipped,reached,17,0,true
+0.1,3,fisher_reach state_weight 0.01,reached,11,0,true
+0.1,3,fisher_reach state_weight 0.03,reached,13,0,true
+0.1,3,fisher_reach state_weight 0.1,reached,15,0,true
+0.1,4,shipped,reached,15,0,true
+0.1,4,fisher_reach state_weight 0.01,reached,13,0,true
+0.1,4,fisher_reach state_weight 0.03,reached,13,0,true
+0.1,4,fisher_reach state_weight 0.1,reached,12,0,true
+0.1,5,shipped,reached,21,0,true
+0.1,5,fisher_reach state_weight 0.01,reached,17,0,true
+0.1,5,fisher_reach state_weight 0.03,reached,17,0,true
+0.1,5,fisher_reach state_weight 0.1,reached,18,0,true
+0.1,6,shipped,reached,15,0,true
+0.1,6,fisher_reach state_weight 0.01,reached,13,0,true
+0.1,6,fisher_reach state_weight 0.03,reached,13,0,true
+0.1,6,fisher_reach state_weight 0.1,reached,12,0,true
+0.1,7,shipped,reached,17,0,true
+0.1,7,fisher_reach state_weight 0.01,reached,13,0,true
+0.1,7,fisher_reach state_weight 0.03,reached,13,0,true
+0.1,7,fisher_reach state_weight 0.1,reached,13,0,true
+0.1,8,shipped,reached,15,0,true
+0.1,8,fisher_reach state_weight 0.01,reached,13,0,true
+0.1,8,fisher_reach state_weight 0.03,reached,13,0,true
+0.1,8,fisher_reach state_weight 0.1,reached,13,0,true
+0.1,9,shipped,reached,17,0,true
+0.1,9,fisher_reach state_weight 0.01,reached,15,0,true
+0.1,9,fisher_reach state_weight 0.03,reached,13,0,true
+0.1,9,fisher_reach state_weight 0.1,reached,16,0,true
+0.1,10,shipped,reached,16,0,true
+0.1,10,fisher_reach state_weight 0.01,reached,12,0,true
+0.1,10,fisher_reach state_weight 0.03,reached,13,0,true
+0.1,10,fisher_reach state_weight 0.1,reached,12,0,true
+0.1,11,shipped,reached,18,0,true
+0.1,11,fisher_reach state_weight 0.01,reached,15,0,true
+0.1,11,fisher_reach state_weight 0.03,reached,17,0,true
+0.1,11,fisher_reach state_weight 0.1,reached,18,0,true
+0.1,12,shipped,reached,17,0,true
+0.1,12,fisher_reach state_weight 0.01,reached,12,0,true
+0.1,12,fisher_reach state_weight 0.03,reached,17,0,true
+0.1,12,fisher_reach state_weight 0.1,reached,18,0,true
+0.1,13,shipped,reached,17,0,true
+0.1,13,fisher_reach state_weight 0.01,reached,13,0,true
+0.1,13,fisher_reach state_weight 0.03,reached,13,0,true
+0.1,13,fisher_reach state_weight 0.1,reached,13,0,true
+0.1,14,shipped,reached,21,0,true
+0.1,14,fisher_reach state_weight 0.01,reached,17,0,true
+0.1,14,fisher_reach state_weight 0.03,reached,17,0,true
+0.1,14,fisher_reach state_weight 0.1,reached,18,0,true
+0.1,15,shipped,reached,17,0,true
+0.1,15,fisher_reach state_weight 0.01,reached,10,0,true
+0.1,15,fisher_reach state_weight 0.03,reached,11,0,true
+0.1,15,fisher_reach state_weight 0.1,reached,13,0,true
+0.1,16,shipped,reached,17,0,true
+0.1,16,fisher_reach state_weight 0.01,reached,13,0,true
+0.1,16,fisher_reach state_weight 0.03,reached,13,0,true
+0.1,16,fisher_reach state_weight 0.1,reached,12,0,true
+0.1,17,shipped,reached,18,0,true
+0.1,17,fisher_reach state_weight 0.01,reached,13,0,true
+0.1,17,fisher_reach state_weight 0.03,reached,11,0,true
+0.1,17,fisher_reach state_weight 0.1,reached,14,0,true
+0.1,18,shipped,reached,17,0,true
+0.1,18,fisher_reach state_weight 0.01,reached,13,0,true
+0.1,18,fisher_reach state_weight 0.03,reached,13,0,true
+0.1,18,fisher_reach state_weight 0.1,reached,13,0,true
+0.1,19,shipped,reached,17,0,true
+0.1,19,fisher_reach state_weight 0.01,reached,15,0,true
+0.1,19,fisher_reach state_weight 0.03,reached,13,0,true
+0.1,19,fisher_reach state_weight 0.1,reached,16,0,true
+0.1,20,shipped,reached,17,0,true
+0.1,20,fisher_reach state_weight 0.01,reached,13,0,true
+0.1,20,fisher_reach state_weight 0.03,reached,11,0,true
+0.1,20,fisher_reach state_weight 0.1,reached,13,0,true
+0.1,21,shipped,reached,17,0,true
+0.1,21,fisher_reach state_weight 0.01,reached,15,0,true
+0.1,21,fisher_reach state_weight 0.03,reached,11,0,true
+0.1,21,fisher_reach state_weight 0.1,reached,12,0,true
+0.1,22,shipped,reached,16,0,true
+0.1,22,fisher_reach state_weight 0.01,reached,12,0,true
+0.1,22,fisher_reach state_weight 0.03,reached,13,0,true
+0.1,22,fisher_reach state_weight 0.1,reached,12,0,true
+0.1,23,shipped,reached,16,0,true
+0.1,23,fisher_reach state_weight 0.01,reached,11,0,true
+0.1,23,fisher_reach state_weight 0.03,reached,13,0,true
+0.1,23,fisher_reach state_weight 0.1,reached,15,0,true
+0.1,24,shipped,reached,21,0,true
+0.1,24,fisher_reach state_weight 0.01,reached,15,0,true
+0.1,24,fisher_reach state_weight 0.03,reached,17,0,true
+0.1,24,fisher_reach state_weight 0.1,reached,18,0,true
+0.1,25,shipped,reached,18,0,true
+0.1,25,fisher_reach state_weight 0.01,reached,13,0,true
+0.1,25,fisher_reach state_weight 0.03,reached,13,0,true
+0.1,25,fisher_reach state_weight 0.1,reached,14,0,true
+0.1,26,shipped,reached,18,0,true
+0.1,26,fisher_reach state_weight 0.01,reached,12,0,true
+0.1,26,fisher_reach state_weight 0.03,reached,13,0,true
+0.1,26,fisher_reach state_weight 0.1,reached,12,0,true
+0.1,27,shipped,reached,16,0,true
+0.1,27,fisher_reach state_weight 0.01,reached,13,0,true
+0.1,27,fisher_reach state_weight 0.03,reached,13,0,true
+0.1,27,fisher_reach state_weight 0.1,reached,14,0,true
+0.1,28,shipped,reached,17,0,true
+0.1,28,fisher_reach state_weight 0.01,reached,15,0,true
+0.1,28,fisher_reach state_weight 0.03,reached,17,0,true
+0.1,28,fisher_reach state_weight 0.1,reached,14,0,true
+0.1,29,shipped,reached,15,0,true
+0.1,29,fisher_reach state_weight 0.01,reached,10,0,true
+0.1,29,fisher_reach state_weight 0.03,reached,11,0,true
+0.1,29,fisher_reach state_weight 0.1,reached,13,0,true
+0.1,30,shipped,reached,18,0,true
+0.1,30,fisher_reach state_weight 0.01,reached,13,0,true
+0.1,30,fisher_reach state_weight 0.03,reached,13,0,true
+0.1,30,fisher_reach state_weight 0.1,reached,13,0,true
+0.1,31,shipped,reached,17,0,true
+0.1,31,fisher_reach state_weight 0.01,reached,13,0,true
+0.1,31,fisher_reach state_weight 0.03,reached,13,0,true
+0.1,31,fisher_reach state_weight 0.1,reached,12,0,true
+0.1,32,shipped,reached,17,0,true
+0.1,32,fisher_reach state_weight 0.01,reached,13,0,true
+0.1,32,fisher_reach state_weight 0.03,reached,13,0,true
+0.1,32,fisher_reach state_weight 0.1,reached,12,0,true
+0.1,33,shipped,reached,17,0,true
+0.1,33,fisher_reach state_weight 0.01,reached,13,0,true
+0.1,33,fisher_reach state_weight 0.03,reached,11,0,true
+0.1,33,fisher_reach state_weight 0.1,reached,13,0,true
+0.1,34,shipped,reached,16,0,true
+0.1,34,fisher_reach state_weight 0.01,reached,11,0,true
+0.1,34,fisher_reach state_weight 0.03,reached,13,0,true
+0.1,34,fisher_reach state_weight 0.1,reached,15,0,true
+0.1,35,shipped,reached,17,0,true
+0.1,35,fisher_reach state_weight 0.01,reached,13,0,true
+0.1,35,fisher_reach state_weight 0.03,reached,13,0,true
+0.1,35,fisher_reach state_weight 0.1,reached,13,0,true
+0.1,36,shipped,reached,17,0,true
+0.1,36,fisher_reach state_weight 0.01,reached,12,0,true
+0.1,36,fisher_reach state_weight 0.03,reached,13,0,true
+0.1,36,fisher_reach state_weight 0.1,reached,12,0,true
+0.1,37,shipped,reached,19,0,true
+0.1,37,fisher_reach state_weight 0.01,reached,13,0,true
+0.1,37,fisher_reach state_weight 0.03,reached,17,0,true
+0.1,37,fisher_reach state_weight 0.1,reached,14,0,true
+0.1,38,shipped,reached,17,0,true
+0.1,38,fisher_reach state_weight 0.01,reached,13,0,true
+0.1,38,fisher_reach state_weight 0.03,reached,15,0,true
+0.1,38,fisher_reach state_weight 0.1,reached,12,0,true
+0.1,39,shipped,reached,17,0,true
+0.1,39,fisher_reach state_weight 0.01,reached,13,0,true
+0.1,39,fisher_reach state_weight 0.03,reached,13,0,true
+0.1,39,fisher_reach state_weight 0.1,reached,13,0,true
+0.1,40,shipped,reached,16,0,true
+0.1,40,fisher_reach state_weight 0.01,reached,13,0,true
+0.1,40,fisher_reach state_weight 0.03,reached,13,0,true
+0.1,40,fisher_reach state_weight 0.1,reached,12,0,true

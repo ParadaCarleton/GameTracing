@@ -113,9 +113,19 @@ end
     @test unwrap_error(result).context.label == :broken
 end
 
-@testset "augmented_theta rejects a trace PALC cannot weight" begin
-    @test GameTracing.augmented_theta(0.5f0, 3) ≈ 0.5f0 * 4 / 3
-    @test_throws ArgumentError GameTracing.augmented_theta(0.9f0, 3)
+@testset "every state weight in (0, 1) traces, a one-logit game at the default settings included" begin
+    for state_weight in (0.1f0, 0.5f0, 0.9f0), distance in instances(StepDistance)
+        geometry = TraceGeometry{Float32}(; distance, state_weight)
+        # A log-precision trace carries its state weight in its dot and runs PALC at a weight set by the target.
+        palc_state_weight = ifelse(distance == FisherLogPrecisionDistance, GameTracing.log_precision_palc_state_weight(2.0f0), state_weight)
+        @test GameTracing.palc_geometry(geometry, 1, 2.0f0).palc_state_weight == palc_state_weight
+    end
+    for state_weight in (0.0f0, 1.0f0, -0.5f0, NaN32)
+        @test_throws ArgumentError GameTracing.palc_geometry(TraceGeometry{Float32}(; state_weight), 1, 2.0f0)
+    end
+    result = trace_endpoint(LogitGame(FOLD_GAME, 2.0f0), 1, TraceSettings{Float32}())
+    @test !is_error(result)
+    @test residual_norm(FOLD_GAME, unwrap(result).logits, 2.0f0) < 1.0f-3
 end
 
 @testset "an element type LAPACK cannot factor gets BifurcationKit's matrix solver" begin
@@ -129,7 +139,7 @@ end
             orientation_check = check,
             bordered_solver = solver,
         )
-        oriented = GameTracing.palc_algorithm(settings, WIDTH).orientation_check
+        oriented = GameTracing.palc_algorithm(settings, WIDTH, TARGET_PRECISION).orientation_check
         @test oriented == (check && solver == MatrixSolve)
     end
 end
@@ -194,7 +204,7 @@ end
     game = LogitGame(pass, 2.0f0)
     start = GameTracing.trace_start(game, zeros(Float32, 1))
     gains = evaluated(pass, zeros(Float32, 1), 1.0f0).precision_slope
-    @test GameTracing.state_of(start) ≈ 2.0f0 .* gains
+    @test GameTracing.payoff_gaps(start) ≈ 2.0f0 .* gains
     @test last(start) == 0
     residual, jacobian = GameTracing.GameSystem(game, GameTracing.BranchWorkspace(game, start))(start, 0.0f0)
     @test maximum(abs, residual) <= 4 * eps(Float32) * maximum(abs, start)

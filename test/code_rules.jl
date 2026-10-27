@@ -34,8 +34,13 @@ const FILE_LINE_LIMIT = 1500
 # `TraceResult{E}` is `ErrorTypes.Result{Traced{E}, TraceFailure}`: generic in `E`, but Corset reads any
 # `Result{…}` as a fixed concrete type, and ErrorTypes has no abstract supertype to name instead.
 const GENERIC_RESULTS = ("trace.jl trace_endpoint", "trace.jl reached_state", "trace.jl redrawn_trace")
-const SOURCE_DIRECTORIES = ("src", "test")
+const SOURCE_DIRECTORIES = ("src", "test", "benchmark")
 
+const BENCHMARK_FILES = [
+    file
+    for file in readdir(joinpath(pkgdir(GameTracing), "benchmark"); join = true)
+    if endswith(file, ".jl")
+]
 const REPOSITORY = Repository(dirname(@__DIR__); baseline = joinpath(@__DIR__, "no_baseline.toml"))
 const SOURCE_FILES = [
     file
@@ -45,6 +50,8 @@ const SOURCE_FILES = [
 
 @testset "code rules find nothing" begin
     sources = Dict(file => located_source(file) for file in SOURCE_FILES)
+    # The per-file syntax rules also read the arm benchmark; the module rules need it loaded as a module.
+    syntax_sources = merge(sources, Dict(file => located_source(file) for file in BENCHMARK_FILES))
     inferred = inferred_methods(GameTracing)
     structs = module_structs(GameTracing)
     locations = struct_locations(SOURCE_FILES)
@@ -84,7 +91,7 @@ const SOURCE_FILES = [
     @testset "no result-type guessing, no file over $FILE_LINE_LIMIT lines" begin
         @test [
             site
-            for (file, located) in sources
+            for (file, located) in syntax_sources
             for site in return_type_calls(file, located)
         ] ==
             Site[]
@@ -94,13 +101,13 @@ const SOURCE_FILES = [
     @testset "every quantity computed for its whole domain" begin
         @test [
             site
-            for (file, located) in sources
+            for (file, located) in syntax_sources
             for site in nothing_returns(file, located)
         ] ==
             Site[]
         @test [
             site
-            for (file, located) in sources
+            for (file, located) in syntax_sources
             for site in range_guards(file, located)
         ] ==
             Site[]
@@ -108,7 +115,7 @@ const SOURCE_FILES = [
     @testset "no statement repeats an earlier one in the same block" begin
         @test [
             site
-            for (file, located) in sources
+            for (file, located) in syntax_sources
             for site in repeated_statements(file, located)
         ] ==
             Site[]
@@ -116,7 +123,7 @@ const SOURCE_FILES = [
     @testset "no argument is annotated with a concrete container" begin
         @test [
             site
-            for (file, located) in sources
+            for (file, located) in syntax_sources
             for site in concrete_arguments(file, located)
         ] ==
             Site[]
@@ -133,7 +140,7 @@ const SOURCE_FILES = [
     @testset "every function argument and result is annotated" begin
         @test [
             site
-            for (file, located) in sources
+            for (file, located) in syntax_sources
             for site in missing_annotations(file, located)
         ] ==
             Site[]
