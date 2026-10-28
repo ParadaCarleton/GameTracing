@@ -36,7 +36,7 @@ const FILE_LINE_LIMIT = 1500
 # abstract supertype to name instead; a rename would not change the head's kind.
 const GENERIC_RESULTS = (
     "trace.jl trace_endpoint", "trace.jl reached_state", "trace.jl redrawn_trace",
-    "crossing.jl homotopy_crossing", "redraw.jl redraw_crossing",
+    "crossing.jl homotopy_crossing", "crossing.jl crossing_walk", "crossing.jl crossing_steps", "redraw.jl redraw_crossing",
 )
 const SOURCE_DIRECTORIES = ("src", "test", "benchmark")
 

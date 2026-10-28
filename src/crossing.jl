@@ -136,18 +136,31 @@ end
 """
     crossing_walk(iterable, jacobian, point)
 
-`homotopy_crossing`'s result: BifurcationKit's `iterable` run from `point` at `s = 0`, each accepted point checked
-for a turn in `s` and a sign change of `det jacobian` against the start's.
+`homotopy_crossing`'s result: BifurcationKit's `iterable` run from `point` at `s = 0` (`crossing_steps`).
 """
 function crossing_walk(iterable::BifurcationKit.ContIterable, jacobian::HomotopyJacobian, point::AbstractVector{E})::CrossingResult{E} where {E <: Real}
-    start_sign = sign(det(jacobian(point, zero(E))))
-    # The first state is the start; while `done` holds, `iterate` returns the next state, converged at a new point.
-    state = first(something(iterate(iterable)))
+    return crossing_steps(iterable, jacobian, sign(det(jacobian(point, zero(E)))), first(something(iterate(iterable))))
+end
+
+"""
+    crossing_steps(iterable, jacobian, start_sign, start)
+
+The `CrossingResult` of `iterable`'s states from its first, `start`: each accepted point is checked for a turn in
+`s` (the tangent's `s` part falls below zero) and for `det jacobian` leaving `start_sign`. The tangent is not
+oriented by the bordered determinant, so it turns only at a fold.
+"""
+function crossing_steps(
+    iterable::BifurcationKit.ContIterable,
+    jacobian::HomotopyJacobian,
+    start_sign::Real,
+    start::S,
+)::CrossingResult{eltype(BifurcationKit.getx(start))} where {S}
+    state = start
+    # While `done` holds, `iterate` returns the next state, converged at a new point or not.
     while BifurcationKit.done(iterable, state)
-        state = first(something(iterate(iterable, state)))
+        state = first(something(iterate(iterable, state)))::S
         if BifurcationKit.converged(state)
             @debug "crossing point" _group = :homotopy_crossing blend = BifurcationKit.getp(state)
-            # The tangent at the new point is set by the step that accepted it.
             if BifurcationKit.gettangent(state).p < 0
                 return CrossingResult(copy(BifurcationKit.getx(state)), :fold, state.step)
             end
@@ -156,6 +169,6 @@ function crossing_walk(iterable::BifurcationKit.ContIterable, jacobian::Homotopy
             end
         end
     end
-    reached = BifurcationKit.converged(state) && BifurcationKit.getp(state) == one(E)
+    reached = BifurcationKit.converged(state) && BifurcationKit.getp(state) == 1
     return CrossingResult(copy(BifurcationKit.getx(state)), ifelse(reached, :crossed, :stopped), state.step)
 end
