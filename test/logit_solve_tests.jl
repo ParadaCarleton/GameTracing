@@ -106,3 +106,10 @@ end
     @test_throws ArgumentError logit_solve(gains; first_step = 0)
     @test_throws ArgumentError logit_solve_lambda(gains, 1; max_accel = 0.5f0)
 end
+
+@testset "LogitQREProfile computes its profile from its logits and takes no profile" begin
+    gains = NormalFormGains(map(table -> Float32.(table), LOGITNASH_GAMES.matching_pennies))
+    profile = LogitQREProfile(gains, 1.0f0, Float32[0, 0])
+    @test profile.profile == GameTracing.mixed_strategies(gains, profile.logits)
+    @test_throws MethodError LogitQREProfile(1.0f0, profile.profile, Float32[3, -3])
+end

@@ -2,7 +2,6 @@ using ErrorTypes: Err, Ok, Result, is_error, unwrap, unwrap_error
 using LinearAlgebra: dot
 
 """
-    LogitQREProfile(lam, profile, logits)
     LogitQREProfile(gains, lam, logits)
 
 One point of a normal-form game's logit QRE branch, as pygambit's `LogitQREMixedStrategyProfile`: the precision `lam`
@@ -13,10 +12,12 @@ struct LogitQREProfile{E <: Real, S <: Tuple, L <: AbstractVector{E}}
     lam::E
     profile::S
     logits::L
-end
-
-function LogitQREProfile(gains::NormalFormGains, lam::E, logits::AbstractVector{E})::LogitQREProfile{E} where {E <: Real}
-    return LogitQREProfile(lam, mixed_strategies(gains, logits), collect(logits))
+    # The only constructor: `profile` is computed from `logits`, so the two cannot disagree.
+    function LogitQREProfile(gains::NormalFormGains, lam::E, logits::AbstractVector{E})::LogitQREProfile{E} where {E <: Real}
+        stored = collect(logits)
+        profile = mixed_strategies(gains, stored)
+        return new{E, typeof(profile), typeof(stored)}(lam, profile, stored)
+    end
 end
 
 # The results of `logit_solve` and of the branch searches, over `N` players in element type `E`.
