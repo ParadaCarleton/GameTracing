@@ -63,7 +63,7 @@ function redraw_crossing(
             point,
             # The orientation check flips the tangent at a branch point, which would read a crossing as a fold.
             palc_algorithm(settings, length(point) - 1, before.target_precision; orientation_check = false),
-            continuation_options(settings, settings.first_step, settings.max_steps);
+            continuation_options(settings, settings.first_step, settings.max_steps, settings.first_tangent_divisor);
             callback_newton = corrector,
         )
     catch exception

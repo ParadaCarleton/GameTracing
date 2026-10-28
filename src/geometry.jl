@@ -114,6 +114,17 @@ function log_precision_scale(relative_precision::E, target_precision::E)::E wher
 end
 
 """
+The length in `geometry`'s distance of a unit step in the relative precision at `relative_precision`, on a trace to
+`target_precision` (`StepDistance`): `P / (1 + ρ P)` under `FisherLogPrecisionDistance`, else `√level_weight`.
+"""
+function precision_length(geometry::TraceGeometry{E}, relative_precision::E, target_precision::E)::E where {E <: Real}
+    if geometry.distance == FisherLogPrecisionDistance
+        return sqrt(log_precision_scale(relative_precision, target_precision))
+    end
+    return sqrt(level_weight(geometry))
+end
+
+"""
 PALC's state weight for a `FisherLogPrecisionDistance` trace to `target_precision`: one minus half of `P² / (1 + P)²`,
 the smallest `log_precision_scale` over ρ ∈ [0, 1]. PALC's own `Δρ²` term then stays under the distance's, so the
 dot's precision weight (`FisherLogPrecisionWeights`) stays positive.

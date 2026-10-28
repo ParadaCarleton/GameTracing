@@ -120,20 +120,22 @@ end
 
 """
 BifurcationKit's continuation parameters for `settings`, from relative precision zero to one, with first step
-`step_length` and at most `max_steps` steps. Eigenvalues, fold and bifurcation detection serve bifurcation diagrams;
-the trace reads only its endpoint.
+`step_length`, at most `max_steps` steps and first tangent the secant to a solve at `step_length / first_tangent_divisor`
+in the continuation parameter. Eigenvalues, fold and bifurcation detection serve bifurcation diagrams; the trace reads
+only its endpoint.
 """
 function continuation_options(
     settings::TraceSettings{E},
     step_length::E,
     max_steps::Integer,
+    first_tangent_divisor::E,
 )::BifurcationKit.ContinuationPar where {E <: Real}
     return BifurcationKit.ContinuationPar(;
         ds = step_length,
         dsmin = settings.min_step,
         dsmax = settings.max_step,
         a = settings.aggressiveness,
-        η = settings.first_tangent_divisor,
+        η = first_tangent_divisor,
         p_min = zero(E),
         p_max = one(E),
         max_steps,
@@ -151,6 +153,14 @@ function continuation_options(
         tol_bisection_eigenvalue = zero(E),
         tol_param_bisection_event = zero(E),
     )
+end
+
+"""
+BifurcationKit's `η` for a trace from the flat start to `target_precision`: its secant solve, `step / η` in the relative
+precision, lies `step / settings.first_tangent_divisor` from the start in the trace's distance (`precision_length`).
+"""
+function opening_divisor(settings::TraceSettings{E}, target_precision::Real)::E where {E <: Real}
+    return settings.first_tangent_divisor * precision_length(settings.geometry, zero(E), E(target_precision))
 end
 
 """
@@ -183,7 +193,7 @@ function continue_trace(
     opened_continuation!(
         branch_problem(game, start, last(start); record_from_solution = trace_record_precision),
         palc_algorithm(settings, length(start) - 1, game.target_precision),
-        continuation_options(settings, step_length, max_steps),
+        continuation_options(settings, step_length, max_steps, opening_divisor(settings, game.target_precision)),
         old_tangent,
         finalise,
         corrector,
