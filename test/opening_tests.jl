@@ -99,7 +99,10 @@ end
         if !is_error(near)
             ours = GameTracing.mixed_strategies(gains, logits)
             gap = maximum(maximum.(abs, ours .- GameTracing.mixed_strategies(gains, unwrap(near).logits)))
-            @test gap < 1.0f-3
+            # Each trace's logit residual is under the corrector tolerance at ρ = 1, where gap and logit residuals agree.
+            corrector = LOG_PRECISION_SETTINGS.corrector
+            residual = GameTracing.corrector_tolerance(corrector.residual_tolerance, corrector.tolerance_floor_ulps, [logits; 1.0f0])
+            @test gap < 2 * probability_bound(gains, logits, precision, residual, 0.5f0)
         end
     end
     @info "accepted points of the trace to 1e6 up to precision 100" points = length(recorded)
