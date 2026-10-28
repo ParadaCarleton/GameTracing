@@ -55,7 +55,8 @@ function redraw_crossing(
     settings::TraceSettings{E},
 )::CrossingResult{E} where {E <: Real}
     relative_precision = last(point)
-    corrector = CorrectorReach(AcceptAll(), settings.corrector, settings.geometry, similar(point), similar(point), zero(E))
+    scale = E(max(residual_scale(before), residual_scale(after)))
+    corrector = CorrectorReach(AcceptAll(), settings.corrector, settings.geometry, scale, similar(point), similar(point), zero(E))
     try
         return homotopy_crossing(
             branch_problem(before, point, relative_precision; record_from_solution = trace_record_precision),

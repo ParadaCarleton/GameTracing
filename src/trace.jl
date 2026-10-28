@@ -201,6 +201,7 @@ function continue_trace(
         accept_corrected,
         settings.corrector,
         settings.geometry,
+        E(residual_scale(game)),
         similar(start),
         similar(start),
         zero(E),
@@ -442,7 +443,12 @@ function reached_state(
     if isnothing(outcome.exception) && progress.relative_precision == one(E)
         point = [progress.gaps; one(E)]
         residual = maximum(abs, branch_system!(BranchWorkspace(game, point), game, point, one(E)).residual)
-        tolerance = corrector_tolerance(settings.corrector.residual_tolerance, settings.corrector.tolerance_floor_ulps, point)
+        tolerance = corrector_tolerance(
+            settings.corrector.residual_tolerance,
+            settings.corrector.tolerance_floor_ulps,
+            point,
+            residual_scale(game),
+        )
         if residual < tolerance
             return Ok(Traced(copy(progress.gaps), progress.steps))
         end

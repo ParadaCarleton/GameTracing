@@ -108,6 +108,7 @@ end
         GameTracing.AcceptAll(),
         CorrectorSettings{Float32}(),
         TraceGeometry{Float32}(),
+        0.0f0,
         zeros(Float32, 3),
         zeros(Float32, 3),
         0.0f0,

@@ -3,6 +3,8 @@ using Random: AbstractRNG, Xoshiro
 
 # Random normal-form games whose trace to precision 1e6 once opened at λ ≈ 42426 and stalled off the map.
 const FAR_OPENING_SEED = 0xb0bf341028e24ba6
+# The seed whose (2, 2, 2) game stalled at λ ≈ 22.9 on its way to 1e6: the corrector floor missed `P G`'s rounding.
+const MIXED_STALL_SEED = 0x233ce38d667063a1
 
 """Normal-form games with strategy counts `(3, 3)` and `(2, 2, 2)`, payoffs `3 randn`, drawn from `rng` in that order."""
 function far_opening_games(rng::AbstractRNG)::AbstractVector
@@ -37,7 +39,11 @@ end
 # Each comparison runs a Gambit trace; the mutation jobs skip it to stay under their time limit.
 if get(ENV, "GAMETRACING_MUTATION", "false") != "true"
     @testset "a trace to a far target stays on Gambit's branch" begin
-        for payoffs in (far_opening_games(Xoshiro(FAR_OPENING_SEED))..., far_opening_games(fresh_rng())...)
+        stalled = last(far_opening_games(Xoshiro(MIXED_STALL_SEED)))
+        # The seed still draws the game that stalled: its first payoff's bits as the failing run logged them.
+        @test reinterpret(UInt32, first(first(stalled))) == 0x40e91772
+        seeded = (far_opening_games(Xoshiro(FAR_OPENING_SEED))..., stalled)
+        for payoffs in (seeded..., far_opening_games(fresh_rng())...)
             gains = NormalFormGains(payoffs)
             failure = unwrap_error(trace_endpoint(
                 LogitGame(gains, FAR_TARGET),
@@ -57,11 +63,21 @@ if get(ENV, "GAMETRACING_MUTATION", "false") != "true"
     end
 end
 
+@testset "the corrector floor covers the rounding of P G, not only the gaps" begin
+    gains = NormalFormGains((Float32[7 -2; 3 4], Float32[-2 1; 1 -1]))
+    game = LogitGame(gains, FAR_TARGET)
+    @test GameTracing.residual_scale(game) == FAR_TARGET * 7
+    floor = GameTracing.corrector_tolerance(1.0f-5, 32, Float32[1, 0], GameTracing.residual_scale(game))
+    @test floor >= 32 * eps(Float32) * FAR_TARGET * 7
+    @test GameTracing.corrector_tolerance(1.0f-5, 32, Float32[1, 0], 0.0f0) == 1.0f-5
+end
+
 @testset "the corrector holds the relative precision at its pin, whatever the gap floor" begin
     check = GameTracing.CorrectorReach(
         GameTracing.AcceptAll(),
         GameTracing.CorrectorSettings{Float32}(),
         TraceGeometry{Float32}(),
+        zero(Float32),
         zeros(Float32, 3),
         zeros(Float32, 3),
         zero(Float32),
@@ -104,7 +120,7 @@ end
             gap = maximum(maximum.(abs, ours .- GameTracing.mixed_strategies(gains, unwrap(near).logits)))
             # Each trace's logit residual is under the corrector tolerance at ρ = 1, where gap and logit residuals agree.
             corrector = LOG_PRECISION_SETTINGS.corrector
-            residual = GameTracing.corrector_tolerance(corrector.residual_tolerance, corrector.tolerance_floor_ulps, [logits; 1.0f0])
+            residual = GameTracing.corrector_tolerance(corrector.residual_tolerance, corrector.tolerance_floor_ulps, [logits; 1.0f0], GameTracing.residual_scale(LogitGame(gains, precision)))
             @test gap < 2 * probability_bound(gains, logits, precision, residual, 0.5f0)
         end
     end

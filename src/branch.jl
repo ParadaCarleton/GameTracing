@@ -15,6 +15,19 @@ struct LogitGame{P, T <: Real}
     target_precision::T
 end
 
+"""
+    gain_scale(pass!, target_precision)
+
+A bound on the size of the terms each gain of `pass!` sums, at any precision up to `target_precision`, so that the
+gains round to a few ulps of it. Every pass defines it; there is no default, so a pass without one fails loudly.
+"""
+function gain_scale end
+
+"""The rounding scale of `game`'s gap residual `w - P G`: `P` times its pass's `gain_scale`."""
+function residual_scale(game::LogitGame{P, T})::T where {P, T <: Real}
+    return game.target_precision * gain_scale(game.pass!, game.target_precision)
+end
+
 """The precision at `relative_precision`: the fraction of `game.target_precision` the trace has reached."""
 function precision_at(game::LogitGame, relative_precision::R)::typeof(
     relative_precision * game.target_precision,

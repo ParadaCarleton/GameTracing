@@ -21,6 +21,11 @@ struct NormalFormGains{N, A <: AbstractArray{<:Real, N}}
     end
 end
 
+"""The largest payoff's size: each gain is a difference of payoff averages, which round to a few ulps of it."""
+function gain_scale(gains::NormalFormGains{N, A}, ::Real)::eltype(A) where {N, A}
+    return maximum(table -> maximum(abs, table), gains.payoffs)
+end
+
 function NormalFormGains(payoffs::Tuple)::NormalFormGains
     throw(ArgumentError("payoffs must be arrays of one type with one axis per player; got $(typeof.(payoffs))"))
 end

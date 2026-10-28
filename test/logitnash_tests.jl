@@ -33,6 +33,7 @@ function settled_endpoint(pass::Any, logits::AbstractVector{E}, precision::Real,
         settings.corrector.residual_tolerance,
         settings.corrector.tolerance_floor_ulps,
         [logits; one(E)],
+        GameTracing.residual_scale(LogitGame(pass, precision)),
     )
     return residual_norm(pass, logits, precision) < 2 * tolerance
 end

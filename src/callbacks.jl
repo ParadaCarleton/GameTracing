@@ -7,7 +7,7 @@ The corrector's controls (`CorrectorReach`); `nothing` switches a limit off. `re
 times its step from its predictor is refused. `max_kl`: a corrected point whose largest per-logit probability KL from
 the predictor passes this is refused. `max_angle`: so is one whose chord turns past this many radians from the
 predictor's direction. `residual_tolerance`, `tolerance_floor_ulps`: the corrector's sup-norm residual, or
-`tolerance_floor_ulps` ulps of the largest payoff gap where that is larger (`corrector_tolerance`).
+`tolerance_floor_ulps` ulps of the gap residual's rounding scale where that is larger (`corrector_tolerance`).
 `newton_iterations`: Newton iterations per corrector.
 """
 Base.@kwdef struct CorrectorSettings{E <: Real}
@@ -20,17 +20,19 @@ Base.@kwdef struct CorrectorSettings{E <: Real}
 end
 
 """
-    corrector_tolerance(tolerance, floor_ulps, x)
+    corrector_tolerance(tolerance, floor_ulps, x, residual_scale)
 
-The residual under which the corrector accepts `x = [w; ρ]`: `tolerance`, or the rounding floor of the
-gap residual `w - P G`, `floor_ulps` ulps of the largest payoff gap.
+The residual under which the corrector accepts `x = [w; ρ]`: `tolerance`, or the rounding floor of the gap residual
+`w - P G`, `floor_ulps` ulps of its larger scale: the largest payoff gap, or `residual_scale` (`residual_scale`), the
+rounding scale of `P G`. Near a mixed equilibrium `G` is a small difference of large terms, so `P G` rounds far above `w`.
 """
 function corrector_tolerance(
     tolerance::T,
     floor_ulps::Real,
     point::AbstractVector,
+    residual_scale::Real,
 )::T where {T <: Real}
-    largest = maximum(abs, payoff_gaps(point))
+    largest = max(maximum(abs, payoff_gaps(point)), residual_scale)
     return max(tolerance, convert(T, floor_ulps * eps(typeof(largest)) * largest))
 end
 
@@ -45,7 +47,7 @@ within_limit(::Nothing, ::Real)::Bool = true
 within_limit(limit::Real, measured::Real)::Bool = measured <= limit
 
 """
-    CorrectorReach(accept_corrected, settings, geometry, previous, predicted, step_length)
+    CorrectorReach(accept_corrected, settings, geometry, residual_scale, previous, predicted, step_length)
 
 The trace's BifurcationKit `callback_newton`, which also decides the corrector's convergence: a `settled` iterate
 ends Newton's method converged (`NewtonConverged`). A non-finite residual stops the corrector,
@@ -56,7 +58,7 @@ from it. A converged closing point is refused the same way past `reach`, past a 
 `KL(corrected ‖ predicted)` of `settings.max_kl` (`largest_kl`), or past a turn of `settings.max_angle` radians from
 the predictor's direction (`chord_angle`, from `previous`). A predictor that did not move has no reach to compare.
 `accept_corrected(logits, ρ, converged)` then sees every other closing point. `previous`, `predicted` and
-`step_length` hold the current step's start and predictor.
+`step_length` hold the current step's start and predictor. `residual_scale` is the games' (`residual_scale`).
 """
 mutable struct CorrectorReach{C, E <: Real}
     # Mutable because BifurcationKit shows the predictor only to a corrector's first callback and the
@@ -64,6 +66,7 @@ mutable struct CorrectorReach{C, E <: Real}
     accept_corrected::C
     settings::CorrectorSettings{E}
     geometry::TraceGeometry{E}
+    residual_scale::E
     previous::Vector{E}
     predicted::Vector{E}
     step_length::E
@@ -89,7 +92,7 @@ end
 
 """The residual under which `check`'s corrector accepts `point` (`corrector_tolerance`)."""
 function settled_tolerance(check::CorrectorReach, point::AbstractVector)::Real
-    return corrector_tolerance(check.settings.residual_tolerance, check.settings.tolerance_floor_ulps, point)
+    return corrector_tolerance(check.settings.residual_tolerance, check.settings.tolerance_floor_ulps, point, check.residual_scale)
 end
 
 function (check::CorrectorReach)(iterate::I;

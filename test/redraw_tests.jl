@@ -35,7 +35,8 @@ end
     tolerance = GameTracing.corrector_tolerance(
         REDRAW_SETTINGS.corrector.residual_tolerance,
         REDRAW_SETTINGS.corrector.tolerance_floor_ulps,
-        logits,
+        [logits; 1.0f0],
+        GameTracing.residual_scale(LogitGame(NEAR_SWAP.after, NEAR_SWAP.precision)),
     )
     @test residual_norm(NEAR_SWAP.after, logits, NEAR_SWAP.precision) < 2 * tolerance
     swap = swap_point(NEAR_SWAP)
@@ -65,6 +66,7 @@ function on_map(result::TraceResult{Float32}, pass::Any, precision::Real)::Bool
         REDRAW_SETTINGS.corrector.residual_tolerance,
         REDRAW_SETTINGS.corrector.tolerance_floor_ulps,
         [logits; 1.0f0],
+        GameTracing.residual_scale(LogitGame(pass, precision)),
     )
     return residual_norm(pass, logits, precision) < 2 * tolerance
 end
@@ -135,6 +137,7 @@ end
         REDRAW_SETTINGS.corrector.residual_tolerance,
         REDRAW_SETTINGS.corrector.tolerance_floor_ulps,
         [logits; 1.0f0],
+        GameTracing.residual_scale(LogitGame(swap.after, swap.precision)),
     )
     @test residual_norm(swap.after, logits, swap.precision) < 2 * tolerance
     @test residual_norm(swap.before, logits, swap.precision) > 100 * tolerance
@@ -208,7 +211,7 @@ end
     @test reference.reached
     @test reference.crossings == 0
     # The endpoint's residual is under the corrector tolerance at ρ = 1, where gap and logit residuals agree; 2x covers recomputing it.
-    residual = 2 * GameTracing.corrector_tolerance(REDRAW_SETTINGS.corrector.residual_tolerance, REDRAW_SETTINGS.corrector.tolerance_floor_ulps, [endpoint; 1.0f0])
+    residual = 2 * GameTracing.corrector_tolerance(REDRAW_SETTINGS.corrector.residual_tolerance, REDRAW_SETTINGS.corrector.tolerance_floor_ulps, [endpoint; 1.0f0], GameTracing.residual_scale(LogitGame(swap.after, swap.precision)))
     @test maximum(abs, inv.(1 .+ exp.(-endpoint)) .- reference.first_choices) < probability_bound(reference_after, reference.logits, swap.precision, residual, 0.25f0)
 end
 

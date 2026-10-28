@@ -28,6 +28,9 @@ function (pass::LinearGainPass)(
     return nothing
 end
 
+GameTracing.gain_scale(pass::LinearGainPass{E}, ::Real)::E where {E} =
+    maximum(sum(abs, pass.interaction; dims = 2)) + maximum(abs, pass.stand_alone)
+
 """One logit that gains `amplitude * logistic(logits - threshold)`: a coordination game whose branch folds back when `threshold` is large."""
 struct ThresholdPass{E <: Real}
     amplitude::E
@@ -47,6 +50,8 @@ function (pass::ThresholdPass)(
     fill!(gain_precision_slope, zero(E))
     return nothing
 end
+
+GameTracing.gain_scale(pass::ThresholdPass{E}, ::Real)::E where {E} = abs(pass.amplitude)
 
 """A `LinearGainPass` whose gains shrink with the precision: `G = (A p + b) / sqrt(1 + (λ s)²)`, so `∂G/∂λ ≠ 0`."""
 struct DampedGainPass{E <: Real}
@@ -69,6 +74,9 @@ function (pass::DampedGainPass)(
     return nothing
 end
 
+# The damping is at most one.
+GameTracing.gain_scale(pass::DampedGainPass{E}, target_precision::Real)::E where {E} = gain_scale(pass.pass, target_precision)
+
 """One logit whose gain is the precision itself, `G = λ`: the branch `z = λ²`."""
 struct PrecisionGainPass end
 
@@ -84,6 +92,8 @@ function (::PrecisionGainPass)(
     fill!(gain_precision_slope, one(E))
     return nothing
 end
+
+GameTracing.gain_scale(::PrecisionGainPass, target_precision::T)::T where {T <: Real} = target_precision
 
 """A pass whose gain and slopes are NaN once the precision passes `poison`, as a game that overflows there is."""
 struct PoisonedPass{P, E <: Real}
@@ -107,6 +117,8 @@ function (pass::PoisonedPass)(
     return nothing
 end
 
+GameTracing.gain_scale(pass::PoisonedPass, target_precision::T)::T where {T <: Real} = gain_scale(pass.pass, target_precision)
+
 """A pass that gives a NaN slope, so the Jacobian is non-finite where the residual is not."""
 struct NaNSlopePass{P}
     pass::P
@@ -123,6 +135,8 @@ function (pass::NaNSlopePass)(
     fill!(gain_slope, NaN32)
     return nothing
 end
+
+GameTracing.gain_scale(pass::NaNSlopePass, target_precision::T)::T where {T <: Real} = gain_scale(pass.pass, target_precision)
 
 """A pass that throws a caller's `ArgumentError` once the precision is positive."""
 struct ThrowingPass{P}
@@ -142,6 +156,8 @@ function (pass::ThrowingPass)(
     pass.pass(gain, gain_slope, gain_precision_slope, logits, precision)
     return nothing
 end
+
+GameTracing.gain_scale(pass::ThrowingPass, target_precision::T)::T where {T <: Real} = gain_scale(pass.pass, target_precision)
 
 """
 The logit map `T = λ G` of `pass` at `logits` and precision `λ`, in fresh arrays: `(; response, logit_slope,
@@ -187,6 +203,9 @@ each rival `q` playing its first action with probability `logistic(z_q)`. `payof
 struct NormalFormPass{N, A <: AbstractArray{<:Real, N}}
     payoffs::NTuple{N, A}
 end
+
+GameTracing.gain_scale(pass::NormalFormPass{N, A}, ::Real)::eltype(A) where {N, A} =
+    maximum(table -> maximum(abs, table), pass.payoffs)
 
 """The probability that a player whose first action has probability `first_choice` plays `action`."""
 function action_probability(first_choice::E, action::Integer)::E where {E <: Real}

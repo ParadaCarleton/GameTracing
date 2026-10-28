@@ -80,6 +80,7 @@ end
             GameTracing.AcceptAll(),
             corrector,
             geometry,
+            0.0f0,
             Float32[0, 0, 0.5f0],
             predicted,
             1.0f0,
