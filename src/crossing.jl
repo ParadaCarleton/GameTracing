@@ -53,14 +53,6 @@ function (slope::HomotopySlope)(state::AbstractVector{E}, ::Real)::AbstractVecto
     return own_residual(end_problem, state) .- own_residual(start_problem, state)
 end
 
-"""BifurcationKit's branch record of the homotopy: its parameter `s` alone."""
-function homotopy_record(::Any, blend::L;
-    # fatou-ignore unused-argument: BifurcationKit passes keyword arguments this callback ignores
-    keywords...,
-)::L where {L <: Real}
-    return blend
-end
-
 """
     CrossingResult(point, reason, steps)
 
@@ -112,7 +104,6 @@ function homotopy_problem(homotopy::HomotopyMap, point::AbstractVector{E})::Bifu
         J = HomotopyJacobian(homotopy),
         R01 = HomotopySlope(homotopy),
         inplace = false,
-        record_from_solution = homotopy_record,
     )
 end
 
