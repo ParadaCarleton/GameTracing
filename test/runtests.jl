@@ -163,6 +163,8 @@ const DIAGNOSED = Set([
     ("summed_noguard", "random8", 1.0f2), ("summed_noguard", "matching_pennies", 20.0f0), ("summed_noguard", "coordination_wiki_p0.01", 4.0f0),
     ("summed_noguard", "coordination_pure_p0.001", 20.0f0), ("summed_noguard", "coordination_wiki_p0.001", 1.0f2),
     ("fisher_noguard", "coordination_pure_p0.001", 1.0f2),
+    # Main's defaults stopping "unmoved" at λ 1e-9 to 0.04 at target 1e6 (14 traces).
+    ("baseline_noguard", "random1", 1.0f6), ("baseline_noguard", "random5", 1.0f6), ("baseline_noguard", "far1", 1.0f6),
 ])
 
 # Exact-symmetry games: no unique branch past their pitchfork, so out of scope (user ruling); their perturbed copies stay.
