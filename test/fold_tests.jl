@@ -16,6 +16,11 @@ const FOLD_SETTINGS = TraceSettings{Float32}()
                     bordered_solver = BorderingSolve,
                 ),
                 TraceSettings{Float32}(step_control = nothing),
+                # Past the second fold this arm's Fisher-weighted tangent once turned back (`PlainOrientation`).
+                TraceSettings{Float32}(
+                    bordered_solver = BorderingSolve,
+                    corrector = CorrectorSettings{Float32}(; residual_tolerance = 32 * eps(Float32) * 12),
+                ),
             )
             traced = trace_endpoint(LogitGame(FOLD_GAME, target), 1, settings)
             @test !is_error(traced)
