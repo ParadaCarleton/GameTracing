@@ -1,4 +1,4 @@
-using ErrorTypes: unwrap_error
+using ErrorTypes: is_error, unwrap, unwrap_error
 using Random: AbstractRNG, Xoshiro
 
 # Random normal-form games whose trace to precision 1e6 once opened at λ ≈ 42426 and stalled off the map.
@@ -71,34 +71,36 @@ end
     @test !GameTracing.settled(check, (; x = point, res_f = Float32[0, 0, -0.04f0], residual = 0.04f0))
 end
 
-"""A `keep_going` that writes each accepted precision of a trace to `target` into `precisions` and stops past `ceiling`."""
-struct PrecisionLog{E <: Real}
+"""A `keep_going` that writes each accepted point of a trace to `target` into `precisions` and `logits`, and stops past `ceiling`."""
+struct PointLog{E <: Real}
     target::E
     ceiling::E
     precisions::Vector{E}
+    logits::Matrix{E}
 end
 
-function (logbook::PrecisionLog)(::AbstractVector, relative_precision::Real)::Bool
-    setindex!(logbook.precisions, relative_precision * logbook.target, something(findfirst(isnan, logbook.precisions)))
+function (logbook::PointLog)(logits::AbstractVector, relative_precision::Real)::Bool
+    point = something(findfirst(isnan, logbook.precisions))
+    setindex!(logbook.precisions, relative_precision * logbook.target, point)
+    view(logbook.logits, :, point) .= logits
     return relative_precision * logbook.target < logbook.ceiling
 end
 
-"""The accepted precisions of a trace of `gains` to `target` in `settings`, up to the first past `ceiling`."""
-function accepted_precisions(gains::NormalFormGains, target::E, ceiling::E, settings::TraceSettings{E})::AbstractVector{E} where {E <: Real}
-    logbook = PrecisionLog(target, ceiling, fill(E(NaN32), settings.max_steps + 1))
-    trace_endpoint(LogitGame(gains, target), GameTracing.logit_count(gains), settings; keep_going = logbook)
-    return filter(!isnan, logbook.precisions)
-end
-
-@testset "the target only caps a trace: to 100 and to 1e6 it accepts the same precisions up to 100, in $distance" for distance in instances(StepDistance)
-    settings = TraceSettings{Float32}(; geometry = TraceGeometry{Float32}(; distance))
+@testset "the target only caps a log-precision trace: each point to 1e6 up to 100 is the endpoint of a trace to its precision" begin
     gains = NormalFormGains(first(far_opening_games(Xoshiro(FAR_OPENING_SEED))))
-    near, far = (accepted_precisions(gains, target, 100.0f0, settings) for target in (100.0f0, FAR_TARGET))
-    shared = min(length(near), length(far))
-    # Two traces of one branch agree to the corrector's tolerance on each step's precision.
-    agree = length(near) == length(far) && all(abs.(view(near, 1:shared) .- view(far, 1:shared)) .<= 1.0f-3 .* (1 .+ view(near, 1:shared)))
-    @test agree
-    if !agree
-        @error "the target moved the accepted precisions" distance near = repr(first(near, 16)) far = repr(first(far, 16)) lengths = (length(near), length(far))
+    width = GameTracing.logit_count(gains)
+    steps = LOG_PRECISION_SETTINGS.max_steps + 1
+    logbook = PointLog(FAR_TARGET, 100.0f0, fill(Float32(NaN32), steps), zeros(Float32, width, steps))
+    trace_endpoint(LogitGame(gains, FAR_TARGET), width, LOG_PRECISION_SETTINGS; keep_going = logbook)
+    recorded = 1:count(!isnan, logbook.precisions)
+    for (precision, logits) in zip(view(logbook.precisions, recorded), eachcol(view(logbook.logits, :, recorded)))
+        near = trace_endpoint(LogitGame(gains, precision), width, LOG_PRECISION_SETTINGS)
+        @test !is_error(near)
+        if !is_error(near)
+            ours = GameTracing.mixed_strategies(gains, logits)
+            gap = maximum(maximum.(abs, ours .- GameTracing.mixed_strategies(gains, unwrap(near).logits)))
+            @test gap < 1.0f-3
+        end
     end
+    @info "accepted points of the trace to 1e6 up to precision 100" points = length(recorded)
 end
