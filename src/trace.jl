@@ -84,20 +84,28 @@ function corrector_quality(
     )
 end
 
-"""BifurcationKit's PALC for `settings` over a trace of `width` logits to precision `target_precision`."""
+"""
+BifurcationKit's PALC for `settings` over a trace of `width` logits to precision `target_precision`, its tangent
+oriented by the bordered determinant where `orientation_check` holds (`settings.orientation_check` by default).
+"""
 function palc_algorithm(
     settings::TraceSettings{E},
     width::Integer,
-    target_precision::Real,
+    target_precision::Real;
+    orientation_check::Bool = settings.orientation_check,
 )::BifurcationKit.AbstractContinuationAlgorithm where {E <: Real}
-    return palc_with_geometry(settings, width, palc_geometry(settings.geometry, width, target_precision))
+    return palc_with_geometry(settings, width, palc_geometry(settings.geometry, width, target_precision), orientation_check)
 end
 
-"""BifurcationKit's PALC for `settings` over `width` logits in `geometry` (`palc_geometry`), whose type varies by distance."""
+"""
+BifurcationKit's PALC for `settings` over `width` logits in `geometry` (`palc_geometry`), whose type varies by
+distance, with the bordered determinant's `orientation_check` (with `MatrixSolve` only).
+"""
 function palc_with_geometry(
     settings::TraceSettings{E},
     width::Integer,
     geometry::NamedTuple,
+    orientation_check::Bool,
 )::BifurcationKit.AbstractContinuationAlgorithm where {E <: Real}
     return BifurcationKit.PALC(;
         tangent = settings.tangent,
@@ -105,8 +113,7 @@ function palc_with_geometry(
         dotθ = geometry.dot,
         bls = bordered_linear_solver(settings.bordered_solver, width + 1, E),
         step_control = corrector_quality(settings.step_control, settings.geometry, width),
-        orientation_check = settings.orientation_check &&
-            settings.bordered_solver == MatrixSolve,
+        orientation_check = orientation_check && settings.bordered_solver == MatrixSolve,
         corrector = BifurcationKit.FreeParameterNewton(),
     )
 end
