@@ -1,4 +1,5 @@
 using ErrorTypes: is_error, unwrap, unwrap_error
+using LinearAlgebra: dot
 
 """
 Gambit's logit QRE of the normal-form game `payoffs` at `precision`, from `pygambit.qre.logit_solve_lambda`:
@@ -71,6 +72,46 @@ const STUCK_BRANCH_GAMES = (
     ),
 )
 
+"""The precision `λ` that best explains `logits` as `λ G(logits)` of `gains`: the least-squares fit, for a diagnostic."""
+function implied_precision(gains::NormalFormGains, logits::AbstractVector{E})::E where {E <: Real}
+    width = length(logits)
+    gain = zeros(E, width)
+    gains(gain, zeros(E, width, width), zeros(E, width), logits, one(E))
+    return dot(logits, gain) / dot(gain, gain)
+end
+
+"""
+The first accepted point of `logit_solve_branch`'s trace of `payoffs` whose mixed strategies differ from Gambit's at its
+precision by more than `tolerance`, with the precision before it: where the trace leaves Gambit's branch.
+"""
+function branch_departure(payoffs::Tuple, tolerance::E)::NamedTuple where {E <: Real}
+    gains = NormalFormGains(payoffs)
+    settings = GameTracing.gambit_settings(0.03f0, 1.1f0)
+    width = GameTracing.logit_count(gains)
+    recorder = GameTracing.BranchRecorder(
+        gains,
+        1.0f6,
+        sqrt(eps(E)) * GameTracing.payoff_range(gains),
+        fill(E(NaN32), settings.max_steps + 1),
+        zeros(E, width, settings.max_steps + 1),
+    )
+    GameTracing.trace_endpoint(GameTracing.LogitGame(gains, 1.0f6), width, settings; keep_going = recorder)
+    recorded = GameTracing.recorded_points(recorder)
+    # fatou-ignore call-arity: Base `view` takes any number of indices (jolars/fatou#125)
+    logit_points = eachcol(view(recorder.logits, :, recorded))
+    points = zip(view(recorder.precisions, recorded), logit_points)
+    previous = zero(E)
+    for (point, (precision, logits)) in enumerate(points)
+        ours = GameTracing.mixed_strategies(gains, logits)
+        theirs = gambit_strategies(payoffs, precision).strategies
+        if largest_gap(ours, theirs) > tolerance
+            return (; point, points = length(recorded), first_precisions = first(view(recorder.precisions, recorded), 12), implied = implied_precision.((gains,), first(collect(logit_points), 12)), precision, previous, gap = largest_gap(ours, theirs), ours, theirs, logits = copy(logits))
+        end
+        previous = precision
+    end
+    return (; point = 0, points = length(recorded), first_precisions = first(view(recorder.precisions, recorded), 12), implied = implied_precision.((gains,), first(collect(logit_points), 12)), precision = previous)
+end
+
 @testset "logit_solve_branch: each point solves the logit map at its precision, and the last meets maxregret" begin
     rng = fresh_rng()
     random_games = [ntuple(_ -> 3 .* randn(rng, Float32, counts), length(counts)) for counts in ((3, 3), (2, 2, 2))]
@@ -81,7 +122,7 @@ const STUCK_BRANCH_GAMES = (
         if is_error(result)
             # Which shorter traces settle tells a failure of the far target from a failure of the branch.
             shorter = [ceiling => logit_solve_branch(gains; maximum_precision = ceiling) for ceiling in (1.0f2, 1.0f4)]
-            @error "logit_solve_branch failed" payoffs failure = unwrap_error(result) shorter
+            @error "logit_solve_branch failed" payoffs failure = unwrap_error(result) shorter departure = branch_departure(payoffs, 1.0f-3)
             continue
         end
         branch = unwrap(result)
