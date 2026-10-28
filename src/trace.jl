@@ -1,6 +1,5 @@
 using BifurcationKit: BifurcationKit
 using ErrorTypes: Err, Ok
-using NonlinearSolveFirstOrder: NewtonRaphson
 """
     StepControl{E}(; distance_limit, contraction_limit, growth_limit, contraction_offset)
 
@@ -85,20 +84,28 @@ function corrector_quality(
     )
 end
 
-"""BifurcationKit's PALC for `settings` over a trace of `width` logits to precision `target_precision`."""
+"""
+BifurcationKit's PALC for `settings` over a trace of `width` logits to precision `target_precision`, its tangent
+oriented by the bordered determinant where `orientation_check` holds (`settings.orientation_check` by default).
+"""
 function palc_algorithm(
     settings::TraceSettings{E},
     width::Integer,
-    target_precision::Real,
+    target_precision::Real;
+    orientation_check::Bool = settings.orientation_check,
 )::BifurcationKit.AbstractContinuationAlgorithm where {E <: Real}
-    return palc_with_geometry(settings, width, palc_geometry(settings.geometry, width, target_precision))
+    return palc_with_geometry(settings, width, palc_geometry(settings.geometry, width, target_precision), orientation_check)
 end
 
-"""BifurcationKit's PALC for `settings` over `width` logits in `geometry` (`palc_geometry`), whose type varies by distance."""
+"""
+BifurcationKit's PALC for `settings` over `width` logits in `geometry` (`palc_geometry`), whose type varies by
+distance, with the bordered determinant's `orientation_check` (with `MatrixSolve` only).
+"""
 function palc_with_geometry(
     settings::TraceSettings{E},
     width::Integer,
     geometry::NamedTuple,
+    orientation_check::Bool,
 )::BifurcationKit.AbstractContinuationAlgorithm where {E <: Real}
     return BifurcationKit.PALC(;
         tangent = settings.tangent,
@@ -106,8 +113,7 @@ function palc_with_geometry(
         dotθ = geometry.dot,
         bls = bordered_linear_solver(settings.bordered_solver, width + 1, E),
         step_control = corrector_quality(settings.step_control, settings.geometry, width),
-        orientation_check = settings.orientation_check &&
-            settings.bordered_solver == MatrixSolve,
+        orientation_check = orientation_check && settings.bordered_solver == MatrixSolve,
         corrector = BifurcationKit.FreeParameterNewton(),
     )
 end
@@ -250,7 +256,7 @@ function opened_continuation!(
 end
 
 """
-    trace_endpoint(game, width, settings; keep_going, accept_corrected, redraw, level_solver, context)
+    trace_endpoint(game, width, settings; keep_going, accept_corrected, redraw, context)
 
 Follow `game`'s branch of `width` logits from the flat start (zero logits, the only root at precision zero) to
 `game.target_precision`, and return `Ok(Traced)` logits there or `Err(TraceFailure)` for the failure that stopped short (a `TraceResult`).
@@ -263,9 +269,10 @@ refusal); a non-finite start or a broken linear solve fails `NotFinite` or `Sing
 every failure.
 
 `redraw(logits, ρ)` runs at each accepted point that `keep_going` passes, and returns `nothing` or a new game of the
-same type and target precision. A new game replaces the map at that point: the point is corrected onto it at fixed
-`ρ` by NonlinearSolve's `level_solver` (`level_correction`), and the trace restarts there along the new branch's
-tangent, oriented by the old one, with the step it held. A correction that misses fails `TraceStuck` with `projected = true`.
+same type and target precision. A new game replaces the map at that point: at fixed `ρ` the point is continued
+along the homotopy from the old game to the new (`redraw_crossing`), and the trace restarts at its end along the new
+branch's tangent, oriented by the old one, with the step it held. A crossing that folds, meets a singular point or
+stops short fails `TraceStuck` with `projected = true` and the crossing's `reason`.
 """
 function trace_endpoint(
     game::LogitGame,
@@ -274,7 +281,6 @@ function trace_endpoint(
     keep_going::Any = AcceptAll(),
     accept_corrected::Any = AcceptAll(),
     redraw::Any = NoRedraw(),
-    level_solver::Any = NewtonRaphson(),
     context::NamedTuple = (;),
 )::TraceResult{E} where {E <: Real}
     flat = zeros(E, width)
@@ -296,64 +302,58 @@ function trace_endpoint(
         zero(E),
         false,
     )
-    finalise = TraceFinalise(progress, keep_going, redraw, RedrawSlot(game, false, settings.first_step), 0)
+    finalise = TraceFinalise(progress, keep_going, redraw, RedrawSlot(game, game, false, settings.first_step), 0)
     return redrawn_trace(
         guarded_trace(traced_start, nothing, settings, finalise, accept_corrected),
         finalise,
         settings,
         accept_corrected,
-        level_solver,
         context,
     )
 end
 
 """
-    redrawn_trace(outcome, finalise, settings, accept_corrected, level_solver, context)
+    redrawn_trace(outcome, finalise, settings, accept_corrected, context)
 
 The `TraceResult` of a trace segment that ended with `outcome`. When `redraw` swapped the game there, the last
-accepted point is corrected onto the new game (`level_correction`) and the trace restarts from it, a new segment
-counted on from `finalise.progress.steps`; a correction that misses fails `TraceStuck` with `projected = true`.
+accepted point crosses onto the new game (`redraw_crossing`) and the trace restarts from it, a new segment counted
+on from `finalise.progress.steps`; a crossing that fails ends the trace `TraceStuck` with `projected = true`.
 """
 function redrawn_trace(
     outcome::NamedTuple,
     finalise::TraceFinalise,
     settings::TraceSettings{E},
     accept_corrected::Any,
-    level_solver::Any,
     context::NamedTuple,
 )::TraceResult{E} where {E <: Real}
     (; progress, slot) = finalise
     target_precision = slot.game.target_precision
-    # A pending swap is corrected first: the correction takes no continuation step, and skipping it would report
-    # a root of the old game.
+    # A pending swap is crossed first: the crossing takes no trace step, and skipping it would report a root of the
+    # old game.
     if !isnothing(outcome.exception) || !slot.pending
         return reached_state(progress, outcome, slot.game, settings, context)
     end
     slot.pending = false
-    correction = level_correction(slot.game, [progress.gaps; progress.relative_precision], settings, level_solver)
-    if !correction.corrected
-        reason = ifelse(correction.distance > settings.corrector.redraw_reach, :redraw_reach, :redraw_residual)
-        @debug "trace stopped" _group = :trace reason distance = correction.distance residual = correction.residual
+    crossing = redraw_crossing(slot.before, slot.game, [progress.gaps; progress.relative_precision], settings)
+    @debug "redraw crossed" _group = :trace reason = crossing.reason steps = crossing.steps
+    if crossing.reason != :crossed
+        @debug "trace stopped" _group = :trace reason = crossing.reason steps = crossing.steps
         # The context's logits are the accepted point, a root of the game before the swap.
         return Err(TraceFailure(
             TraceStuck,
-            (;
-                stopped_context(progress, outcome, target_precision, context)..., projected = true,
-                correction.residual, correction.distance, correction.retcode,
-            ),
+            (; stopped_context(progress, outcome, target_precision, context)..., projected = true, crossing.reason),
         ))
     end
-    copyto!(progress.gaps, payoff_gaps(correction.point))
+    copyto!(progress.gaps, payoff_gaps(crossing.point))
     if progress.relative_precision == one(E) || progress.steps >= settings.max_steps
         return reached_state(progress, outcome, slot.game, settings, context)
     end
     next = TraceFinalise(progress, finalise.keep_going, finalise.redraw, slot, progress.steps)
     return redrawn_trace(
-        guarded_trace(correction.point, [progress.gap_tangent; progress.tangent_precision], settings, next, accept_corrected),
+        guarded_trace(crossing.point, [progress.gap_tangent; progress.tangent_precision], settings, next, accept_corrected),
         next,
         settings,
         accept_corrected,
-        level_solver,
         context,
     )
 end

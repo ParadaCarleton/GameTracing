@@ -65,7 +65,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        file: [bordered.jl, branch.jl, callbacks.jl, failure.jl, geometry.jl, trace.jl, projection.jl, redraw.jl, normal_form.jl]
+        file: [bordered.jl, branch.jl, callbacks.jl, failure.jl, geometry.jl, trace.jl, projection.jl, crossing.jl, redraw.jl, normal_form.jl]
     steps:
       - uses: actions/checkout@v4
       - uses: julia-actions/setup-julia@v2

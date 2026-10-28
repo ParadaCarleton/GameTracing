@@ -1,5 +1,5 @@
 using LinearAlgebra: det, dot, norm
-using Random: RandomDevice, Xoshiro
+using Random: AbstractRNG, RandomDevice, Xoshiro
 
 """A generator on a fresh seed, logged so a failing draw can be replayed with `Xoshiro(seed)`."""
 function fresh_rng()::Xoshiro
@@ -362,8 +362,63 @@ const NEAR_SWAP = MapSwap(
     4.0f0, 0.5f0, 2,
 )
 
-# The swap removes the low branch at precision 1/2: the only root there is the high one, about 3.5 logits away.
+# The swap removes the low branch at precision 1/2: the only root there is the high one, about 3.5 logits away,
+# and the homotopy between the maps reaches it with `s` rising throughout (`rising_homotopy`).
 const FAR_SWAP = MapSwap(ThresholdPass(8.0f0, 4.0f0), ThresholdPass(8.0f0, 1.5f0), 1.0f0, 0.5f0, 1)
+
+# The new map's root at precision 1/2 lies past a fold of the homotopy: the blended map loses the low root near s = 0.44.
+const FOLD_SWAP = MapSwap(ThresholdPass(8.0f0, 4.0f0), ThresholdPass(16.0f0, 2.0f0), 1.0f0, 0.5f0, 1)
+
+# Two symmetric anti-coordination maps at precision 2: the blend's symmetric root keeps its symmetric mode positive
+# while its antisymmetric mode changes sign, a pitchfork with no fold (`symmetric_modes`).
+const PITCHFORK_SWAP = MapSwap(
+    LinearGainPass([0 -2.0f0; -2.0f0 0], [0.0f0, 0.0f0]),
+    LinearGainPass([0 -8.0f0; -8.0f0 0], [0.0f0, 0.0f0]),
+    4.0f0, 0.5f0, 2,
+)
+
+"""
+    symmetric_modes(interaction, precision)
+
+`(; symmetric, antisymmetric)`: the two eigenvalues of `I - λ ∂G/∂z` at the symmetric root of `z = λ a σ(z)` on both
+logits of a two-player map with off-diagonal interaction `a`, found by Float64 Newton from zero: `1 ∓ λ a σ'(z)`.
+"""
+function symmetric_modes(interaction::Real, precision::Real)::NamedTuple
+    pass = LinearGainPass([0 interaction; interaction 0] .* float(1), zeros(2))
+    root = level_root(pass, zeros(2), precision)
+    slope = inv(1 + exp(-first(root))) * inv(1 + exp(first(root)))
+    return (; symmetric = 1 - precision * interaction * slope, antisymmetric = 1 + precision * interaction * slope)
+end
+
+"""`pass`'s gain at the logit `logit`, in Float64."""
+threshold_gain(pass::ThresholdPass, logit::Real)::typeof(logit * float(1)) = pass.amplitude * float(1) / (1 + exp(pass.threshold * float(1) - logit))
+
+"""
+    rising_homotopy(before, after, precision, logit)
+
+Whether the homotopy `z = λ ((1 - s) G₀(z) + s G₁(z))` from `before`'s root `logit` at precision `λ` reaches `s = 1`
+with `s` rising: solved for `s`, the path is `s(z) = (z / λ - G₀) / (G₁ - G₀)`, here sampled upward in `z` from
+`logit` in Float64 steps of 1e-4. A fall in `s` is a fold. Each map is one logit, with `G₁ > G₀` on the path.
+"""
+function rising_homotopy(before::ThresholdPass, after::ThresholdPass, precision::Real, logit::Real)::Bool
+    # `float(1)` widens to Float64; the path starts at `s ≈ 0`, so any first sample rises.
+    level, blend, logit_step = precision * float(1), typemin(float(1)), inv(float(10^4))
+    for logit_now in range(logit * float(1); step = logit_step, length = 10^6)
+        spread = threshold_gain(after, logit_now) - threshold_gain(before, logit_now)
+        if !(spread > 0)
+            throw(ArgumentError("the gains do not order on the path at logit $logit_now"))
+        end
+        next = (logit_now / level - threshold_gain(before, logit_now)) / spread
+        if next >= 1
+            return true
+        end
+        if next < blend
+            return false
+        end
+        blend = next
+    end
+    throw(ArgumentError("the path does not reach s = 1 within 100 logits"))
+end
 
 """
     SwapAt(game, swap_level)
@@ -389,3 +444,40 @@ struct StopAt{E <: Real}
 end
 
 (hook::StopAt)(::AbstractVector, relative_precision::Real)::Bool = relative_precision < hook.swap_level
+
+"""`table` in Float32."""
+function single_precision(table::AbstractArray{T, N})::Array{Float32, N} where {T <: Real, N}
+    return Float32.(table)
+end
+
+"""Draws one random payoff table of scale 3 from `rng` for `players` players with two actions each."""
+struct RandomTable{R <: AbstractRNG}
+    rng::R
+    players::Int
+end
+
+(table::RandomTable)(::Integer)::Array = 3 .* randn(table.rng, ntuple(Returns(2), table.players))
+
+"""Moves a payoff table by Gaussian noise of scale 1/20 drawn from `rng`, as a redraw moves a sampled map."""
+struct PayoffJitter{R <: AbstractRNG}
+    rng::R
+end
+
+(jitter::PayoffJitter)(table::AbstractArray)::Array = table .+ randn(jitter.rng, size(table)...) ./ 20
+
+"""`players` random payoff tables of scale 3 from `rng`."""
+random_payoffs(rng::AbstractRNG, players::Integer)::Tuple = ntuple(RandomTable(rng, players), players)
+
+"""
+    random_swap(seed)
+
+`(; swap, reference_before, reference_after)`: a random 3-player game from seed `seed` whose payoffs move by about 0.05
+at relative precision 1/2, as a mid-trace redraw moves a sampled map, and its two maps in Float64.
+"""
+function random_swap(seed::Integer)::NamedTuple
+    rng = Xoshiro(1000 + seed)
+    before = random_payoffs(rng, 3)
+    after = map(PayoffJitter(rng), before)
+    swap = MapSwap(NormalFormPass(map(single_precision, before)), NormalFormPass(map(single_precision, after)), 3.0f0, 0.5f0, 3)
+    return (; swap, reference_before = NormalFormPass(before), reference_after = NormalFormPass(after))
+end

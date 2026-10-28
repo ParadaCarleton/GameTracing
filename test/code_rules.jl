@@ -31,9 +31,13 @@ using Corset:
 
 const STRUCT_FIELD_LIMIT = 12
 const FILE_LINE_LIMIT = 1500
-# `TraceResult{E}` is `ErrorTypes.Result{Traced{E}, TraceFailure}`: generic in `E`, but Corset reads any
-# `Result{…}` as a fixed concrete type, and ErrorTypes has no abstract supertype to name instead.
-const GENERIC_RESULTS = ("trace.jl trace_endpoint", "trace.jl reached_state", "trace.jl redrawn_trace")
+# Corset classifies `Head{…}` by `Head` alone (`names_concrete_type`): a concrete struct head is concrete, whatever
+# the parameters. `TraceResult{E}` (an ErrorTypes `Result`) and `CrossingResult{E}` are generic in `E`, with no
+# abstract supertype to name instead; a rename would not change the head's kind.
+const GENERIC_RESULTS = (
+    "trace.jl trace_endpoint", "trace.jl reached_state", "trace.jl redrawn_trace",
+    "crossing.jl homotopy_crossing", "crossing.jl crossing_walk", "crossing.jl crossing_steps", "redraw.jl redraw_crossing",
+)
 const SOURCE_DIRECTORIES = ("src", "test", "benchmark")
 
 const BENCHMARK_FILES = [

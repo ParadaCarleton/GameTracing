@@ -30,29 +30,6 @@ function normal_form_case(name::AbstractString, payoffs::Tuple, precision::Real)
     return Case(String(name), NormalFormPass(map(single_precision, payoffs)), NormalFormPass(map(float, payoffs)), length(payoffs), Float32(precision))
 end
 
-"""`table` in Float32."""
-function single_precision(table::AbstractArray{T, N})::Array{Float32, N} where {T <: Real, N}
-    return Float32.(table)
-end
-
-"""Draws one random payoff table of scale 3 from `rng` for `players` players with two actions each."""
-struct RandomTable{R <: AbstractRNG}
-    rng::R
-    players::Int
-end
-
-(table::RandomTable)(::Integer)::Array = 3 .* randn(table.rng, ntuple(Returns(2), table.players))
-
-"""Moves a payoff table by Gaussian noise of scale 1/20 drawn from `rng`, as a redraw moves a sampled map."""
-struct PayoffJitter{R <: AbstractRNG}
-    rng::R
-end
-
-(jitter::PayoffJitter)(table::AbstractArray)::Array = table .+ randn(jitter.rng, size(table)...) ./ 20
-
-"""`players` random payoff tables of scale 3 from `rng`."""
-random_payoffs(rng::AbstractRNG, players::Integer)::Tuple = ntuple(RandomTable(rng, players), players)
-
 """A random game of 2 to 5 players from seed `seed`."""
 function random_case(seed::Integer)::Case
     rng = Xoshiro(seed)
@@ -75,13 +52,10 @@ function swap_case(name::AbstractString, swap::MapSwap, reference_before::Any, r
     return SwapCase(Case(String(name), swap.before, reference_before, swap.width, swap.precision), swap.after, reference_after, swap.swap_level)
 end
 
-"""A random 3-player game whose payoffs move by about 0.05 at relative precision 1/2, as a mid-trace redraw moves a sampled map."""
+"""The random swap `seed` (`random_swap`) as a `SwapCase`."""
 function swap_case(seed::Integer)::SwapCase
-    rng = Xoshiro(1000 + seed)
-    before = random_payoffs(rng, 3)
-    after = map(PayoffJitter(rng), before)
-    swap = MapSwap(NormalFormPass(map(single_precision, before)), NormalFormPass(map(single_precision, after)), 3.0f0, 0.5f0, 3)
-    return swap_case(string("swap ", seed), swap, NormalFormPass(before), NormalFormPass(after))
+    (; swap, reference_before, reference_after) = random_swap(seed)
+    return swap_case(string("swap ", seed), swap, reference_before, reference_after)
 end
 
 """`case`'s fine Float64 reference from the flat start."""
@@ -137,7 +111,7 @@ function fixed_cases()::Vector{Case}
     )
 end
 
-"""The map-swap games: the near and far swaps and random ones."""
+"""The map-swap games: the near and far swaps and random ones. The fold swap has no reference past its fold."""
 function swap_cases()::Vector{SwapCase}
     return vcat(
         SwapCase[
@@ -148,13 +122,13 @@ function swap_cases()::Vector{SwapCase}
     )
 end
 
-"""A logger that sends each trace record's message and `reason` (`:none` without one) into `sink`."""
+"""A logger that sends each trace or redraw-crossing record's message and `reason` (`:none` without one) into `sink`."""
 struct TraceCounter <: AbstractLogger
     sink::Channel{Pair{String, Symbol}}
 end
 
 min_enabled_level(::TraceCounter)::LogLevel = Debug
-shouldlog(::TraceCounter, ::LogLevel, ::Module, group::Any, ::Any)::Bool = group === :trace
+shouldlog(::TraceCounter, ::LogLevel, ::Module, group::Any, ::Any)::Bool = group in (:trace, :homotopy_crossing)
 catch_exceptions(::TraceCounter)::Bool = false
 
 function handle_message(counter::TraceCounter, ::LogLevel, message::Any, ::Module, ::Any, ::Any, ::Any, ::Any; keywords...)::Nothing
@@ -198,7 +172,7 @@ end
 
 """
 What one trace did: first-action probabilities (empty on failure), its status, accepted steps, corrector iterates,
-bytes, refusals per check (`REFUSAL_CHECKS`), the check that refused last and the reason it stopped short (`:none` if none).
+bytes, accepted steps of its redraw crossings, refusals per check (`REFUSAL_CHECKS`), the check that refused last and the reason it stopped short (`:none` if none).
 """
 function traced(case::Union{Case, SwapCase}, settings::TraceSettings)::NamedTuple
     trace_run = TraceRun(case, settings)
@@ -209,11 +183,12 @@ function traced(case::Union{Case, SwapCase}, settings::TraceSettings)::NamedTupl
     close(sink)
     records = collect(sink)
     steps, iterations = count(==("trace point") ∘ first, records), count(==("corrector iterate") ∘ first, records)
+    crossing_steps = count(==("crossing point") ∘ first, records)
     refusals = [last(record) for record in records if first(record) in REFUSAL_MESSAGES]
     counts = NamedTuple{REFUSAL_CHECKS}(map(RefusalCount(refusals), REFUSAL_CHECKS))
     last_refusal = last([:none; refusals])
     stop_reason = last([:none; [last(record) for record in records if first(record) == "trace stopped"]])
-    common = (; steps, iterations, bytes, refusals = counts, last_refusal, stop_reason)
+    common = (; steps, crossing_steps, iterations, bytes, refusals = counts, last_refusal, stop_reason)
     if is_error(result)
         return (; choices = Float32[], status = string(unwrap_error(result).cause), common...)
     end
@@ -254,7 +229,7 @@ function logitnash_row(case::Case)::NamedTuple
     reference = branch_reference(case.reference_pass, case.width, status.lambda)
     return (;
         case = case.name, label = "logitnash", choices = ifelse(reached, choices, empty(choices)),
-        status = ifelse(reached, "reached", "stalled"), steps = status.iteration, iterations = 0, bytes,
+        status = ifelse(reached, "reached", "stalled"), steps = status.iteration, crossing_steps = 0, iterations = 0, bytes,
         refusals = NamedTuple{REFUSAL_CHECKS}(map(Returns(0), REFUSAL_CHECKS)), last_refusal = :none,
         stop_reason = ifelse(reached, :none, :stall),
         kind = reference_kind(reference), pitchfork = Symbol(case.name) in PITCHFORK_GAMES, swapped = false,
@@ -293,8 +268,8 @@ function case_rows(case::Union{Case, SwapCase}, variants::AbstractVector)::Vecto
     rows = vcat(rows, logitnash_rows(case))
     for row in rows
         @printf(
-            "ROW | %-24s | %-14s | %-13s | steps %5d | iterations %6d | refused reach %d kl %d angle %d nonfinite %d, last %s | stopped %s | gap %.2e (%s) | bytes %d\n",
-            row.case, row.label, row.status, row.steps, row.iterations, row.refusals..., row.last_refusal, row.stop_reason, row.gap, row.kind, row.bytes,
+            "ROW | %-24s | %-14s | %-13s | steps %5d | crossing %4d | iterations %6d | refused reach %d kl %d angle %d nonfinite %d, last %s | stopped %s | gap %.2e (%s) | bytes %d\n",
+            row.case, row.label, row.status, row.steps, row.crossing_steps, row.iterations, row.refusals..., row.last_refusal, row.stop_reason, row.gap, row.kind, row.bytes,
         )
     end
     for (index, left) in pairs(reached), right in reached[(index + 1):end]
@@ -329,9 +304,9 @@ function print_summary(group::AbstractString, label::AbstractString, rows::Abstr
     gaps = [row.gap for row in mine if row.status == "reached" && !isnan(row.gap) && !row.pitchfork]
     failures = join(sort([string(row.status, ":", row.stop_reason, ":", row.last_refusal) for row in mine if row.status != "reached"]), " ")
     @printf(
-        "SUMMARY %-5s | %-14s | reached %2d/%2d | off-reference %2d | steps %6d | iterations %7d | gap median %.1e worst %.1e | bytes mean %d | failed %s\n",
+        "SUMMARY %-5s | %-14s | reached %2d/%2d | off-reference %2d | steps %6d | crossing %5d | iterations %7d | gap median %.1e worst %.1e | bytes mean %d | failed %s\n",
         group, label, count(reached_row, mine), length(mine), count(>(1.0f-3), gaps),
-        sum(row.steps for row in mine), sum(row.iterations for row in mine), statistic(median, gaps),
+        sum(row.steps for row in mine), sum(row.crossing_steps for row in mine), sum(row.iterations for row in mine), statistic(median, gaps),
         statistic(maximum, gaps), round(Int, sum(row.bytes for row in mine) / length(mine)), failures,
     )
     return nothing
@@ -416,9 +391,9 @@ function main(output::AbstractString, scope::AbstractString)::Nothing
         error("expected $expected rows, got $(length(rows))")
     end
     io = open(output, "w")
-    println(io, "game,variant,status,steps,iterations,refused_reach,refused_kl,refused_angle,refused_nonfinite,last_refusal,stop_reason,gap,bytes,reference,swapped")
+    println(io, "game,variant,status,steps,crossing_steps,iterations,refused_reach,refused_kl,refused_angle,refused_nonfinite,last_refusal,stop_reason,gap,bytes,reference,swapped")
     for row in rows
-        println(io, join((row.case, row.label, row.status, row.steps, row.iterations, row.refusals..., row.last_refusal, row.stop_reason, row.gap, row.bytes, row.kind, row.swapped), ','))
+        println(io, join((row.case, row.label, row.status, row.steps, row.crossing_steps, row.iterations, row.refusals..., row.last_refusal, row.stop_reason, row.gap, row.bytes, row.kind, row.swapped), ','))
     end
     close(io)
     # Fixed-map and map-swap games are summarized apart: a swap's refusals come from the redraw, not the geometry.
