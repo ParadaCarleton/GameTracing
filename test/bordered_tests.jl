@@ -120,7 +120,7 @@ end
     iter = kit.ContIterable(
         problem,
         GameTracing.palc_algorithm(settings, WIDTH, TARGET_PRECISION),
-        GameTracing.continuation_options(settings, settings.first_step, settings.max_steps);
+        GameTracing.continuation_options(settings, settings.first_step, settings.max_steps, settings.first_tangent_divisor);
         verbosity = 0,
     )
     state, _ = iterate(iter)

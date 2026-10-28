@@ -47,8 +47,8 @@ within_limit(limit::Real, measured::Real)::Bool = measured <= limit
 """
     CorrectorReach(accept_corrected, settings, geometry, previous, predicted, step_length)
 
-The trace's BifurcationKit `callback_newton`, which also decides the corrector's convergence: an iterate under
-`corrector_tolerance` ends Newton's method converged (`NewtonConverged`). A non-finite residual stops the corrector,
+The trace's BifurcationKit `callback_newton`, which also decides the corrector's convergence: a `settled` iterate
+ends Newton's method converged (`NewtonConverged`). A non-finite residual stops the corrector,
 and so does any iterate further from the step's predictor than `settings.reach` times the predictor's own step, in
 `geometry`'s plain norm (`arclength_distance`); the step then halves. On a smooth branch that distance is the branch's
 curvature times `ds² / 2`, so halving brings any step under it, while an iterate that lands on another branch is far
@@ -120,7 +120,7 @@ function (check::CorrectorReach)(iterate::I;
         end
         return newton_verdict(check, iterate, reached)
     end
-    converged = isfinite(iterate.residual) && iterate.residual < settled_tolerance(check, iterate.x)
+    converged = isfinite(iterate.residual) && settled(check, iterate)
     @debug "corrector closed" _group = :trace step = iterate.step residual = iterate.residual converged step_length = check.step_length
     if converged && !closing_accepted(check, iterate.x)
         return false
@@ -131,17 +131,38 @@ function (check::CorrectorReach)(iterate::I;
     return newton_verdict(check, iterate, true)
 end
 
+"""The pin row `ρ - pin` of a corrector `iterate`'s residual: the last entry of Newton's `fx` or of PALC's `res_f`."""
+function pin_residual(iterate::NamedTuple)::eltype(iterate.x)
+    if haskey(iterate, :fx)
+        return last(iterate.fx)
+    end
+    return last(iterate.res_f)
+end
+
+"""
+Whether `check`'s corrector has settled `iterate`: its residual is under `corrector_tolerance`, and its relative
+precision `ρ` is at the pin to the relative `residual_tolerance`. The pin row needs its own test: the gap floor grows
+with the gaps, so at a far target it would pass a `ρ` that never left its start, a point off the map.
+"""
+function settled(check::CorrectorReach, iterate::I)::Bool where {I <: NamedTuple}
+    relative_precision = last(iterate.x)
+    offset = pin_residual(iterate)
+    pin_scale = max(abs(relative_precision), abs(relative_precision - offset))
+    return iterate.residual < settled_tolerance(check, iterate.x) &&
+        abs(offset) <= check.settings.residual_tolerance * pin_scale
+end
+
 """
     newton_verdict(check, iterate, proceed)
 
 `check`'s verdict on a Newton `iterate` that its other tests let `proceed`: converged (`NewtonConverged`)
-under `corrector_tolerance`, else `proceed`.
+when `settled`, else `proceed`.
 """
 function newton_verdict(check::CorrectorReach, iterate::NamedTuple, proceed::T)::Union{
     T,
     BifurcationKit.NewtonConverged,
 } where {T <: Bool}
-    if proceed && iterate.residual < settled_tolerance(check, iterate.x)
+    if proceed && settled(check, iterate)
         return BifurcationKit.NewtonConverged()
     end
     return proceed

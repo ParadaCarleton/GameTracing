@@ -1,5 +1,5 @@
 using ErrorTypes: is_error, unwrap, unwrap_error
-using LinearAlgebra: norm, opnorm
+using LinearAlgebra: norm
 using Logging: Debug
 using Test: collect_test_logs
 
@@ -140,19 +140,6 @@ end
     @test residual_norm(swap.before, logits, swap.precision) > 100 * tolerance
 end
 
-"""
-    probability_bound(pass, logits, precision, residual)
-
-The largest first-action probability error of a root of `pass` at `precision` whose logit residual is `residual`, to
-first order: the logit error `‖J⁻¹‖∞ residual`, `J = I - ∂(λG)/∂z` at the Float64 root `logits`, plus Float32's 32-ulp
-rounding of the logits, times the logistic's largest slope 1/4.
-"""
-function probability_bound(pass::Any, logits::AbstractVector, precision::Real, residual::Real)::typeof(float(residual))
-    jacobian = reference_system(pass, [logits; precision * float(1)]).jacobian[:, 1:(end - 1)]
-    logit_error = opnorm(inv(jacobian), Inf32) * residual + 32 * eps(Float32) * maximum(abs, logits)
-    return logit_error / 4
-end
-
 @testset "every endpoint solves the map in effect at the target, whatever the swap level" begin
     rng = fresh_rng()
     levels = [rand(rng, Float32, 8); 1.0f0]
@@ -222,7 +209,7 @@ end
     @test reference.crossings == 0
     # The endpoint's residual is under the corrector tolerance at ρ = 1, where gap and logit residuals agree; 2x covers recomputing it.
     residual = 2 * GameTracing.corrector_tolerance(REDRAW_SETTINGS.corrector.residual_tolerance, REDRAW_SETTINGS.corrector.tolerance_floor_ulps, [endpoint; 1.0f0])
-    @test maximum(abs, inv.(1 .+ exp.(-endpoint)) .- reference.first_choices) < probability_bound(reference_after, reference.logits, swap.precision, residual)
+    @test maximum(abs, inv.(1 .+ exp.(-endpoint)) .- reference.first_choices) < probability_bound(reference_after, reference.logits, swap.precision, residual, 0.25f0)
 end
 
 @testset "a redraw onto a game that is non-finite at the redraw fails stuck and projected, as a solver blowup" begin
