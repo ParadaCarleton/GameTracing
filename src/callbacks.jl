@@ -1,12 +1,14 @@
 using BifurcationKit: BifurcationKit
 using Logging: @debug
 """
-    CorrectorSettings{E}(; reach, max_kl, max_angle, residual_tolerance, tolerance_floor_ulps, newton_iterations)
+    CorrectorSettings{E}(; reach, max_kl, max_angle, max_step_kl, residual_tolerance, tolerance_floor_ulps, newton_iterations)
 
 The corrector's controls (`CorrectorReach`); `nothing` switches a limit off. `reach`: a corrector further than this
 times its step from its predictor is refused. `max_kl`: a corrected point whose largest per-logit probability KL from
 the predictor passes this is refused. `max_angle`: so is one whose chord turns past this many radians from the
-predictor's direction. `residual_tolerance`, `tolerance_floor_ulps`: the corrector's sup-norm residual, or
+predictor's direction. `max_step_kl`: so is one whose largest per-logit probability KL `KL(corrected ‖ previous)` from
+the step's start passes this, whether the predictor or Newton made the jump; the KL reads fresh probabilities, which
+frozen Fisher weights cannot shrink. `residual_tolerance`, `tolerance_floor_ulps`: the corrector's sup-norm residual, or
 `tolerance_floor_ulps` ulps of the largest payoff gap where that is larger (`corrector_tolerance`).
 `newton_iterations`: Newton iterations per corrector.
 """
@@ -14,6 +16,8 @@ Base.@kwdef struct CorrectorSettings{E <: Real}
     reach::Union{Nothing, E} = 2.0f0
     max_kl::Union{Nothing, E} = nothing
     max_angle::Union{Nothing, E} = nothing
+    # Legitimate steps of the test games move a logit at most 0.07 nats (0.34 once, a 3x3 draw); a branch jump moved 1.2.
+    max_step_kl::Union{Nothing, E} = 0.5f0
     residual_tolerance::E = 1.0f-5
     tolerance_floor_ulps::E = 32.0f0
     newton_iterations::Int = 10
@@ -53,7 +57,8 @@ and so does any iterate further from the step's predictor than `settings.reach` 
 `geometry`'s plain norm (`arclength_distance`); the step then halves. On a smooth branch that distance is the branch's
 curvature times `ds² / 2`, so halving brings any step under it, while an iterate that lands on another branch is far
 from it. A converged closing point is refused the same way past `reach`, past a largest probability KL
-`KL(corrected ‖ predicted)` of `settings.max_kl` (`largest_kl`), or past a turn of `settings.max_angle` radians from
+`KL(corrected ‖ predicted)` of `settings.max_kl` (`largest_kl`), past a `KL(corrected ‖ previous)` of
+`settings.max_step_kl`, or past a turn of `settings.max_angle` radians from
 the predictor's direction (`chord_angle`, from `previous`). A predictor that did not move has no reach to compare.
 `accept_corrected(logits, ρ, converged)` then sees every other closing point. `previous`, `predicted` and
 `step_length` hold the current step's start and predictor.
@@ -78,6 +83,10 @@ function closing_accepted(check::CorrectorReach{C, E}, corrected::AbstractVector
     end
     if !within_limit(settings.max_kl, largest_kl(corrected, check.predicted))
         @debug "corrector refused" _group = :trace reason = :kl
+        return false
+    end
+    if !within_limit(settings.max_step_kl, largest_kl(corrected, check.previous))
+        @debug "corrector refused" _group = :trace reason = :step_kl
         return false
     end
     if !within_limit(settings.max_angle, chord_angle(check.previous, check.predicted, corrected, geometry))
