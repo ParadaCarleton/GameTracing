@@ -144,7 +144,7 @@ Whether `check`'s corrector has settled `iterate`: its residual is under `correc
 precision `ρ` is at the pin to the relative `residual_tolerance`. The pin row needs its own test: the gap floor grows
 with the gaps, so at a far target it would pass a `ρ` that never left its start, a point off the map.
 """
-function settled(check::CorrectorReach, iterate::NamedTuple)::Bool
+function settled(check::CorrectorReach, iterate::I)::Bool where {I <: NamedTuple}
     relative_precision = last(iterate.x)
     offset = pin_residual(iterate)
     pin_scale = max(abs(relative_precision), abs(relative_precision - offset))
