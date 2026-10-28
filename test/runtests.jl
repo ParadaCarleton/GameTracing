@@ -1,20 +1,18 @@
 using GameTracing
-using Test
+using ErrorTypes: is_error, unwrap, unwrap_error
 
 include("games.jl")
 include("fixtures.jl")
-include("arms.jl")
-include("gambit.jl")
 
-const GAME = LinearGainPass(Float32[0 1; 1 0], Float32[0.5f0, -0.25f0])
-const TARGET_PRECISION = 2.0f0
-const WIDTH = 2
-
-# Every `*_tests.jl` file runs, in name order, so none can be left out; the code rules run last. One outer testset
-# keeps a failing file from aborting the rest: a failed top-level testset throws as it ends.
-@testset "GameTracing" begin
-    for file in sort(filter(endswith("_tests.jl"), readdir(@__DIR__; join = true)))
-        include(file)
+# SCRATCH: both KL directions at every predictor and closing point of the fold arms; not for landing.
+function main()::Nothing
+    loose = 32 * eps(Float32) * 12
+    for (label, max_step_kl) in ((:off, nothing), (:half, 0.5f0))
+        println("TRACE fold-jump bound=$label")
+        settings = TraceSettings{Float32}(; bordered_solver = BorderingSolve, corrector = CorrectorSettings{Float32}(; max_step_kl, residual_tolerance = loose))
+        result = trace_endpoint(LogitGame(FOLD_GAME, 2.0f0), 1, settings)
+        println("RESULT ", is_error(result) ? unwrap_error(result) : unwrap(result).logits)
     end
-    include("code_rules.jl")
+    return nothing
 end
+main()
