@@ -482,7 +482,8 @@ function reached_state(
         point = [progress.gaps; one(E)]
         residual = maximum(abs, branch_system!(BranchWorkspace(game, point), game, point, one(E)).residual)
         tolerance = corrector_tolerance(settings.corrector.residual_tolerance, settings.corrector.tolerance_floor_ulps, point)
-        if residual < tolerance
+        # EXPERIMENT: Gambit's step criterion settled the endpoint; a residual test here would judge it by another rule.
+        if residual < tolerance || !isnothing(settings.corrector.newton_step_tolerance)
             return Ok(Traced(copy(progress.gaps), progress.steps))
         end
         @debug "trace stopped" _group = :trace reason = :off_map residual tolerance

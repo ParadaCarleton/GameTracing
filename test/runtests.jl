@@ -154,7 +154,7 @@ function print_failure(arm::AbstractString, name::AbstractString, target::Real, 
 end
 
 # Traces whose every debug record is printed; with DIAGNOSE, only these run.
-const DIAGNOSE = true
+const DIAGNOSE = false
 const DIAGNOSED = Set([
     # Steps with Gambit chords of 1e3-6e5 at λ 2-10 (job 123100272278).
     ("summed_noguard", "coordination_assurance", 1.0f6), ("summed_noguard", "random24", 1.0f6), ("summed_noguard", "random9", 1.0f6),
