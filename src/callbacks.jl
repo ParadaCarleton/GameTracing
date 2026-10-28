@@ -1,12 +1,14 @@
 using BifurcationKit: BifurcationKit
 using Logging: @debug
 """
-    CorrectorSettings{E}(; reach, max_kl, max_angle, residual_tolerance, tolerance_floor_ulps, newton_iterations)
+    CorrectorSettings{E}(; reach, max_kl, max_angle, max_step_kl, residual_tolerance, tolerance_floor_ulps, newton_iterations)
 
 The corrector's controls (`CorrectorReach`); `nothing` switches a limit off. `reach`: a corrector further than this
 times its step from its predictor is refused. `max_kl`: a corrected point whose largest per-logit probability KL from
 the predictor passes this is refused. `max_angle`: so is one whose chord turns past this many radians from the
-predictor's direction. `residual_tolerance`, `tolerance_floor_ulps`: the corrector's sup-norm residual, or
+predictor's direction. `max_step_kl`: a predictor whose largest per-logit probability KL from the step's start passes
+this is refused before Newton runs, so the step halves; the KL reads fresh probabilities, which frozen Fisher weights
+cannot shrink. `residual_tolerance`, `tolerance_floor_ulps`: the corrector's sup-norm residual, or
 `tolerance_floor_ulps` ulps of the gap residual's rounding scale where that is larger (`corrector_tolerance`).
 `newton_iterations`: Newton iterations per corrector.
 """
@@ -14,6 +16,8 @@ Base.@kwdef struct CorrectorSettings{E <: Real}
     reach::Union{Nothing, E} = 2.0f0
     max_kl::Union{Nothing, E} = nothing
     max_angle::Union{Nothing, E} = nothing
+    # Legitimate steps of the test games move a logit at most 0.07 nats (0.34 once, a 3x3 draw); a branch jump moved 1.2.
+    max_step_kl::Union{Nothing, E} = 0.5f0
     residual_tolerance::E = 1.0f-5
     tolerance_floor_ulps::E = 32.0f0
     newton_iterations::Int = 10
@@ -112,6 +116,10 @@ function (check::CorrectorReach)(iterate::I;
             copyto!(check.predicted, iterate.x)
             copyto!(check.previous, iterate.z0.u)
             check.step_length = arclength_distance(iterate.z0.u, iterate.x, check.geometry)
+            if !within_limit(check.settings.max_step_kl, largest_kl(iterate.x, iterate.z0.u))
+                @debug "corrector stopped" _group = :trace reason = :step_kl
+                return false
+            end
         end
         if !isfinite(iterate.residual)
             @debug "corrector stopped" _group = :trace reason = :nonfinite
