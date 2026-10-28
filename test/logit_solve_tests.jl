@@ -100,6 +100,17 @@ end
     @test failure.context.reason == :maximum_precision
 end
 
+@testset "the solvers return the trace's failure when it runs out of steps" begin
+    gains = NormalFormGains(map(table -> Float32.(table), LOGITNASH_GAMES.prisoners_dilemma))
+    settings = TraceSettings{Float32}(; max_steps = 1)
+    @test unwrap_error(logit_solve_lambda(gains, 100; settings)).cause == GameTracing.NoConvergence
+    for failure in unwrap_error.((logit_solve_branch(gains; settings), logit_solve(gains; settings)))
+        @test failure.cause == GameTracing.NoConvergence
+        # The trace's own failure, not the one logit_solve_branch builds when the trace ends unsettled.
+        @test !haskey(failure.context, :maximum_precision)
+    end
+end
+
 @testset "the solvers refuse Gambit's invalid arguments" begin
     gains = NormalFormGains(map(table -> Float32.(table), LOGITNASH_GAMES.matching_pennies))
     @test_throws ArgumentError logit_solve(gains; maxregret = 0)
