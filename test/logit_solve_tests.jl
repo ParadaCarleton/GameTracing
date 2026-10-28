@@ -44,7 +44,7 @@ end
     uniform = fill(1.0f0 / 3, 3)
     for (payoffs, equilibrium) in (
         (LOGITNASH_GAMES.prisoners_dilemma, (Float32[0, 1], Float32[0, 1])),
-        (LOGITNASH_GAMES.matching_pennies, (Float32[0.5, 0.5], Float32[0.5, 0.5])),
+        (LOGITNASH_GAMES.matching_pennies, (fill(0.5f0, 2), fill(0.5f0, 2))),
         (ROCK_PAPER_SCISSORS, (uniform, uniform)),
     )
         gains = NormalFormGains(map(table -> Float32.(table), payoffs))
@@ -61,7 +61,13 @@ end
     rng = fresh_rng()
     for counts in ((3, 3), (2, 2, 2))
         gains = NormalFormGains(ntuple(_ -> 3 .* randn(rng, Float32, counts), length(counts)))
-        branch = unwrap(logit_solve_branch(gains))
+        result = logit_solve_branch(gains)
+        @test !is_error(result)
+        if is_error(result)
+            @error "logit_solve_branch failed" counts gains.payoffs failure = unwrap_error(result)
+            continue
+        end
+        branch = unwrap(result)
         @test all(profile -> profile.lam > 0, branch)
         for profile in branch
             logits = profile_logits(profile.profile)
