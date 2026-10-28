@@ -142,6 +142,9 @@ function (check::CorrectorReach)(iterate::I;
     keywords...,
 )::Union{Bool, BifurcationKit.NewtonConverged} where {I <: NamedTuple}
     if fromNewton
+        # EXPERIMENT: each Newton solve measures its own steps, so no stale step from an earlier solve settles it.
+        @debug "newton iterate" _group = :trace step = iterate.step residual = iterate.residual relative_precision = last(iterate.x)
+        record_newton_step!(check, iterate.x, iterate.step == 0)
         return newton_verdict(check, iterate, isfinite(iterate.residual))
     end
     # PALC's closing call, the only one without `z0`, ends every corrector.
@@ -291,9 +294,6 @@ function (finalise::TraceFinalise)(point::P, tangent::T, step::S, result::Any;
     logits = logits_at(point.u)
     if !(recorded && finalise.keep_going(logits, point.p))
         return false
-    end
-    if isfinite(finalise.slot.gambit_step)
-        state.ds = copysign(gambit_ds!(finalise.slot, point.u, tangent.u, state.ds), state.ds)
     end
     finalise.slot.step_length = abs(state.ds)
     @debug "accepted ds" _group = :gambit distance = abs(state.ds)

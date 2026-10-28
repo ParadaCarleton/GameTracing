@@ -26,20 +26,36 @@ function gambit_first_step(settings::S)::typeof(settings.first_step) where {S}
 end
 
 """
-    gambit_ds!(slot, point, tangent, ds)
+    GambitRescale(slot)
 
-The arclength step whose predictor from `point` along `tangent` spans Gambit's next step `h` in Gambit's coordinates.
-`h` takes BifurcationKit's step factor since the last call (its distance, contraction and growth rules match path.cc).
+PALC's `step_rescale`: the signed ds whose predictor from `point` along `tangent` spans Gambit's next step `h` in
+Gambit's coordinates. `h` takes BifurcationKit's step factor since the ds last used (`slot.step_length`): its distance,
+contraction and growth rules match path.cc, and a refused step's halving halves `h`.
 """
-function gambit_ds!(slot::S, point::AbstractVector{E}, tangent::AbstractVector{E}, ds::E)::E where {S, E <: Real}
-    step = slot.gambit_step * abs(ds) / slot.step_length
-    chord = GambitDistance(slot.game.pass!, E(slot.game.target_precision))(point, zero(E), point .+ ds .* tangent, zero(E))
-    slot.gambit_step = step
-    @debug "gambit h" _group = :gambit h = step predictor_chord = chord ds_in = ds ds_out = abs(ds) * step / chord relative_precision = last(point)
-    if !(chord > 0)
-        return abs(ds)
+struct GambitRescale{S}
+    slot::S
+end
+
+function (rescale::GambitRescale{S})(point::AbstractVector{E}, tangent::AbstractVector{E}, ds::T)::T where {S, E <: Real, T <: Real}
+    slot = rescale.slot
+    step = slot.gambit_step * abs(E(ds)) / slot.step_length
+    chord = GambitDistance(slot.game.pass!, E(slot.game.target_precision))(point, zero(E), point .+ E(ds) .* tangent, zero(E))
+    rescaled = abs(E(ds))
+    if chord > 0
+        rescaled = rescaled * step / chord
     end
-    return abs(ds) * step / chord
+    @debug "gambit h" _group = :gambit h = step predictor_chord = chord ds_in = ds ds_out = rescaled relative_precision = last(point)
+    slot.gambit_step = step
+    slot.step_length = rescaled
+    return copysign(T(rescaled), ds)
+end
+
+"""PALC's `step_rescale` for a trace whose `slot` runs Gambit's step control, else `nothing`."""
+function gambit_rescale(slot::S)::Union{Nothing, GambitRescale{S}} where {S}
+    if !isfinite(slot.gambit_step)
+        return nothing
+    end
+    return GambitRescale(slot)
 end
 
 """The Euclidean distance in Gambit's coordinates between two branch points of `pass` to `target`: PALC's `step_distance`."""

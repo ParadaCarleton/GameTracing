@@ -96,8 +96,9 @@ function palc_algorithm(
     target_precision::Real;
     orientation_check::Bool = settings.orientation_check,
     step_distance::Any = nothing,
+    step_rescale::Any = nothing,
 )::BifurcationKit.AbstractContinuationAlgorithm where {E <: Real}
-    return palc_with_geometry(settings, width, palc_geometry(settings.geometry, width, target_precision), orientation_check, step_distance)
+    return palc_with_geometry(settings, width, palc_geometry(settings.geometry, width, target_precision), orientation_check, step_distance, step_rescale)
 end
 
 """EXPERIMENT: PALC's `step_distance` for `game` under `settings`: `GambitDistance` when its step control is Gambit's."""
@@ -118,9 +119,11 @@ function palc_with_geometry(
     geometry::NamedTuple,
     orientation_check::Bool,
     step_distance::Any = nothing,
+    step_rescale::Any = nothing,
 )::BifurcationKit.AbstractContinuationAlgorithm where {E <: Real}
     return BifurcationKit.PALC(;
         step_distance,
+        step_rescale,
         tangent = settings.tangent,
         θ = geometry.palc_state_weight,
         dotθ = geometry.dot,
@@ -242,7 +245,8 @@ function continue_trace(
     )
     opened_continuation!(
         branch_problem(game, start, last(start); record_from_solution = trace_record_precision),
-        palc_algorithm(settings, length(start) - 1, game.target_precision; step_distance = gambit_step_distance(settings, game)),
+        palc_algorithm(settings, length(start) - 1, game.target_precision; step_distance = gambit_step_distance(settings, game),
+            step_rescale = gambit_rescale(finalise.slot)),
         continuation_options(settings, step_length, max_steps, opening_divisor(settings, game.target_precision)),
         old_tangent,
         finalise,
