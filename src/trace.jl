@@ -164,9 +164,9 @@ function opening_divisor(settings::TraceSettings{E}, target_precision::Real)::E 
 end
 
 """
-    PinScaledNorm(pin_scale)
+    PinScaledNorm(scale)
 
-BifurcationKit's residual norm for a trace: the sup norm, with the pin row `ρ - pin` scaled by `pin_scale`, a unit
+BifurcationKit's residual norm for a trace: the sup norm, with the pin row `ρ - pin` scaled by `scale`, a unit
 relative-precision step's length at the start in the trace's distance (`precision_length`). Unscaled, a far target's
 pin row sits under Newton's tolerance whatever `ρ`, so Newton stops before it moves `ρ`.
 """
@@ -175,7 +175,7 @@ struct PinScaledNorm{E <: Real}
 end
 
 function (norm::PinScaledNorm{E})(residual::AbstractVector{E})::E where {E <: Real}
-    return max(maximum(abs, payoff_gaps(residual)), norm.pin_scale * abs(last(residual)))
+    return max(maximum(abs, payoff_gaps(residual)), norm.scale * abs(last(residual)))
 end
 
 """
