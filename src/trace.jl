@@ -164,6 +164,21 @@ function opening_divisor(settings::TraceSettings{E}, target_precision::Real)::E 
 end
 
 """
+    PinScaledNorm(pin_scale)
+
+BifurcationKit's residual norm for a trace: the sup norm, with the pin row `ρ - pin` scaled by `pin_scale`, a unit
+relative-precision step's length at the start in the trace's distance (`precision_length`). Unscaled, a far target's
+pin row sits under Newton's tolerance whatever `ρ`, so Newton stops before it moves `ρ`.
+"""
+struct PinScaledNorm{E <: Real}
+    pin_scale::E
+end
+
+function (norm::PinScaledNorm{E})(residual::AbstractVector{E})::E where {E <: Real}
+    return max(maximum(abs, payoff_gaps(residual)), norm.pin_scale * abs(last(residual)))
+end
+
+"""
     continue_trace(game, start, old_tangent, settings, finalise, accept_corrected, step_length, max_steps)
 
 Runs the PALC continuation of `game`'s branch from `start = [w; ρ]` toward relative precision one, with `finalise` at
@@ -197,14 +212,15 @@ function continue_trace(
         old_tangent,
         finalise,
         corrector,
+        PinScaledNorm(precision_length(settings.geometry, zero(E), E(game.target_precision))),
     )
     return corrector.step_length
 end
 
 """
-    opened_continuation!(problem, algorithm, options, old_tangent, finalise, corrector)
+    opened_continuation!(problem, algorithm, options, old_tangent, finalise, corrector, pin_norm)
 
-Runs BifurcationKit's continuation of `problem`. From the flat start (`old_tangent` is `nothing`) the first tangent
+Runs BifurcationKit's continuation of `problem`, its residuals measured in `pin_norm` (`PinScaledNorm`). From the flat start (`old_tangent` is `nothing`) the first tangent
 is BifurcationKit's secant to a second solve. After a redraw, the run opens through BifurcationKit's two-point start
 toward a point `options.ds` along `restart_tangent`, whose secant is that tangent.
 """
@@ -215,12 +231,13 @@ function opened_continuation!(
     ::Nothing,
     finalise::TraceFinalise,
     corrector::CorrectorReach,
+    pin_norm::PinScaledNorm,
 )::Nothing
     BifurcationKit.continuation(
         problem,
         algorithm,
         options;
-        normC = BifurcationKit.norminf,
+        normC = pin_norm,
         verbosity = 0,
         finalise_solution = finalise,
         callback_newton = corrector,
@@ -235,6 +252,7 @@ function opened_continuation!(
     old_tangent::AbstractVector{E},
     finalise::TraceFinalise,
     corrector::CorrectorReach,
+    pin_norm::PinScaledNorm,
 )::Nothing where {E <: Real}
     start = BifurcationKit.getu0(problem)
     dot, palc_state_weight = BifurcationKit.getdot(algorithm), E(BifurcationKit.getθ(algorithm))
@@ -252,7 +270,7 @@ function opened_continuation!(
             problem,
             BifurcationKit.update(algorithm, options, nothing),
             options;
-            normC = BifurcationKit.norminf,
+            normC = pin_norm,
             verbosity = 0,
             finalise_solution = finalise,
             callback_newton = corrector,
