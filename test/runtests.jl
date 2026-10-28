@@ -38,8 +38,8 @@ function main()::Nothing
         report("seeded $index", payoffs, stop)
     end
     rng = Xoshiro(0x5eed)
-    for index in 1:6, stop in (50, 100)
-        report("drawn $index", last(far_games(rng)) |> identity, stop)
+    for index in 1:4, (shape, payoffs) in pairs(far_games(rng)), stop in (50, 100)
+        report("drawn $index.$shape", payoffs, stop)
     end
     return nothing
 end

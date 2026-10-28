@@ -1,3 +1,6 @@
 Manifest.toml
 *.cov
 .gremlins_cache.json
+
+# Claude Code conversations symlink (machine-local, via claude-dirs)
+.claude/chats
