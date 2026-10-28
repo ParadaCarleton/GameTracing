@@ -2,18 +2,25 @@ using ErrorTypes: Err, Ok, Result, is_error, unwrap, unwrap_error
 using LinearAlgebra: dot
 
 """
-    LogitQREProfile(lam, profile)
+    LogitQREProfile(lam, profile, logits)
+    LogitQREProfile(gains, lam, logits)
 
 One point of a normal-form game's logit QRE branch, as pygambit's `LogitQREMixedStrategyProfile`: the precision `lam`
 (Gambit's `λ`, `π ∝ exp(λ u)`, the trace's precision) and `profile`, each player's mixed strategy (`mixed_strategies`).
+`logits` are the trace's log odds against each player's first strategy; they stay finite where a probability underflows.
 """
-struct LogitQREProfile{E <: Real, S <: Tuple}
+struct LogitQREProfile{E <: Real, S <: Tuple, L <: AbstractVector{E}}
     lam::E
     profile::S
+    logits::L
+end
+
+function LogitQREProfile(gains::NormalFormGains, lam::E, logits::AbstractVector{E})::LogitQREProfile{E} where {E <: Real}
+    return LogitQREProfile(lam, mixed_strategies(gains, logits), collect(logits))
 end
 
 # The results of `logit_solve` and of the branch searches, over `N` players in element type `E`.
-const QREProfile{E, N} = LogitQREProfile{E, NTuple{N, Vector{E}}}
+const QREProfile{E, N} = LogitQREProfile{E, NTuple{N, Vector{E}}, Vector{E}}
 const ProfileResult{E, N} = Result{QREProfile{E, N}, TraceFailure}
 const BranchResult{E, N} = Result{Vector{QREProfile{E, N}}, TraceFailure}
 
@@ -89,7 +96,7 @@ function lambda_profile(gains::NormalFormGains{N}, lam::E, settings::TraceSettin
     if is_error(result)
         return Err(unwrap_error(result))
     end
-    return Ok(LogitQREProfile(lam, mixed_strategies(gains, unwrap(result).logits)))
+    return Ok(LogitQREProfile(gains, lam, unwrap(result).logits))
 end
 
 """
@@ -164,7 +171,7 @@ function logit_solve_branch(
     if !settled
         return Err(TraceFailure(NoConvergence, (; maxregret, maximum_precision, reason = :maximum_precision)))
     end
-    return Ok(LogitQREProfile.(view(recorder.precisions, recorded), mixed_strategies.((gains,), logits)))
+    return Ok(LogitQREProfile.((gains,), view(recorder.precisions, recorded), logits))
 end
 
 """

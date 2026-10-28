@@ -6,11 +6,6 @@ function largest_gap(left::Tuple, right::Tuple)::eltype(first(left))
     return maximum(maximum.(abs, left .- right))
 end
 
-"""Each player's log odds against its first strategy, stacked: the logits of a profile of mixed strategies."""
-function profile_logits(profile::Tuple)::AbstractVector
-    return reduce(vcat, [log.(view(strategy, 2:lastindex(strategy)) ./ first(strategy)) for strategy in profile])
-end
-
 # Gambit's corrector stops at c_tol = 1e-4 in log probabilities (src/solvers/nash/logit/path.cc), so ≤ 1e-4 in probability.
 const GAMBIT_PROBABILITY_TOLERANCE = 1.0f-4
 
@@ -22,8 +17,7 @@ end
 
 """The largest probability error of the trace's `profile` of `gains` (`probability_bound`, softmax slope 1/2)."""
 function profile_bound(gains::NormalFormGains, profile::LogitQREProfile{E})::E where {E <: Real}
-    logits = profile_logits(profile.profile)
-    return probability_bound(gains, logits, profile.lam, accepted_residual(logits), 0.5f0)
+    return probability_bound(gains, profile.logits, profile.lam, accepted_residual(profile.logits), 0.5f0)
 end
 
 const ROCK_PAPER_SCISSORS = ([0 -1 1; 1 0 -1; -1 1 0], [0 1 -1; -1 0 1; 1 -1 0])
@@ -57,7 +51,7 @@ end
         solved = unwrap(result)
         # Regret sqrt(eps) of the payoff range bounds a dominated strategy's weight near sqrt(eps) of the gap it loses.
         @test largest_gap(solved.profile, equilibrium) < 1.0f-2
-        @test GameTracing.max_regret(gains, profile_logits(solved.profile)) <= sqrt(eps(Float32)) * GameTracing.payoff_range(gains)
+        @test GameTracing.max_regret(gains, solved.logits) <= sqrt(eps(Float32)) * GameTracing.payoff_range(gains)
     end
 end
 
@@ -85,10 +79,10 @@ end
         branch = unwrap(result)
         @test all(profile -> profile.lam > 0, branch)
         for profile in branch
-            logits = profile_logits(profile.profile)
-            @test residual_norm(gains, logits, profile.lam) < 2 * accepted_residual(logits)
+            @test residual_norm(gains, profile.logits, profile.lam) < 2 * accepted_residual(profile.logits)
+            @test all(isfinite, profile.logits)
         end
-        @test GameTracing.max_regret(gains, profile_logits(last(branch).profile)) <= sqrt(eps(Float32)) * GameTracing.payoff_range(gains)
+        @test GameTracing.max_regret(gains, last(branch).logits) <= sqrt(eps(Float32)) * GameTracing.payoff_range(gains)
         # The last point is on Gambit's branch, logit_solve returns it, and logit_solve_lambda finds it at its precision.
         @test largest_gap(last(branch).profile, gambit_strategies(payoffs, last(branch).lam).strategies) <
             profile_bound(gains, last(branch)) + GAMBIT_PROBABILITY_TOLERANCE
