@@ -58,6 +58,9 @@ end
         ))
         (; precision, logits) = failure.context
         @test precision >= 50
+        if precision < 50
+            @error "a far-target trace stopped short" failure.cause failure.context
+        end
         oracle = gambit_strategies(payoffs, precision)
         gap = maximum(maximum.(abs, GameTracing.mixed_strategies(gains, logits) .- oracle.strategies))
         @test gap < 1.0f-3
