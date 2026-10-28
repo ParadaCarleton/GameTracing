@@ -16,6 +16,11 @@ const FOLD_SETTINGS = TraceSettings{Float32}()
                     bordered_solver = BorderingSolve,
                 ),
                 TraceSettings{Float32}(step_control = nothing),
+                # A floor of 32 ulps of 12, the fold game's P max|G|, once let this arm jump to the lower branch at the second fold.
+                TraceSettings{Float32}(
+                    bordered_solver = BorderingSolve,
+                    corrector = CorrectorSettings{Float32}(; residual_tolerance = 32 * eps(Float32) * 12),
+                ),
             )
             traced = trace_endpoint(LogitGame(FOLD_GAME, target), 1, settings)
             @test !is_error(traced)
@@ -30,4 +35,17 @@ end
     @test !is_error(result)
     @test residual_norm(FOLD_GAME, unwrap(result).logits, 1.0f0) < 1.0f-3
     @test only(unwrap(result).logits) < 2
+end
+
+@testset "the default corrector refuses only a chord that turns back against its predictor" begin
+    check = GameTracing.CorrectorReach(
+        GameTracing.AcceptAll(),
+        CorrectorSettings{Float32}(; reach = nothing),
+        TraceGeometry{Float32}(),
+        Float32[0, 0, 0.5f0],
+        Float32[1, 0, 0.5f0],
+        1.0f0,
+    )
+    @test GameTracing.closing_accepted(check, Float32[1, 1, 0.5f0])
+    @test !GameTracing.closing_accepted(check, Float32[-1, 0.1f0, 0.5f0])
 end
