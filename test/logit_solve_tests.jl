@@ -57,14 +57,31 @@ end
     end
 end
 
+# Games whose branch to maximum_precision 1e6 once stuck at precision 42426 with logits off the map; Gambit ends at
+# a mixed equilibrium (λ ≈ 47) and at the pure profile (2, 1, 2) (λ ≈ 1.5).
+const STUCK_BRANCH_GAMES = (
+    (
+        Float32[-0.4899592 0.32297286 -1.141685; -3.5441031 -1.129417 2.330057; 6.2916627 -3.8632107 1.6651082],
+        Float32[3.267848 -0.037896026 -1.4952189; -6.062257 1.8497384 2.1450086; 1.3001815 5.7432065 0.7123295],
+    ),
+    (
+        cat(Float32[2.85158 -8.173897; 0.008694828 -0.9346101], Float32[-6.837869 1.001581; 2.4771934 -2.2187471]; dims = 3),
+        cat(Float32[3.9944906 -3.9142199; 6.1622057 0.3223508], Float32[5.5092583 1.8642528; 2.5665112 -2.1118705]; dims = 3),
+        cat(Float32[-0.05680923 1.9781215; -3.3232822 1.0387676], Float32[-3.1284914 -0.33552215; 2.5984588 -5.7526417]; dims = 3),
+    ),
+)
+
 @testset "logit_solve_branch: each point solves the logit map at its precision, and the last meets maxregret" begin
     rng = fresh_rng()
-    for counts in ((3, 3), (2, 2, 2))
-        gains = NormalFormGains(ntuple(_ -> 3 .* randn(rng, Float32, counts), length(counts)))
+    random_games = [ntuple(_ -> 3 .* randn(rng, Float32, counts), length(counts)) for counts in ((3, 3), (2, 2, 2))]
+    for payoffs in (STUCK_BRANCH_GAMES..., random_games...)
+        gains = NormalFormGains(payoffs)
         result = logit_solve_branch(gains)
         @test !is_error(result)
         if is_error(result)
-            @error "logit_solve_branch failed" counts gains.payoffs failure = unwrap_error(result)
+            # Which shorter traces settle tells a failure of the far target from a failure of the branch.
+            shorter = [ceiling => logit_solve_branch(gains; maximum_precision = ceiling) for ceiling in (1.0f2, 1.0f4)]
+            @error "logit_solve_branch failed" payoffs failure = unwrap_error(result) shorter
             continue
         end
         branch = unwrap(result)
@@ -74,7 +91,8 @@ end
             @test residual_norm(gains, logits, profile.lam) < 1.0f-3 * (1 + maximum(abs, logits))
         end
         @test GameTracing.max_regret(gains, profile_logits(last(branch).profile)) <= sqrt(eps(Float32)) * GameTracing.payoff_range(gains)
-        # logit_solve is the branch's last point, and logit_solve_lambda finds the same point at its precision.
+        # The last point is on Gambit's branch, logit_solve returns it, and logit_solve_lambda finds it at its precision.
+        @test largest_gap(last(branch).profile, gambit_strategies(payoffs, last(branch).lam).strategies) < 1.0f-3
         solved = unwrap(logit_solve(gains))
         @test solved.lam == last(branch).lam
         again = only(unwrap(logit_solve_lambda(gains, solved.lam)))
