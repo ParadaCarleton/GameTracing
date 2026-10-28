@@ -10,7 +10,9 @@ struct UnscaledPass{P}
     pass::P
 end
 (pass::UnscaledPass)(arguments...)::Nothing = pass.pass(arguments...)
-GameTracing.gain_scale(::UnscaledPass, target_precision::T)::T where {T <: Real} = zero(T)
+function GameTracing.gain_scale(::UnscaledPass, target_precision::T)::T where {T <: Real}
+    return zero(target_precision)
+end
 
 struct PointPrinter{E <: Real}
     label::String
