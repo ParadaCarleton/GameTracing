@@ -13,7 +13,8 @@ predictor's direction. `residual_tolerance`, `tolerance_floor_ulps`: the correct
 Base.@kwdef struct CorrectorSettings{E <: Real}
     reach::Union{Nothing, E} = 2.0f0
     max_kl::Union{Nothing, E} = nothing
-    max_angle::Union{Nothing, E} = nothing
+    # A right angle refuses only a chord that turns back against the predictor, as one that lands on another branch does.
+    max_angle::Union{Nothing, E} = Float32(π) / 2
     residual_tolerance::E = 1.0f-5
     tolerance_floor_ulps::E = 32.0f0
     newton_iterations::Int = 10
