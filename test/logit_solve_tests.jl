@@ -51,9 +51,9 @@ end
         result = logit_solve(gains)
         @test !is_error(result)
         solved = unwrap(result)
-        # Regret 1e-4 of the payoff range bounds a dominated strategy's weight near 1e-4 of the gap it loses.
+        # Regret sqrt(eps) of the payoff range bounds a dominated strategy's weight near sqrt(eps) of the gap it loses.
         @test largest_gap(solved.profile, equilibrium) < 1.0f-2
-        @test GameTracing.max_regret(gains, profile_logits(solved.profile)) <= 1.0f-4 * GameTracing.payoff_range(gains)
+        @test GameTracing.max_regret(gains, profile_logits(solved.profile)) <= sqrt(eps(Float32)) * GameTracing.payoff_range(gains)
     end
 end
 
@@ -67,7 +67,7 @@ end
             logits = profile_logits(profile.profile)
             @test residual_norm(gains, logits, profile.lam) < 1.0f-3 * (1 + maximum(abs, logits))
         end
-        @test GameTracing.max_regret(gains, profile_logits(last(branch).profile)) <= 1.0f-4 * GameTracing.payoff_range(gains)
+        @test GameTracing.max_regret(gains, profile_logits(last(branch).profile)) <= sqrt(eps(Float32)) * GameTracing.payoff_range(gains)
         # logit_solve is the branch's last point, and logit_solve_lambda finds the same point at its precision.
         solved = unwrap(logit_solve(gains))
         @test solved.lam == last(branch).lam

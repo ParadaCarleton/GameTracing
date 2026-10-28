@@ -132,15 +132,15 @@ end
 pygambit's `logit_solve_branch`: every accepted point of the principal branch of the normal-form game `gains`, from
 the first step to the first point where no player's regret passes `maxregret` times the payoff range. The trace runs
 to `maximum_precision` at most, and fails `NoConvergence` with reason `:maximum_precision` if it ends there unsettled;
-any other failure of the trace is returned as is. `first_step`, `max_accel` and `settings` are `logit_solve_lambda`'s.
+any other failure of the trace is returned as is. `maxregret` defaults to `sqrt(eps(E))` in the trace's element type `E`. `first_step`, `max_accel` and `settings` are `logit_solve_lambda`'s.
 """
 function logit_solve_branch(
     gains::NormalFormGains{N};
-    maxregret::Real = 1.0f-4,
     first_step::Real = 0.03f0,
     max_accel::Real = 1.1f0,
     maximum_precision::Real = 1.0f6,
     settings::TraceSettings{E} = gambit_settings(first_step, max_accel),
+    maxregret::Real = sqrt(eps(typeof(settings.first_step))),
 )::BranchResult{E, N} where {N, E <: Real}
     if !(maxregret > 0)
         throw(ArgumentError("maxregret must be positive; got $maxregret"))
@@ -175,11 +175,11 @@ game `gains` at which no player's regret passes `maxregret` times the payoff ran
 """
 function logit_solve(
     gains::NormalFormGains{N};
-    maxregret::Real = 1.0f-4,
     first_step::Real = 0.03f0,
     max_accel::Real = 1.1f0,
     maximum_precision::Real = 1.0f6,
     settings::TraceSettings{E} = gambit_settings(first_step, max_accel),
+    maxregret::Real = sqrt(eps(typeof(settings.first_step))),
 )::ProfileResult{E, N} where {N, E <: Real}
     branch = logit_solve_branch(gains; maxregret, maximum_precision, settings)
     if is_error(branch)
