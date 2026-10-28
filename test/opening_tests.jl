@@ -99,6 +99,6 @@ end
     agree = length(near) == length(far) && all(abs.(view(near, 1:shared) .- view(far, 1:shared)) .<= 1.0f-3 .* (1 .+ view(near, 1:shared)))
     @test agree
     if !agree
-        @error "the target moved the accepted precisions" distance near = first(near, 8) far = first(far, 8) lengths = (length(near), length(far))
+        @error "the target moved the accepted precisions" distance near = repr(first(near, 16)) far = repr(first(far, 16)) lengths = (length(near), length(far))
     end
 end
