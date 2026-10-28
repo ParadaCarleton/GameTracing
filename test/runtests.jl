@@ -144,7 +144,10 @@ function main()::Nothing
         [(string("random", seed), random_fixture(seed)) for seed in 1:24],
     )
     far = [(string("far", index), payoffs) for (index, payoffs) in enumerate(far_opening_games(Xoshiro(0xb0bf341028e24ba6)))]
-    foreach(fixture -> print_payoffs(fixture...), [fixtures; far; [("unfolded", UNFOLDED_PITCHFORK_GAME)]])
+    # The symmetric games' pitchforks unfolded: player 1's (a1, a1) payoff raised by δ, so the branch is unique.
+    perturbed = [(string(key, "_p", δ), (Float32.(LOGITNASH_GAMES[key][1]) .+ δ .* Float32[1 0; 0 0], Float32.(LOGITNASH_GAMES[key][2])))
+                 for key in (:battle_of_the_sexes, :coordination_pure, :coordination_wiki) for δ in (1.0f-3, 1.0f-2)]
+    foreach(fixture -> print_payoffs(fixture...), [fixtures; far; perturbed; [("unfolded", UNFOLDED_PITCHFORK_GAME)]])
     loose = (; residual_tolerance = 32 * eps(Float32) * 12)
     fold_variants = (
         fold_default = (;),
@@ -162,6 +165,9 @@ function main()::Nothing
             if size(first(payoffs)) == (2, 2)
                 run_trace(label, string(key), NormalFormPass(map(table -> Float32.(table), payoffs)), 2, target, arm(target))
             end
+        end
+        for target in (4.0f0, 20.0f0, 1.0f2), (name, payoffs) in perturbed
+            run_trace(label, name, NormalFormPass(map(table -> Float32.(table), payoffs)), 2, target, arm(target))
         end
         run_trace(label, "unfolded", NormalFormPass(map(table -> Float32.(table), UNFOLDED_PITCHFORK_GAME)), 2, 4.0f0, arm(4.0f0))
         for (name, payoffs) in far
