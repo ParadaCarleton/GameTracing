@@ -292,6 +292,7 @@ function (finalise::TraceFinalise)(point::P, tangent::T, step::S, result::Any;
         return false
     end
     finalise.slot.step_length = abs(state.ds)
+    @debug "accepted ds" _group = :gambit distance = abs(state.ds)
     return !swapped!(finalise.slot, finalise.redraw(logits, point.p))
 end
 
