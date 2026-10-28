@@ -34,23 +34,26 @@ const LOG_PRECISION_SETTINGS = TraceSettings{Float32}(; geometry = TraceGeometry
     end
 end
 
-@testset "a trace to a far target stays on Gambit's branch" begin
-    for payoffs in (far_opening_games(Xoshiro(FAR_OPENING_SEED))..., far_opening_games(fresh_rng())...)
-        gains = NormalFormGains(payoffs)
-        failure = unwrap_error(trace_endpoint(
-            LogitGame(gains, FAR_TARGET),
-            GameTracing.logit_count(gains),
-            LOG_PRECISION_SETTINGS;
-            keep_going = StopAtPrecision(50.0f0, FAR_TARGET),
-        ))
-        (; precision, logits) = failure.context
-        @test precision >= 50
-        if precision < 50
-            @error "a far-target trace stopped short" failure.cause failure.context
+# Each comparison runs a Gambit trace; the mutation jobs skip it to stay under their time limit.
+if get(ENV, "GAMETRACING_MUTATION", "false") != "true"
+    @testset "a trace to a far target stays on Gambit's branch" begin
+        for payoffs in (far_opening_games(Xoshiro(FAR_OPENING_SEED))..., far_opening_games(fresh_rng())...)
+            gains = NormalFormGains(payoffs)
+            failure = unwrap_error(trace_endpoint(
+                LogitGame(gains, FAR_TARGET),
+                GameTracing.logit_count(gains),
+                LOG_PRECISION_SETTINGS;
+                keep_going = StopAtPrecision(50.0f0, FAR_TARGET),
+            ))
+            (; precision, logits) = failure.context
+            @test precision >= 50
+            if precision < 50
+                @error "a far-target trace stopped short" failure.cause failure.context
+            end
+            oracle = gambit_strategies(payoffs, precision)
+            gap = maximum(maximum.(abs, GameTracing.mixed_strategies(gains, logits) .- oracle.strategies))
+            @test gap < 1.0f-3
         end
-        oracle = gambit_strategies(payoffs, precision)
-        gap = maximum(maximum.(abs, GameTracing.mixed_strategies(gains, logits) .- oracle.strategies))
-        @test gap < 1.0f-3
     end
 end
 
