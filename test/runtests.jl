@@ -8,6 +8,11 @@ using Random: Xoshiro
 include("games.jl")
 include("fixtures.jl")
 
+"""The seeded far-target games of `opening_tests.jl`: strategy counts `(3, 3)` and `(2, 2, 2)`, payoffs `3 randn`."""
+function far_opening_games(rng::Xoshiro)::AbstractVector
+    return [ntuple(_ -> 3 .* randn(rng, Float32, counts), length(counts)) for counts in ((3, 3), (2, 2, 2))]
+end
+
 # EXPERIMENT: Gambit's step control (path.cc) in every arm, against main's defaults; prints one RUN line per trace.
 
 """Debug records of a trace: corrector iterates and Gambit-coordinate Newton steps."""
