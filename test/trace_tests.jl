@@ -181,7 +181,7 @@ end
 @testset "the fused system reuses one workspace and matches a fresh evaluation" begin
     game = LogitGame(GAME, TARGET_PRECISION)
     point = Float32[0.3f0, -0.2f0, 0.6f0]
-    workspace = GameTracing.BranchWorkspace(point)
+    workspace = GameTracing.BranchWorkspace(game, point)
     system = GameTracing.GameSystem(game, workspace)
     first_residual, first_jacobian = system(point, 0.5f0)
     second_residual, second_jacobian = system(point .+ 0.1f0, 0.5f0)
@@ -189,7 +189,7 @@ end
     @test first_jacobian === second_jacobian === workspace.jacobian
     residual, jacobian = system(point, 0.5f0)
     @test residual == GameTracing.GameResidual(game)(point, 0.5f0)
-    @test jacobian == GameTracing.GameJacobian(game, GameTracing.BranchWorkspace(point))(point, 0.5f0)
+    @test jacobian == GameTracing.GameJacobian(game, GameTracing.BranchWorkspace(game, point))(point, 0.5f0)
     # A forward difference in each coordinate checks the Jacobian the pass formed in place.
     for (column, step) in pairs(Float32[1.0f-3, 1.0f-3, 1.0f-3])
         moved = copy(point)
@@ -206,7 +206,7 @@ end
     gains = evaluated(pass, zeros(Float32, 1), 1.0f0).precision_slope
     @test GameTracing.payoff_gaps(start) ≈ 2.0f0 .* gains
     @test last(start) == 0
-    residual, jacobian = GameTracing.GameSystem(game, GameTracing.BranchWorkspace(start))(start, 0.0f0)
+    residual, jacobian = GameTracing.GameSystem(game, GameTracing.BranchWorkspace(game, start))(start, 0.0f0)
     @test maximum(abs, residual) <= 4 * eps(Float32) * maximum(abs, start)
     # At zero precision the gaps decouple from the logits: ∂F/∂w is the identity.
     @test jacobian[1, 1] == 1
@@ -217,7 +217,7 @@ end
     pass = DampedGainPass(LinearGainPass(Float32[1 -2; 0.5f0 1], Float32[0.5f0, -0.25f0]), 0.8f0)
     game = LogitGame(pass, 3.0f0)
     for point in (Float32[0.4f0, -0.7f0, 0], Float32[0.3f0, -0.2f0, 0.6f0], Float32[-1.5f0, 2, 1])
-        _, jacobian = GameTracing.GameSystem(game, GameTracing.BranchWorkspace(point))(point, last(point))
+        _, jacobian = GameTracing.GameSystem(game, GameTracing.BranchWorkspace(game, point))(point, last(point))
         for column in eachindex(point)
             step = 1.0f-2
             nudge = setindex!(zeros(Float32, length(point)), step, column)

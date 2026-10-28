@@ -89,7 +89,7 @@ function restart_tangent(
     state_weight::E,
 )::AbstractVector{E} where {E <: Real}
     width = length(point) - 1
-    jacobian = branch_system!(BranchWorkspace(point), game, point, last(point)).jacobian
+    jacobian = branch_system!(BranchWorkspace(game, point), game, point, last(point)).jacobian
     border = palc_border(dot, state_weight, old_tangent)
     # fatou-ignore call-arity: Base `view` takes any number of indices (jolars/fatou#125)
     bordered = [view(jacobian, 1:width, :); transpose(border)]

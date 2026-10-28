@@ -6,8 +6,9 @@ using LinearAlgebra: mul!
 A logit game whose equilibria solve `z = λ G(z, λ)` at precision `λ = 1 / temperature`, `G` the payoff gains the
 logits scale. `pass!(gain, gain_slope, gain_precision_slope, z, λ)` writes `G(z, λ)`, its Jacobian `∂G/∂z` and its
 slope `∂G/∂λ` into the three arrays, from one evaluation, and returns `nothing`. The arrays are views into the
-trace's own residual and Jacobian (`BranchWorkspace`), so a pass allocates nothing of its own. `G` must be finite
-at `λ = 0`, where the flat logits are the only equilibrium. `target_precision` is the precision a trace ends at.
+trace's own residual and Jacobian (`BranchWorkspace`), so a pass allocates nothing of its own. A pass that needs work
+arrays of its own gets them from `pass_workspace`. `G` must be finite at `λ = 0`, where the flat logits are the only
+equilibrium. `target_precision` is the precision a trace ends at.
 """
 struct LogitGame{P, T <: Real}
     pass!::P
@@ -22,23 +23,53 @@ function precision_at(game::LogitGame, relative_precision::R)::typeof(
 end
 
 """
-    BranchWorkspace(point)
+    pass_workspace(pass!, logits)
 
-A residual, Jacobian and logits for branch points like `point = [w; ρ]`, refilled by every call of the one
-callable that owns it. BifurcationKit consumes each result before calling that callable again, so the fused system
-and the Jacobian each own one workspace per trace; a shared one would let `J` overwrite a residual `FJ` returned.
+The work arrays `pass!` needs beyond its outputs, in the element type and length of `logits`, or `nothing` (the
+default) when it needs none. Each `BranchWorkspace` builds its own, so a game shared by two traces stays safe. A pass
+with work arrays is called as `pass!(work, gain, gain_slope, gain_precision_slope, z, λ)`.
 """
-struct BranchWorkspace{E <: Real}
+pass_workspace(::Any, ::AbstractVector)::Nothing = nothing
+
+"""Call `pass!` on its outputs, with its work arrays `work` unless it has none."""
+function run_pass!(
+    pass!::Any,
+    work::Any,
+    gain::AbstractVector,
+    gain_slope::AbstractMatrix,
+    gain_precision_slope::AbstractVector,
+    logits::AbstractVector,
+    precision::Real,
+)::Nothing
+    if isnothing(work)
+        pass!(gain, gain_slope, gain_precision_slope, logits, precision)
+    else
+        pass!(work, gain, gain_slope, gain_precision_slope, logits, precision)
+    end
+    return nothing
+end
+
+"""
+    BranchWorkspace(game, point)
+
+A residual, Jacobian, logits and `game`'s pass work arrays (`pass_workspace`) for branch points like
+`point = [w; ρ]`, refilled by every call of the one callable that owns it. BifurcationKit consumes each result
+before calling that callable again, so the fused system and the Jacobian each own one workspace per trace; a shared
+one would let `J` overwrite a residual `FJ` returned.
+"""
+struct BranchWorkspace{E <: Real, W}
     residual::Vector{E}
     jacobian::Matrix{E}
     logits::Vector{E}
+    pass_work::W
 end
 
-function BranchWorkspace(point::AbstractVector{E})::BranchWorkspace{E} where {E <: Real}
+function BranchWorkspace(game::LogitGame, point::AbstractVector{E})::BranchWorkspace{E} where {E <: Real}
     return BranchWorkspace(
         Vector{E}(undef, length(point)),
         Matrix{E}(undef, length(point), length(point)),
         Vector{E}(undef, length(point) - 1),
+        pass_workspace(game.pass!, payoff_gaps(point)),
     )
 end
 
@@ -56,7 +87,7 @@ struct GameResidual{G <: LogitGame}
 end
 
 function (residual::GameResidual)(point::AbstractVector{E}, pin::Real)::AbstractVector{E} where {E <: Real}
-    return branch_system!(BranchWorkspace(point), residual.game, point, pin).residual
+    return branch_system!(BranchWorkspace(residual.game, point), residual.game, point, pin).residual
 end
 
 """
@@ -112,7 +143,7 @@ function branch_system!(
     point::AbstractVector{E},
     pin::Real,
 )::typeof(workspace) where {E <: Real}
-    (; residual, jacobian, logits) = workspace
+    (; residual, jacobian, logits, pass_work) = workspace
     gaps = payoff_gaps(point)
     width = length(gaps)
     relative_precision = point[end]
@@ -124,7 +155,7 @@ function branch_system!(
     gain_slope = view(jacobian, 1:width, 1:width)
     # fatou-ignore call-arity: Base `view` takes any number of indices (jolars/fatou#125)
     precision_column = view(jacobian, 1:width, width + 1)
-    game.pass!(gain, gain_slope, precision_column, logits, precision)
+    run_pass!(game.pass!, pass_work, gain, gain_slope, precision_column, logits, precision)
     # `∂F/∂ρ` first: it reads `∂G/∂z`, which the next line overwrites.
     mul!(precision_column, gain_slope, gaps, -target, -target^2)
     gain_slope .= .-precision .* gain_slope
@@ -146,7 +177,7 @@ The branch's start `[w; 0]` at zero precision: the gaps `P G(0, 0)` that the `fl
 """
 function trace_start(game::LogitGame, flat::AbstractVector{E})::AbstractVector{E} where {E <: Real}
     start = [flat; zero(E)]
-    payoff_gaps(start) .= .-payoff_gaps(branch_system!(BranchWorkspace(start), game, start, zero(E)).residual)
+    payoff_gaps(start) .= .-payoff_gaps(branch_system!(BranchWorkspace(game, start), game, start, zero(E)).residual)
     return start
 end
 
@@ -186,8 +217,8 @@ function branch_problem(
         GameResidual(game),
         start,
         pin;
-        J = GameJacobian(game, BranchWorkspace(start)),
-        FJ = GameSystem(game, BranchWorkspace(start)),
+        J = GameJacobian(game, BranchWorkspace(game, start)),
+        FJ = GameSystem(game, BranchWorkspace(game, start)),
         delta = one(E),
         inplace = false,
         R01 = PinSlope(start),

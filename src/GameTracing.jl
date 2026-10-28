@@ -9,6 +9,10 @@ Failures are values (`TraceFailure`), never exceptions.
 module GameTracing
 
 export LogitGame,
+    NormalFormGains,
+    mixed_strategies,
+    logit_count,
+    pass_workspace,
     TraceSettings,
     TraceCause,
     TraceFailure,
@@ -32,6 +36,7 @@ include("failure.jl")
 include("bordered.jl")
 include("geometry.jl")
 include("branch.jl")
+include("normal_form.jl")
 include("callbacks.jl")
 include("trace.jl")
 include("crossing.jl")
