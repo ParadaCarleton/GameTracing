@@ -171,7 +171,7 @@ relative-precision step's length at the start in the trace's distance (`precisio
 pin row sits under Newton's tolerance whatever `ρ`, so Newton stops before it moves `ρ`.
 """
 struct PinScaledNorm{E <: Real}
-    pin_scale::E
+    scale::E
 end
 
 function (norm::PinScaledNorm{E})(residual::AbstractVector{E})::E where {E <: Real}
