@@ -18,11 +18,16 @@ end
 """Debug records of a trace: corrector iterates and Gambit-coordinate Newton steps."""
 struct Recorder <: AbstractLogger
     sink::Channel{Tuple{String, Int, Float32, String}}
+    # Print every record as a TRACELOG line, for the traces under diagnosis.
+    echo::Bool
 end
 min_enabled_level(::Recorder)::typeof(Debug) = Debug
 shouldlog(::Recorder, ::LogLevel, ::Module, group::Any, ::Any)::Bool = group in (:trace, :gambit)
 catch_exceptions(::Recorder)::Bool = false
 function handle_message(recorder::Recorder, ::LogLevel, message::Any, ::Module, ::Any, ::Any, ::Any, ::Any; keywords...)::Nothing
+    if recorder.echo
+        println("TRACELOG ", message, " ", join([string(key, "=", first(repr(entry), 120)) for (key, entry) in pairs(keywords)], " "))
+    end
     measured = get(keywords, :distance, get(keywords, :step_length, NaN32))
     put!(recorder.sink, (string(message), Int(get(keywords, :step, -1)), Float32(measured), string(get(keywords, :reason, get(keywords, :converged, "")))))
     return nothing
@@ -92,10 +97,15 @@ end
 
 """Trace `pass` under `settings` and print its RUN line."""
 function run_trace(arm::AbstractString, name::AbstractString, pass::P, width::Integer, target::E, settings::TraceSettings{E})::Nothing where {P, E <: Real}
+    echo = (arm, name, Float32(target)) in DIAGNOSED
+    if DIAGNOSE && !echo
+        return nothing
+    end
+    println("TRACEBEGIN arm=", arm, " fixture=", name, " target=", target)
     settings = gambit_opening(pass, width, target, settings)
     records = Channel{Tuple{String, Int, Float32, String}}(Inf)
     points = Channel{Vector{Float32}}(Inf)
-    result = with_logger(() -> trace_endpoint(LogitGame(pass, target), width, settings; keep_going = ChordLog(pass, target, points)), Recorder(records))
+    result = with_logger(() -> trace_endpoint(LogitGame(pass, target), width, settings; keep_going = ChordLog(pass, target, points)), Recorder(records, echo))
     close(records)
     close(points)
     logged = collect(records)
@@ -142,6 +152,18 @@ function print_failure(arm::AbstractString, name::AbstractString, target::Real, 
         " exception=", first(repr(get(context, :exception, nothing)), 160))
     return nothing
 end
+
+# Traces whose every debug record is printed; with DIAGNOSE, only these run.
+const DIAGNOSE = true
+const DIAGNOSED = Set([
+    # Steps with Gambit chords of 1e3-6e5 at λ 2-10 (job 123100272278).
+    ("summed_noguard", "coordination_assurance", 1.0f6), ("summed_noguard", "random24", 1.0f6), ("summed_noguard", "random9", 1.0f6),
+    ("fisher_noguard", "coordination_assurance", 1.0f6),
+    # Failures at targets 4-100 that pygambit traces.
+    ("summed_noguard", "random8", 1.0f2), ("summed_noguard", "matching_pennies", 20.0f0), ("summed_noguard", "coordination_wiki_p0.01", 4.0f0),
+    ("summed_noguard", "coordination_pure_p0.001", 20.0f0), ("summed_noguard", "coordination_wiki_p0.001", 1.0f2),
+    ("fisher_noguard", "coordination_pure_p0.001", 1.0f2),
+])
 
 # Exact-symmetry games: no unique branch past their pitchfork, so out of scope (user ruling); their perturbed copies stay.
 const SYMMETRIC_GAMES = (:battle_of_the_sexes, :coordination_pure, :coordination_wiki)

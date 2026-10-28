@@ -35,6 +35,7 @@ function gambit_ds!(slot::S, point::AbstractVector{E}, tangent::AbstractVector{E
     step = slot.gambit_step * abs(ds) / slot.step_length
     chord = GambitDistance(slot.game.pass!, E(slot.game.target_precision))(point, zero(E), point .+ ds .* tangent, zero(E))
     slot.gambit_step = step
+    @debug "gambit h" _group = :gambit h = step predictor_chord = chord ds_in = ds ds_out = abs(ds) * step / chord relative_precision = last(point)
     if !(chord > 0)
         return abs(ds)
     end
