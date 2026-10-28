@@ -34,6 +34,7 @@ include("geometry.jl")
 include("branch.jl")
 include("callbacks.jl")
 include("trace.jl")
+include("crossing.jl")
 include("redraw.jl")
 include("projection.jl")
 

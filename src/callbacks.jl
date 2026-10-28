@@ -1,18 +1,14 @@
 using BifurcationKit: BifurcationKit
 using Logging: @debug
 """
-    CorrectorSettings{E}(; reach, max_kl, max_angle, residual_tolerance, tolerance_floor_ulps, newton_iterations, redraw_reach)
+    CorrectorSettings{E}(; reach, max_kl, max_angle, residual_tolerance, tolerance_floor_ulps, newton_iterations)
 
 The corrector's controls (`CorrectorReach`); `nothing` switches a limit off. `reach`: a corrector further than this
 times its step from its predictor is refused. `max_kl`: a corrected point whose largest per-logit probability KL from
 the predictor passes this is refused. `max_angle`: so is one whose chord turns past this many radians from the
 predictor's direction. `residual_tolerance`, `tolerance_floor_ulps`: the corrector's sup-norm residual, or
 `tolerance_floor_ulps` ulps of the largest payoff gap where that is larger (`corrector_tolerance`).
-`newton_iterations`: Newton iterations per corrector. `redraw_reach`: the largest Euclidean distance in logits that a
-redraw's fixed-precision correction may move the accepted point (`level_correction`); a farther root is taken for
-another branch, and the trace fails `TraceStuck`. The default 0.4 is `StepControl`'s `distance_limit`, Gambit's bound
-on one Newton step: a redraw may move the point as far as one corrector step may, and one that moves it farther
-changed the branch, not the sample. The test swaps bracket it: the near one moves under 0.2, the far one about 3.5.
+`newton_iterations`: Newton iterations per corrector.
 """
 Base.@kwdef struct CorrectorSettings{E <: Real}
     reach::Union{Nothing, E} = 2.0f0
@@ -21,7 +17,6 @@ Base.@kwdef struct CorrectorSettings{E <: Real}
     residual_tolerance::E = 1.0f-5
     tolerance_floor_ulps::E = 32.0f0
     newton_iterations::Int = 10
-    redraw_reach::E = 0.4f0
 end
 
 """
