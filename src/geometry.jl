@@ -7,8 +7,9 @@ The trace's step length in a state `x = [w; ρ]` of `k` payoff gaps `w`, at `sta
 - `AveragedDistance`: `state_weight ‖Δw‖² / k + (1 - state_weight) Δρ²`.
 - `SummedDistance`: `state_weight ‖Δw‖² + Δρ²`.
 - `FisherDistance`: `state_weight Σ σ(zᵢ)σ(-zᵢ) Δwᵢ² + Δρ²`, with the Bernoulli Fisher weights of the logits `z = ρ w`.
-- `FisherLogPrecisionDistance`: `state_weight Σ σ(zᵢ)σ(-zᵢ) Δwᵢ² + (Δλ / (1 + λ))²` at the precision `λ = ρ P`, `P` the
-  target: Fisher's gaps beside the step in `log(1 + λ)` to first order, LogitNash's path variable.
+- `FisherLogPrecisionDistance`: `state_weight Σ σ(zᵢ)σ(-zᵢ) (Δwᵢ / P)² + (Δλ / (1 + λ))²` at the precision `λ = ρ P`, `P`
+  the target: Fisher's payoff gains `w / P` beside the step in `log(1 + λ)` to first order, LogitNash's path variable.
+  Neither term depends on `P`, so the target only caps the trace.
 
 Both Fisher distances freeze their weights at each accepted point, and their reach and angle checks measure in the
 summed norm.
@@ -114,6 +115,17 @@ function log_precision_scale(relative_precision::E, target_precision::E)::E wher
 end
 
 """
+The length in `geometry`'s distance of a unit step in the relative precision at `relative_precision`, on a trace to
+`target_precision` (`StepDistance`): `P / (1 + ρ P)` under `FisherLogPrecisionDistance`, else `√level_weight`.
+"""
+function precision_length(geometry::TraceGeometry{E}, relative_precision::E, target_precision::E)::E where {E <: Real}
+    if geometry.distance == FisherLogPrecisionDistance
+        return sqrt(log_precision_scale(relative_precision, target_precision))
+    end
+    return sqrt(level_weight(geometry))
+end
+
+"""
 PALC's state weight for a `FisherLogPrecisionDistance` trace to `target_precision`: one minus half of `P² / (1 + P)²`,
 the smallest `log_precision_scale` over ρ ∈ [0, 1]. PALC's own `Δρ²` term then stays under the distance's, so the
 dot's precision weight (`FisherLogPrecisionWeights`) stays positive.
@@ -126,7 +138,7 @@ end
 `weights!` of a `FisherLogPrecisionDistance` trace's `PointWeightedDot`, under PALC state weight `palc_state_weight`
 (`log_precision_palc_state_weight`), both weights at the accepted point:
 
-- each gap: its Fisher weight `σ(z)σ(-z)` times `gap_scale = state_weight / palc_state_weight`;
+- each gap: its Fisher weight `σ(z)σ(-z)` times `gap_scale = state_weight / (palc_state_weight P²)`;
 - the relative precision: `(log_precision_scale - (1 - palc_state_weight)) / palc_state_weight`.
 
 PALC's `palc_state_weight ⟨Δx, Δx⟩ + (1 - palc_state_weight) Δρ²` is then the distance's norm.
@@ -181,7 +193,7 @@ function palc_geometry(geometry::TraceGeometry{E}, width::Integer, target_precis
         return (; palc_state_weight = state_weight, dot = BifurcationKit.DotTheta(dot))
     elseif geometry.distance == FisherLogPrecisionDistance
         palc_state_weight = log_precision_palc_state_weight(E(target_precision))
-        weighting = FisherLogPrecisionWeights(state_weight / palc_state_weight, palc_state_weight, E(target_precision))
+        weighting = FisherLogPrecisionWeights(state_weight / (palc_state_weight * E(target_precision)^2), palc_state_weight, E(target_precision))
         # The flat start's logits are zero, where each Fisher weight is 1/4.
         weights = [fill(weighting.gap_scale / 4, width); precision_dot_weight(weighting, zero(E))]
         return (; palc_state_weight, dot = BifurcationKit.DotTheta(BifurcationKit.PointWeightedDot(weighting, weights)))

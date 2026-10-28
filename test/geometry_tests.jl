@@ -44,6 +44,8 @@ end
         logits = GameTracing.logits_at(point)
         frozen = distance in (FisherDistance, FisherLogPrecisionDistance)
         weights = ifelse(frozen, inv.(1 .+ exp.(-logits)) .* inv.(1 .+ exp.(logits)), ones(Float32, 2))
+        # The log-precision distance measures the payoff gains `w / P`, P = 3.
+        weights = weights ./ ifelse(distance == FisherLogPrecisionDistance, 9.0f0, 1.0f0)
         # A step in ρ is a step in log(1 + λ), λ = 3ρ, of 3 / (1 + 3ρ) times its length to first order.
         precision_weight = ifelse(distance == FisherLogPrecisionDistance, 3 / (1 + 3 * last(point)), 1.0f0)
         plain = TraceGeometry{Float32}(; distance = ifelse(frozen, SummedDistance, distance), state_weight = 0.3f0)
@@ -84,7 +86,7 @@ end
         )
         @test GameTracing.closing_accepted(check, predicted)
         @test !GameTracing.closing_accepted(check, corrected)
-        @test check((; x = corrected, p = 0.5f0, step = 2, residual = 0.0f0); fromNewton = false) === false
+        @test check((; x = corrected, res_f = zero(corrected), p = 0.5f0, step = 2, residual = 0.0f0); fromNewton = false) === false
     end
 end
 

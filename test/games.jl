@@ -1,4 +1,4 @@
-using LinearAlgebra: det, dot, norm
+using LinearAlgebra: det, dot, norm, opnorm
 using Random: AbstractRNG, RandomDevice, Xoshiro
 
 """A generator on a fresh seed, logged so a failing draw can be replayed with `Xoshiro(seed)`."""
@@ -480,4 +480,18 @@ function random_swap(seed::Integer)::NamedTuple
     after = map(PayoffJitter(rng), before)
     swap = MapSwap(NormalFormPass(map(single_precision, before)), NormalFormPass(map(single_precision, after)), 3.0f0, 0.5f0, 3)
     return (; swap, reference_before = NormalFormPass(before), reference_after = NormalFormPass(after))
+end
+
+"""
+    probability_bound(pass, logits, precision, residual, slope)
+
+The largest probability error of a root of `pass` at `precision` whose logit residual is `residual`, to first order:
+the logit error `‖J⁻¹‖∞ residual`, `J = I - ∂(λG)/∂z` at the root `logits`, plus Float32's 32-ulp rounding of the
+logits, times `slope`, the probabilities' largest sup-norm slope in the logits: 1/4 for one logistic logit, 1/2 for a
+softmax over several.
+"""
+function probability_bound(pass::Any, logits::AbstractVector, precision::Real, residual::Real, slope::Real)::typeof(float(residual))
+    jacobian = reference_system(pass, [logits; precision * float(1)]).jacobian[:, 1:(end - 1)]
+    logit_error = opnorm(inv(jacobian), Inf32) * residual + 32 * eps(Float32) * maximum(abs, logits)
+    return slope * logit_error
 end

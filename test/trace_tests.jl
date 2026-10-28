@@ -159,7 +159,7 @@ end
                 newton_iterations = rand(rng, 1:20),
             ),
         )
-        options = GameTracing.continuation_options(settings, settings.first_step, settings.max_steps)
+        options = GameTracing.continuation_options(settings, settings.first_step, settings.max_steps, settings.first_tangent_divisor)
         @test (options.ds, options.dsmin, options.dsmax, options.a, options.η) ==
             (
                 settings.first_step,

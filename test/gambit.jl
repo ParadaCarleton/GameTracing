@@ -23,3 +23,15 @@ function gambit_branch(payoffs::Tuple, precision::E)::NamedTuple{(:precision, :f
     first_choices = [pyconvert(E, profile.profile[first(player.strategies)]) for player in game.players]
     return (; precision = pyconvert(E, profile.lam), first_choices)
 end
+
+"""
+Gambit's logit QRE of the normal-form game `payoffs` at `precision`, from `pygambit.qre.logit_solve_lambda`:
+`(; precision, strategies)`, each player's mixed strategy in `precision`'s type.
+"""
+function gambit_strategies(payoffs::Tuple, precision::E)::NamedTuple where {E <: Real}
+    gambit, numpy = pyimport("pygambit"), pyimport("numpy")
+    game = gambit.Game.from_arrays((numpy.asarray(float.(table)) for table in payoffs)...)
+    profile = first(gambit.qre.logit_solve_lambda(game; lam = [float(precision)]))
+    strategies = Tuple([pyconvert(E, profile.profile[strategy]) for strategy in player.strategies] for player in game.players)
+    return (; precision = pyconvert(E, profile.lam), strategies)
+end
