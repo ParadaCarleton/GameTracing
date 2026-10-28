@@ -83,6 +83,9 @@ jobs:
       # Survivors at 0fc39ed: four `size(_, 1)` → `size(_, 2)` on square matrices (bordered.jl) and five
       # default-value tweaks (trace.jl); every other mutant is killed, so the bar sits just under.
       - name: Mutation testing
+        # The suite skips its far-target Gambit comparison here; the push job runs it.
+        env:
+          GAMETRACING_MUTATION: "true"
         run: |
           gremlins=$(julia --project=@gremlins -e 'using Gremlins; print(pkgdir(Gremlins))')
           julia --project=@gremlins "$gremlins/bin/gremlins-cli.jl" \
