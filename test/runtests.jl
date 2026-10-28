@@ -130,6 +130,9 @@ function print_failure(arm::AbstractString, name::AbstractString, target::Real, 
     return nothing
 end
 
+# Exact-symmetry games: no unique branch past their pitchfork, so out of scope (user ruling); their perturbed copies stay.
+const SYMMETRIC_GAMES = (:battle_of_the_sexes, :coordination_pure, :coordination_wiki)
+
 """The arm benchmark's random game `seed` (`random_case`): the player count, then the tables, from one stream."""
 function random_fixture(seed::Integer)::Tuple
     rng = Xoshiro(seed)
@@ -139,14 +142,14 @@ end
 
 function main()::Nothing
     fixtures = vcat(
-        [(string(key), payoffs) for (key, payoffs) in pairs(LOGITNASH_GAMES)],
+        [(string(key), payoffs) for (key, payoffs) in pairs(LOGITNASH_GAMES) if !(key in SYMMETRIC_GAMES)],
         [("overshot", OVERSHOT_GAME)],
         [(string("random", seed), random_fixture(seed)) for seed in 1:24],
     )
     far = [(string("far", index), payoffs) for (index, payoffs) in enumerate(far_opening_games(Xoshiro(0xb0bf341028e24ba6)))]
     # The symmetric games' pitchforks unfolded: player 1's (a1, a1) payoff raised by δ, so the branch is unique.
     perturbed = [(string(key, "_p", δ), (Float32.(LOGITNASH_GAMES[key][1]) .+ δ .* Float32[1 0; 0 0], Float32.(LOGITNASH_GAMES[key][2])))
-                 for key in (:battle_of_the_sexes, :coordination_pure, :coordination_wiki) for δ in (1.0f-3, 1.0f-2)]
+                 for key in SYMMETRIC_GAMES for δ in (1.0f-3, 1.0f-2)]
     foreach(fixture -> print_payoffs(fixture...), [fixtures; far; perturbed; [("unfolded", UNFOLDED_PITCHFORK_GAME)]])
     loose = (; residual_tolerance = 32 * eps(Float32) * 12)
     fold_variants = (
@@ -162,7 +165,7 @@ function main()::Nothing
             run_trace(label, name, NormalFormPass(map(table -> Float32.(table), payoffs)), length(payoffs), target, arm(target))
         end
         for target in (4.0f0, 20.0f0), (key, payoffs) in pairs(LOGITNASH_GAMES)
-            if size(first(payoffs)) == (2, 2)
+            if size(first(payoffs)) == (2, 2) && !(key in SYMMETRIC_GAMES)
                 run_trace(label, string(key), NormalFormPass(map(table -> Float32.(table), payoffs)), 2, target, arm(target))
             end
         end
@@ -180,16 +183,6 @@ function main()::Nothing
         if isnothing(geometry)
             run_trace(label, "fold_uncontrolled", FOLD_GAME, 1, 2.0f0, arm(2.0f0; step_control = nothing))
         end
-    end
-    # Battle of the sexes in Float64: does precision decide the leg at its pitchfork (λ ≈ 0.808)?
-    bos = NormalFormPass(map(table -> Float64.(table), LOGITNASH_GAMES.battle_of_the_sexes))
-    for target in (20.0, 100.0)
-        run_trace("baseline_noguard", "battle_of_the_sexes_f64", bos, 2, target, TraceSettings{Float64}())
-        summed = TraceSettings{Float64}(; geometry = TraceGeometry{Float64}(; distance = SummedDistance),
-            corrector = CorrectorSettings{Float64}(; newton_step_tolerance = 1.0e-4, newton_iterations = 100),
-            step_control = StepControl{Float64}(; distance_limit = 0.4, contraction_limit = 0.6, growth_limit = 1.1, contraction_offset = 1.0, gambit = true),
-            first_step = 0.03 / target)
-        run_trace("summed_noguard", "battle_of_the_sexes_f64", bos, 2, target, summed)
     end
     widened = ThresholdPass(widen(FOLD_GAME.amplitude), widen(FOLD_GAME.threshold))
     println("FOLD_REFERENCE logits=", repr(branch_reference(widened, 1, float(2)).logits))
