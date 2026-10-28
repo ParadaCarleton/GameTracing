@@ -37,6 +37,8 @@ const FILE_LINE_LIMIT = 1500
 const GENERIC_RESULTS = (
     "trace.jl trace_endpoint", "trace.jl reached_state", "trace.jl redrawn_trace",
     "crossing.jl homotopy_crossing", "crossing.jl crossing_walk", "crossing.jl crossing_steps", "redraw.jl redraw_crossing",
+    "logit_solve.jl gambit_settings", "logit_solve.jl lambda_profile", "logit_solve.jl logit_solve_lambda",
+    "logit_solve.jl logit_solve_branch", "logit_solve.jl logit_solve",
 )
 const SOURCE_DIRECTORIES = ("src", "test", "benchmark")
 
