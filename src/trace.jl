@@ -41,7 +41,7 @@ distance (`TraceGeometry`).
 """
 Base.@kwdef struct TraceSettings{E <: Real, T <: BifurcationKit.AbstractTangentComputation}
     first_step::E = 0.05f0
-    min_step::E = 1.1754944f-38
+    min_step::E = floatmin(E)
     max_step::E = 1000.0f0
     aggressiveness::E = 0.5f0
     geometry::TraceGeometry{E} = TraceGeometry{E}()
