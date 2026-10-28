@@ -93,7 +93,7 @@ function run_trace(arm::AbstractString, name::AbstractString, pass::P, width::In
     outcome = is_error(result) ? string("FAIL:", unwrap_error(result).cause) : string(unwrap(result).steps)
     profile = is_error(result) ? Float32[] : exp.(GameTracing.log_probabilities(pass, unwrap(result).logits))
     println("RUN arm=", arm, " fixture=", name, " target=", target, " steps=", outcome, " iterations=", iterations,
-        " max_newton=", maximum(newton; init = NaN32), " max_chord=", maximum(chords; init = NaN32), " profile=", repr(profile))
+        " max_newton=", maximum(newton; init = 0.0f0), " max_chord=", maximum(chords; init = 0.0f0), " profile=", repr(profile))
     return nothing
 end
 
