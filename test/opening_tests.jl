@@ -1,4 +1,5 @@
 using ErrorTypes: unwrap_error
+using Logging: ConsoleLogger, Debug, with_logger
 using Random: AbstractRNG, Xoshiro
 
 # Random normal-form games whose trace to precision 1e6 once opened at λ ≈ 42426 and stalled off the map.
@@ -19,6 +20,18 @@ end
 
 const FAR_TARGET = 1.0f6
 const LOG_PRECISION_SETTINGS = TraceSettings{Float32}(; geometry = TraceGeometry{Float32}(; distance = FisherLogPrecisionDistance))
+
+# SCRATCH: every corrector iterate and point of one far-target opening, to find where its first step is set.
+let gains = NormalFormGains(first(far_opening_games(Xoshiro(FAR_OPENING_SEED))))
+    with_logger(ConsoleLogger(stderr, Debug)) do
+        trace_endpoint(
+            LogitGame(gains, FAR_TARGET),
+            GameTracing.logit_count(gains),
+            LOG_PRECISION_SETTINGS;
+            keep_going = StopAtPrecision(zero(Float32), FAR_TARGET),
+        )
+    end
+end
 
 @testset "a trace to a far target opens one first step from the flat start in its own distance" begin
     for payoffs in (far_opening_games(Xoshiro(FAR_OPENING_SEED))..., far_opening_games(fresh_rng())...)
