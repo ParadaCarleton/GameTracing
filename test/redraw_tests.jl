@@ -265,6 +265,7 @@ end
     swap = swap_point(NEAR_SWAP)
     point = [swap.logits ./ swap.relative_precision; swap.relative_precision]
     before = LogitGame(NEAR_SWAP.before, NEAR_SWAP.precision)
-    after = LogitGame(ThrowingPass(NEAR_SWAP.after, 0.0f0), NEAR_SWAP.precision)
-    @test_throws DomainError GameTracing.redraw_crossing(before, after, point, REDRAW_SETTINGS)
+    # A bare `ArgumentError` is a caller's contract violation, which no trace converts.
+    after = LogitGame(ThrowingPass(NEAR_SWAP.after), NEAR_SWAP.precision)
+    @test_throws ArgumentError GameTracing.redraw_crossing(before, after, point, REDRAW_SETTINGS)
 end

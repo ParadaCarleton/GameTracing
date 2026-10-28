@@ -28,26 +28,6 @@ function (pass::LinearGainPass)(
     return nothing
 end
 
-"""A pass that runs `pass`, then throws a `DomainError` past precision `limit`: an exception no trace converts."""
-struct ThrowingPass{P, E <: Real}
-    pass::P
-    limit::E
-end
-
-function (pass::ThrowingPass)(
-    gain::AbstractVector,
-    gain_slope::AbstractMatrix,
-    gain_precision_slope::AbstractVector,
-    logits::AbstractVector,
-    precision::Real,
-)::Nothing
-    pass.pass(gain, gain_slope, gain_precision_slope, logits, precision)
-    if precision > pass.limit
-        throw(DomainError(precision, "a pass that fails past its limit"))
-    end
-    return nothing
-end
-
 """One logit that gains `amplitude * logistic(logits - threshold)`: a coordination game whose branch folds back when `threshold` is large."""
 struct ThresholdPass{E <: Real}
     amplitude::E
