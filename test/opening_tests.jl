@@ -1,5 +1,4 @@
 using ErrorTypes: unwrap_error
-using Logging: ConsoleLogger, Debug, with_logger
 using Random: AbstractRNG, Xoshiro
 
 # Random normal-form games whose trace to precision 1e6 once opened at λ ≈ 42426 and stalled off the map.
@@ -20,18 +19,6 @@ end
 
 const FAR_TARGET = 1.0f6
 const LOG_PRECISION_SETTINGS = TraceSettings{Float32}(; geometry = TraceGeometry{Float32}(; distance = FisherLogPrecisionDistance))
-
-# SCRATCH: every corrector iterate and point of one far-target opening, to find where its first step is set.
-let gains = NormalFormGains(first(far_opening_games(Xoshiro(FAR_OPENING_SEED))))
-    with_logger(ConsoleLogger(stderr, Debug)) do
-        trace_endpoint(
-            LogitGame(gains, FAR_TARGET),
-            GameTracing.logit_count(gains),
-            LOG_PRECISION_SETTINGS;
-            keep_going = StopAtPrecision(zero(Float32), FAR_TARGET),
-        )
-    end
-end
 
 @testset "a trace to a far target opens one first step from the flat start in its own distance" begin
     for payoffs in (far_opening_games(Xoshiro(FAR_OPENING_SEED))..., far_opening_games(fresh_rng())...)
@@ -82,4 +69,36 @@ end
     @test !GameTracing.settled(check, (; x = point, fx = Float32[0, 0, -0.04f0], residual = 0.04f0))
     @test GameTracing.settled(check, (; x = point, fx = zeros(Float32, 3), residual = zero(Float32)))
     @test !GameTracing.settled(check, (; x = point, res_f = Float32[0, 0, -0.04f0], residual = 0.04f0))
+end
+
+"""A `keep_going` that writes each accepted precision of a trace to `target` into `precisions` and stops past `ceiling`."""
+struct PrecisionLog{E <: Real}
+    target::E
+    ceiling::E
+    precisions::Vector{E}
+end
+
+function (logbook::PrecisionLog)(::AbstractVector, relative_precision::Real)::Bool
+    setindex!(logbook.precisions, relative_precision * logbook.target, something(findfirst(isnan, logbook.precisions)))
+    return relative_precision * logbook.target < logbook.ceiling
+end
+
+"""The accepted precisions of a trace of `gains` to `target` in `settings`, up to the first past `ceiling`."""
+function accepted_precisions(gains::NormalFormGains, target::E, ceiling::E, settings::TraceSettings{E})::AbstractVector{E} where {E <: Real}
+    logbook = PrecisionLog(target, ceiling, fill(E(NaN32), settings.max_steps + 1))
+    trace_endpoint(LogitGame(gains, target), GameTracing.logit_count(gains), settings; keep_going = logbook)
+    return filter(!isnan, logbook.precisions)
+end
+
+@testset "the target only caps a trace: to 100 and to 1e6 it accepts the same precisions up to 100, in $distance" for distance in instances(StepDistance)
+    settings = TraceSettings{Float32}(; geometry = TraceGeometry{Float32}(; distance))
+    gains = NormalFormGains(first(far_opening_games(Xoshiro(FAR_OPENING_SEED))))
+    near, far = (accepted_precisions(gains, target, 100.0f0, settings) for target in (100.0f0, FAR_TARGET))
+    shared = min(length(near), length(far))
+    # Two traces of one branch agree to the corrector's tolerance on each step's precision.
+    agree = length(near) == length(far) && all(abs.(view(near, 1:shared) .- view(far, 1:shared)) .<= 1.0f-3 .* (1 .+ view(near, 1:shared)))
+    @test agree
+    if !agree
+        @error "the target moved the accepted precisions" distance near = first(near, 8) far = first(far, 8) lengths = (length(near), length(far))
+    end
 end
