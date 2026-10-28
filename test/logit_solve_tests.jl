@@ -1,5 +1,6 @@
 using ErrorTypes: is_error, unwrap, unwrap_error
 using LinearAlgebra: dot
+using Random: AbstractRNG, Xoshiro
 
 """
 Gambit's logit QRE of the normal-form game `payoffs` at `precision`, from `pygambit.qre.logit_solve_lambda`:
@@ -58,19 +59,14 @@ end
     end
 end
 
-# Games whose branch to maximum_precision 1e6 once stuck at precision 42426 with logits off the map; Gambit ends at
-# a mixed equilibrium (λ ≈ 47) and at the pure profile (2, 1, 2) (λ ≈ 1.5).
-const STUCK_BRANCH_GAMES = (
-    (
-        Float32[-0.4899592 0.32297286 -1.141685; -3.5441031 -1.129417 2.330057; 6.2916627 -3.8632107 1.6651082],
-        Float32[3.267848 -0.037896026 -1.4952189; -6.062257 1.8497384 2.1450086; 1.3001815 5.7432065 0.7123295],
-    ),
-    (
-        cat(Float32[2.85158 -8.173897; 0.008694828 -0.9346101], Float32[-6.837869 1.001581; 2.4771934 -2.2187471]; dims = 3),
-        cat(Float32[3.9944906 -3.9142199; 6.1622057 0.3223508], Float32[5.5092583 1.8642528; 2.5665112 -2.1118705]; dims = 3),
-        cat(Float32[-0.05680923 1.9781215; -3.3232822 1.0387676], Float32[-3.1284914 -0.33552215; 2.5984588 -5.7526417]; dims = 3),
-    ),
-)
+# The seed whose branch games once stuck at precision 42426 with logits off the map: Gambit ends the (3, 3) game at a
+# mixed equilibrium (λ ≈ 47) and the (2, 2, 2) game at the pure profile (2, 1, 2) (λ ≈ 1.5).
+const STUCK_BRANCH_SEED = 0xb0bf341028e24ba6
+
+"""The random games of the branch testset, one per strategy count in `((3, 3), (2, 2, 2))`, drawn from `rng`."""
+function branch_games(rng::AbstractRNG)::AbstractVector
+    return [ntuple(_ -> 3 .* randn(rng, Float32, counts), length(counts)) for counts in ((3, 3), (2, 2, 2))]
+end
 
 """The precision `λ` that best explains `logits` as `λ G(logits)` of `gains`: the least-squares fit, for a diagnostic."""
 function implied_precision(gains::NormalFormGains, logits::AbstractVector{E})::E where {E <: Real}
@@ -113,16 +109,17 @@ function branch_departure(payoffs::Tuple, tolerance::E)::NamedTuple where {E <: 
 end
 
 @testset "logit_solve_branch: each point solves the logit map at its precision, and the last meets maxregret" begin
-    rng = fresh_rng()
-    random_games = [ntuple(_ -> 3 .* randn(rng, Float32, counts), length(counts)) for counts in ((3, 3), (2, 2, 2))]
-    for payoffs in (STUCK_BRANCH_GAMES..., random_games...)
+    stuck_games = branch_games(Xoshiro(STUCK_BRANCH_SEED))
+    # The seed's first payoff, as the failing run logged it.
+    @test first(first(first(stuck_games))) == -0.4899592f0
+    for payoffs in (stuck_games..., branch_games(fresh_rng())...)
         gains = NormalFormGains(payoffs)
         result = logit_solve_branch(gains)
         @test !is_error(result)
         if is_error(result)
             # Which shorter traces settle tells a failure of the far target from a failure of the branch.
             shorter = [ceiling => logit_solve_branch(gains; maximum_precision = ceiling) for ceiling in (1.0f2, 1.0f4)]
-            @error "logit_solve_branch failed" payoffs failure = unwrap_error(result) shorter departure = branch_departure(payoffs, 1.0f-3)
+            @error "logit_solve_branch failed" payoffs = repr(payoffs) payoff_bits = map(table -> reinterpret.(UInt32, table), payoffs) failure = unwrap_error(result) shorter departure = branch_departure(payoffs, 1.0f-3)
             continue
         end
         branch = unwrap(result)
