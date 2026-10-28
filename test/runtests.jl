@@ -17,13 +17,13 @@ end
 
 """Debug records of a trace: corrector iterates and Gambit-coordinate Newton steps."""
 struct Recorder <: AbstractLogger
-    sink::Channel{Tuple{String, Int, Float32}}
+    sink::Channel{Tuple{String, Int, Float32, String}}
 end
 min_enabled_level(::Recorder)::typeof(Debug) = Debug
 shouldlog(::Recorder, ::LogLevel, ::Module, group::Any, ::Any)::Bool = group in (:trace, :gambit)
 catch_exceptions(::Recorder)::Bool = false
 function handle_message(recorder::Recorder, ::LogLevel, message::Any, ::Module, ::Any, ::Any, ::Any, ::Any; keywords...)::Nothing
-    put!(recorder.sink, (string(message), Int(get(keywords, :step, -1)), Float32(get(keywords, :distance, NaN32))))
+    put!(recorder.sink, (string(message), Int(get(keywords, :step, -1)), Float32(get(keywords, :distance, NaN32)), string(get(keywords, :reason, ""))))
     return nothing
 end
 
@@ -79,7 +79,7 @@ end
 
 """Trace `pass` under `settings` and print its RUN line."""
 function run_trace(arm::AbstractString, name::AbstractString, pass::P, width::Integer, target::E, settings::TraceSettings{E})::Nothing where {P, E <: Real}
-    records = Channel{Tuple{String, Int, Float32}}(Inf)
+    records = Channel{Tuple{String, Int, Float32, String}}(Inf)
     points = Channel{Vector{Float32}}(Inf)
     result = with_logger(() -> trace_endpoint(LogitGame(pass, target), width, settings; keep_going = ChordLog(pass, target, points)), Recorder(records))
     close(records)
@@ -94,6 +94,30 @@ function run_trace(arm::AbstractString, name::AbstractString, pass::P, width::In
     profile = is_error(result) ? Float32[] : exp.(GameTracing.log_probabilities(pass, unwrap(result).logits))
     println("RUN arm=", arm, " fixture=", name, " target=", target, " steps=", outcome, " iterations=", iterations,
         " max_newton=", maximum(newton; init = 0.0f0), " max_chord=", maximum(chords; init = 0.0f0), " profile=", repr(profile))
+    if is_error(result)
+        print_failure(arm, name, target, pass, unwrap_error(result).context, logged, newton)
+    end
+    if name == "battle_of_the_sexes" && endswith(arm, "noguard") && target in (20.0f0, 100.0f0)
+        # Accepted points as [λ; p]: the step in ρ through Gambit's turn at λ ≈ 0.808.
+        println("POINTS arm=", arm, " target=", target, " points=", repr([[last(point); exp.(point[1:(end - 1)])] for point in accepted]))
+    end
+    return nothing
+end
+
+"""Print why a trace stopped: refusal and stop reasons, its last step, and the Newton steps near its end against the coordinates' rounding."""
+function print_failure(arm::AbstractString, name::AbstractString, target::Real, pass::P, context::NamedTuple, logged::AbstractVector, newton::AbstractVector)::Nothing where {P}
+    reasons = [string(record[1], ":", record[4]) for record in logged if !isempty(record[4])]
+    tally = Dict(reason => count(==(reason), reasons) for reason in unique(reasons))
+    coordinates = [0.0f0]
+    if haskey(context, :logits) && haskey(context, :relative_precision)
+        coordinates = [GameTracing.log_probabilities(pass, collect(Float32, context.logits)); Float32(context.relative_precision * target)]
+    end
+    tail = newton[max(firstindex(newton), lastindex(newton) - 19):end]
+    # A failure at the start carries fewer context fields than one past it.
+    println("FAILINFO arm=", arm, " fixture=", name, " target=", target, " steps=", get(context, :steps, -1), " lambda=", get(context, :precision, NaN32),
+        " step_length=", get(context, :step_length, NaN32), " unmoved=", get(context, :unmoved, -1), " reasons=", repr(tally),
+        " tail_newton_min=", minimum(tail; init = Inf32), " coordinate_ulp=", eps(maximum(abs, coordinates)),
+        " exception=", first(repr(get(context, :exception, nothing)), 160))
     return nothing
 end
 
