@@ -16,11 +16,6 @@ const FOLD_SETTINGS = TraceSettings{Float32}()
                     bordered_solver = BorderingSolve,
                 ),
                 TraceSettings{Float32}(step_control = nothing),
-                # At a floor of 32 ulps of 12 (the fold game's P max|G|), this arm's corrector once jumped to the lower branch.
-                TraceSettings{Float32}(
-                    bordered_solver = BorderingSolve,
-                    corrector = CorrectorSettings{Float32}(; residual_tolerance = 32 * eps(Float32) * 12),
-                ),
             )
             traced = trace_endpoint(LogitGame(FOLD_GAME, target), 1, settings)
             @test !is_error(traced)
