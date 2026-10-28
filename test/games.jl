@@ -28,6 +28,26 @@ function (pass::LinearGainPass)(
     return nothing
 end
 
+"""A pass that runs `pass`, then throws a `DomainError` past precision `limit`: an exception no trace converts."""
+struct ThrowingPass{P, E <: Real}
+    pass::P
+    limit::E
+end
+
+function (pass::ThrowingPass)(
+    gain::AbstractVector,
+    gain_slope::AbstractMatrix,
+    gain_precision_slope::AbstractVector,
+    logits::AbstractVector,
+    precision::Real,
+)::Nothing
+    pass.pass(gain, gain_slope, gain_precision_slope, logits, precision)
+    if precision > pass.limit
+        throw(DomainError(precision, "a pass that fails past its limit"))
+    end
+    return nothing
+end
+
 """One logit that gains `amplitude * logistic(logits - threshold)`: a coordination game whose branch folds back when `threshold` is large."""
 struct ThresholdPass{E <: Real}
     amplitude::E
@@ -368,6 +388,27 @@ const FAR_SWAP = MapSwap(ThresholdPass(8.0f0, 4.0f0), ThresholdPass(8.0f0, 1.5f0
 
 # The new map's root at precision 1/2 lies past a fold of the homotopy: the blended map loses the low root near s = 0.44.
 const FOLD_SWAP = MapSwap(ThresholdPass(8.0f0, 4.0f0), ThresholdPass(16.0f0, 2.0f0), 1.0f0, 0.5f0, 1)
+
+# Two symmetric anti-coordination maps at precision 2: the blend's symmetric root keeps its symmetric mode positive
+# while its antisymmetric mode changes sign, a pitchfork with no fold (`symmetric_modes`).
+const PITCHFORK_SWAP = MapSwap(
+    LinearGainPass([0 -2.0f0; -2.0f0 0], [0.0f0, 0.0f0]),
+    LinearGainPass([0 -8.0f0; -8.0f0 0], [0.0f0, 0.0f0]),
+    4.0f0, 0.5f0, 2,
+)
+
+"""
+    symmetric_modes(interaction, precision)
+
+`(; symmetric, antisymmetric)`: the two eigenvalues of `I - λ ∂G/∂z` at the symmetric root of `z = λ a σ(z)` on both
+logits of a two-player map with off-diagonal interaction `a`, found by Float64 Newton from zero: `1 ∓ λ a σ'(z)`.
+"""
+function symmetric_modes(interaction::Real, precision::Real)::NamedTuple
+    pass = LinearGainPass([0 interaction; interaction 0] .* float(1), zeros(2))
+    root = level_root(pass, zeros(2), precision)
+    slope = inv(1 + exp(-first(root))) * inv(1 + exp(first(root)))
+    return (; symmetric = 1 - precision * interaction * slope, antisymmetric = 1 + precision * interaction * slope)
+end
 
 """`pass`'s gain at the logit `logit`, in Float64."""
 threshold_gain(pass::ThresholdPass, logit::Real)::typeof(logit * float(1)) = pass.amplitude * float(1) / (1 + exp(pass.threshold * float(1) - logit))

@@ -241,3 +241,30 @@ end
     @test failure.context.projected
     @test failure.context.reason == :solver_blowup
 end
+
+@testset "a redraw whose homotopy passes a pitchfork with no fold fails stuck and projected, at the crossing" begin
+    swap = swap_point(PITCHFORK_SWAP)
+    level = swap.relative_precision * PITCHFORK_SWAP.precision
+    (; before, after) = PITCHFORK_SWAP
+    # The blend's interaction runs from the old map's to the new one's; sampled in `s`, only the antisymmetric mode changes sign.
+    modes = [
+        symmetric_modes((1 - blend) * before.interaction[1, 2] + blend * after.interaction[1, 2], level)
+        for blend in range(0, 1; length = 101)
+    ]
+    @test all(mode.symmetric > 0 for mode in modes)
+    @test first(modes).antisymmetric > 0 > last(modes).antisymmetric
+    result = swapped_trace(PITCHFORK_SWAP)
+    @test is_error(result)
+    failure = unwrap_error(result)
+    @test failure.cause == GameTracing.TraceStuck
+    @test failure.context.projected
+    @test failure.context.reason == :crossing
+end
+
+@testset "a redraw crossing rethrows an exception it does not convert" begin
+    swap = swap_point(NEAR_SWAP)
+    point = [swap.logits ./ swap.relative_precision; swap.relative_precision]
+    before = LogitGame(NEAR_SWAP.before, NEAR_SWAP.precision)
+    after = LogitGame(ThrowingPass(NEAR_SWAP.after, 0.0f0), NEAR_SWAP.precision)
+    @test_throws DomainError GameTracing.redraw_crossing(before, after, point, REDRAW_SETTINGS)
+end
