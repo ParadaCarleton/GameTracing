@@ -55,14 +55,14 @@ function redraw_crossing(
     settings::TraceSettings{E},
 )::CrossingResult{E} where {E <: Real}
     relative_precision = last(point)
-    corrector = CorrectorReach(AcceptAll(), settings.corrector, settings.geometry, similar(point), similar(point), zero(E))
+    corrector = CorrectorReach(AcceptAll(), settings.corrector, settings.geometry, similar(point), similar(point), zero(E), GambitDistance(before.pass!, E(before.target_precision)))
     try
         return homotopy_crossing(
             branch_problem(before, point, relative_precision; record_from_solution = trace_record_precision),
             branch_problem(after, point, relative_precision; record_from_solution = trace_record_precision),
             point,
             # The orientation check flips the tangent at a branch point, which would read a crossing as a fold.
-            palc_algorithm(settings, length(point) - 1, before.target_precision; orientation_check = false),
+            palc_algorithm(settings, length(point) - 1, before.target_precision; orientation_check = false, step_distance = gambit_step_distance(settings, before)),
             continuation_options(settings, settings.first_step, settings.max_steps, settings.first_tangent_divisor);
             callback_newton = corrector,
         )

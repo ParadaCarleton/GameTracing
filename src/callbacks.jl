@@ -21,6 +21,9 @@ Base.@kwdef struct CorrectorSettings{E <: Real}
     residual_tolerance::E = 1.0f-5
     tolerance_floor_ulps::E = 32.0f0
     newton_iterations::Int = 10
+    # EXPERIMENT: refuse a closing point that moves a logit more than this; converge when a Newton step in Gambit's coordinates is this short.
+    max_logit_step::Union{Nothing, E} = nothing
+    newton_step_tolerance::Union{Nothing, E} = nothing
 end
 
 """
@@ -72,6 +75,34 @@ mutable struct CorrectorReach{C, E <: Real}
     previous::Vector{E}
     predicted::Vector{E}
     step_length::E
+    # EXPERIMENT: Newton steps measured by `step_distance` (`GambitDistance`), from the last iterate.
+    step_distance::Any
+    last_iterate::Vector{E}
+    newton_step::E
+end
+
+function CorrectorReach(
+    accept_corrected::C,
+    settings::CorrectorSettings{E},
+    geometry::TraceGeometry{E},
+    previous::AbstractVector{E},
+    predicted::AbstractVector{E},
+    step_length::E,
+    step_distance::Any = nothing,
+)::CorrectorReach{C, E} where {C, E <: Real}
+    return CorrectorReach{C, E}(accept_corrected, settings, geometry, previous, predicted, step_length, step_distance, copy(previous), E(Inf))
+end
+
+"""EXPERIMENT: record the Newton step from `check.last_iterate` to `point` in `check.step_distance`."""
+function record_newton_step!(check::CorrectorReach{C, E}, point::AbstractVector{E}, first::Bool)::Nothing where {C, E <: Real}
+    if !first && !isnothing(check.step_distance)
+        check.newton_step = check.step_distance(check.last_iterate, zero(E), point, zero(E))
+        @debug "newton step" _group = :gambit distance = check.newton_step
+    elseif first
+        check.newton_step = E(Inf)
+    end
+    copyto!(check.last_iterate, point)
+    return nothing
 end
 
 """Whether `check` accepts its corrector's converged closing point `corrected` (reach, KL and angle)."""
@@ -87,6 +118,10 @@ function closing_accepted(check::CorrectorReach{C, E}, corrected::AbstractVector
     end
     if !within_limit(settings.max_step_kl, largest_kl(corrected, check.previous))
         @debug "corrector refused" _group = :trace reason = :step_kl
+        return false
+    end
+    if !within_limit(settings.max_logit_step, maximum(abs, logits_at(corrected) .- logits_at(check.previous)))
+        @debug "corrector refused" _group = :trace reason = :logit_step
         return false
     end
     if !within_limit(settings.max_angle, chord_angle(check.previous, check.predicted, corrected, geometry))
@@ -119,6 +154,7 @@ function (check::CorrectorReach)(iterate::I;
             copyto!(check.previous, iterate.z0.u)
             check.step_length = arclength_distance(iterate.z0.u, iterate.x, check.geometry)
         end
+        record_newton_step!(check, iterate.x, iterate.step == 0)
         if !isfinite(iterate.residual)
             @debug "corrector stopped" _group = :trace reason = :nonfinite
             return false
@@ -154,6 +190,9 @@ precision `ρ` is at the pin to the relative `residual_tolerance`. The pin row n
 with the gaps, so at a far target it would pass a `ρ` that never left its start, a point off the map.
 """
 function settled(check::CorrectorReach, iterate::I)::Bool where {I <: NamedTuple}
+    if !isnothing(check.settings.newton_step_tolerance)
+        return check.newton_step <= check.settings.newton_step_tolerance
+    end
     relative_precision = last(iterate.x)
     offset = pin_residual(iterate)
     pin_scale = max(abs(relative_precision), abs(relative_precision - offset))
