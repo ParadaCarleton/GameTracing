@@ -1,20 +1,32 @@
 using GameTracing
 using Test
+using BifurcationKit: BifurcationKit
+using ErrorTypes: is_error, unwrap, unwrap_error
 
 include("games.jl")
 include("fixtures.jl")
-include("arms.jl")
-include("gambit.jl")
 
-const GAME = LinearGainPass(Float32[0 1; 1 0], Float32[0.5f0, -0.25f0])
-const TARGET_PRECISION = 2.0f0
-const WIDTH = 2
-
-# Every `*_tests.jl` file runs, in name order, so none can be left out; the code rules run last. One outer testset
-# keeps a failing file from aborting the rest: a failed top-level testset throws as it ends.
-@testset "GameTracing" begin
-    for file in sort(filter(endswith("_tests.jl"), readdir(@__DIR__; join = true)))
-        include(file)
+# SCRATCH: which fold arm turns back under the residual_scale floor, and where; not for landing.
+function main()::Nothing
+    arms = (
+        default = TraceSettings{Float32}(),
+        secant = TraceSettings{Float32}(tangent = BifurcationKit.Secant()),
+        bordering = TraceSettings{Float32}(bordered_solver = BorderingSolve),
+        uncontrolled = TraceSettings{Float32}(step_control = nothing),
+    )
+    for (name, settings) in pairs(arms)
+        result = trace_endpoint(LogitGame(FOLD_GAME, 2.0f0), 1, settings)
+        @info "fold arm" name failed = is_error(result) outcome = is_error(result) ? unwrap_error(result) : unwrap(result)
     end
-    include("code_rules.jl")
+    for (name, settings) in pairs(arms)
+        result = trace_endpoint(LogitGame(FOLD_GAME, 2.0f0), 1, settings)
+        if is_error(result)
+            @info "debugging arm" name
+            ENV["JULIA_DEBUG"] = "GameTracing"
+            trace_endpoint(LogitGame(FOLD_GAME, 2.0f0), 1, settings)
+            ENV["JULIA_DEBUG"] = ""
+        end
+    end
+    return nothing
 end
+main()
