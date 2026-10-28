@@ -78,8 +78,21 @@ function print_payoffs(name::AbstractString, payoffs::Tuple)::Nothing
     return nothing
 end
 
+"""`settings` whose first step spans Gambit's `hStart` = 0.03 in Gambit's coordinates from the start, when they run Gambit's step control."""
+function gambit_opening(pass::P, width::Integer, target::E, settings::TraceSettings{E})::TraceSettings{E} where {P, E <: Real}
+    if isnothing(settings.step_control) || !settings.step_control.gambit
+        return settings
+    end
+    start = GameTracing.trace_start(LogitGame(pass, target), zeros(E, width))
+    probe = [start[1:(end - 1)]; E(0.03f0) / target]
+    chord = GameTracing.GambitDistance(pass, target)(start, zero(E), probe, zero(E))
+    names = fieldnames(TraceSettings{E})
+    return TraceSettings{E}(; NamedTuple{names}(map(name -> getfield(settings, name), names))..., first_step = last(probe) * E(0.03f0) / chord)
+end
+
 """Trace `pass` under `settings` and print its RUN line."""
 function run_trace(arm::AbstractString, name::AbstractString, pass::P, width::Integer, target::E, settings::TraceSettings{E})::Nothing where {P, E <: Real}
+    settings = gambit_opening(pass, width, target, settings)
     records = Channel{Tuple{String, Int, Float32, String}}(Inf)
     points = Channel{Vector{Float32}}(Inf)
     result = with_logger(() -> trace_endpoint(LogitGame(pass, target), width, settings; keep_going = ChordLog(pass, target, points)), Recorder(records))

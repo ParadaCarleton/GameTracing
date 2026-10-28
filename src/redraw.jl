@@ -15,6 +15,12 @@ mutable struct RedrawSlot{G <: LogitGame, E <: Real}
     before::G
     pending::Bool
     step_length::E
+    # EXPERIMENT: Gambit's step h in its coordinates (path.cc), NaN when the trace runs another step control.
+    gambit_step::E
+end
+
+function RedrawSlot(game::G, before::G, pending::Bool, step_length::E)::RedrawSlot{G, E} where {G <: LogitGame, E <: Real}
+    return RedrawSlot{G, E}(game, before, pending, step_length, E(NaN))
 end
 
 """

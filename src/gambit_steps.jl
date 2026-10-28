@@ -17,6 +17,30 @@ function gambit_point(pass::P, point::AbstractVector{E}, target::E)::AbstractVec
     return [log_probabilities(pass, logits_at(point)); last(point) * target]
 end
 
+"""Gambit's first step `hStart` = 0.03 (path.cc) under Gambit's step control, else NaN, which leaves BifurcationKit's ds alone."""
+function gambit_first_step(settings::S)::typeof(settings.first_step) where {S}
+    if isnothing(settings.step_control) || !settings.step_control.gambit
+        return oftype(settings.first_step, NaN)
+    end
+    return oftype(settings.first_step, 3.0f-2)
+end
+
+"""
+    gambit_ds!(slot, point, tangent, ds)
+
+The arclength step whose predictor from `point` along `tangent` spans Gambit's next step `h` in Gambit's coordinates.
+`h` takes BifurcationKit's step factor since the last call (its distance, contraction and growth rules match path.cc).
+"""
+function gambit_ds!(slot::S, point::AbstractVector{E}, tangent::AbstractVector{E}, ds::E)::E where {S, E <: Real}
+    step = slot.gambit_step * abs(ds) / slot.step_length
+    chord = GambitDistance(slot.game.pass!, E(slot.game.target_precision))(point, zero(E), point .+ ds .* tangent, zero(E))
+    slot.gambit_step = step
+    if !(chord > 0)
+        return abs(ds)
+    end
+    return abs(ds) * step / chord
+end
+
 """The Euclidean distance in Gambit's coordinates between two branch points of `pass` to `target`: PALC's `step_distance`."""
 struct GambitDistance{P, E <: Real}
     pass::P

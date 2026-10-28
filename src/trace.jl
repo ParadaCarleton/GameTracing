@@ -365,7 +365,7 @@ function trace_endpoint(
         zero(E),
         false,
     )
-    finalise = TraceFinalise(progress, keep_going, redraw, RedrawSlot(game, game, false, settings.first_step), 0)
+    finalise = TraceFinalise(progress, keep_going, redraw, RedrawSlot(game, game, false, settings.first_step, gambit_first_step(settings)), 0)
     return redrawn_trace(
         guarded_trace(traced_start, nothing, settings, finalise, accept_corrected),
         finalise,

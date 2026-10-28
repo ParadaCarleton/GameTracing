@@ -190,8 +190,9 @@ precision `ρ` is at the pin to the relative `residual_tolerance`. The pin row n
 with the gaps, so at a far target it would pass a `ρ` that never left its start, a point off the map.
 """
 function settled(check::CorrectorReach, iterate::I)::Bool where {I <: NamedTuple}
-    if !isnothing(check.settings.newton_step_tolerance)
-        return check.newton_step <= check.settings.newton_step_tolerance
+    # EXPERIMENT: Gambit converges on a Newton step ≤ tolerance; a predictor already on the map takes no step, so its residual decides.
+    if !isnothing(check.settings.newton_step_tolerance) && check.newton_step <= check.settings.newton_step_tolerance
+        return true
     end
     relative_precision = last(iterate.x)
     offset = pin_residual(iterate)
@@ -290,6 +291,9 @@ function (finalise::TraceFinalise)(point::P, tangent::T, step::S, result::Any;
     logits = logits_at(point.u)
     if !(recorded && finalise.keep_going(logits, point.p))
         return false
+    end
+    if isfinite(finalise.slot.gambit_step)
+        state.ds = copysign(gambit_ds!(finalise.slot, point.u, tangent.u, state.ds), state.ds)
     end
     finalise.slot.step_length = abs(state.ds)
     @debug "accepted ds" _group = :gambit distance = abs(state.ds)
