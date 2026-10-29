@@ -12,7 +12,7 @@ const WIDTH = 2
 
 # Every `*_tests.jl` file runs, in name order, so none can be left out; the code rules run last. One outer testset
 # keeps a failing file from aborting the rest: a failed top-level testset throws as it ends.
-# EXPERIMENT: this branch runs only the gap-jitter measurement.
+# EXPERIMENT: this branch runs only the pitchfork rcond measurement.
 @testset "GameTracing" begin
-    include("gap_jitter_experiment.jl")
+    include("pitchfork_rcond_experiment.jl")
 end
