@@ -118,6 +118,21 @@ end
     @test_throws ArgumentError logit_solve_lambda(gains, 1; max_accel = 0.5f0)
 end
 
+@testset "the solvers return profiles in the payoffs' element type and refuse settings in another" begin
+    for element in (Float32, Float64)
+        gains = NormalFormGains(map(table -> element.(table), LOGITNASH_GAMES.prisoners_dilemma))
+        @test eltype(gains) == element
+        @test unwrap(logit_solve(gains)).lam isa element
+        @test eltype(unwrap(logit_solve(gains)).logits) == element
+        @test eltype(only(unwrap(logit_solve_lambda(gains, 2))).logits) == element
+        other = element == Float32 ? Float64 : Float32
+        settings = TraceSettings{other}()
+        @test_throws ArgumentError logit_solve_lambda(gains, 2; settings)
+        @test_throws ArgumentError logit_solve_branch(gains; settings)
+        @test_throws ArgumentError logit_solve(gains; settings)
+    end
+end
+
 @testset "LogitQREProfile computes its profile from its logits and takes no profile" begin
     gains = NormalFormGains(map(table -> Float32.(table), LOGITNASH_GAMES.matching_pennies))
     profile = LogitQREProfile(gains, 1.0f0, Float32[0, 0])

@@ -59,6 +59,14 @@ function max_regret(gains::NormalFormGains, logits::AbstractVector{E})::E where 
     return maximum(player_regret.(view.((gain,), logit_ranges(gains)), mixed_strategies(gains, logits)))
 end
 
+"""Refuse `settings` whose element type is not the payoffs' of `gains`: the trace and its profiles run in the settings' type."""
+function require_payoff_type(gains::NormalFormGains, ::TraceSettings{E})::Nothing where {E <: Real}
+    if E != eltype(gains)
+        throw(ArgumentError("settings trace in $E, but the payoffs are $(eltype(gains)); build the settings in $(eltype(gains))"))
+    end
+    return nothing
+end
+
 """The largest payoff of `gains` less its smallest: Gambit's scale for `maxregret`."""
 function payoff_range(gains::NormalFormGains{N, A})::eltype(A) where {N, A}
     return maximum(maximum, gains.payoffs) - minimum(minimum, gains.payoffs)
@@ -105,15 +113,17 @@ end
 
 pygambit's `logit_solve_lambda`: the `LogitQREProfile` on the principal branch of the normal-form game `gains`
 (`NormalFormGains`) at each precision in `lam`, a number or a vector, in `lam`'s order, or the first trace's failure.
-`first_step` and `max_accel` set the trace's steps (`gambit_settings`); `settings` replaces them whole.
+`first_step` and `max_accel` set the trace's steps (`gambit_settings`); `settings` replaces them whole. Profiles take
+the payoffs' element type, and `settings` must share it (`ArgumentError` otherwise).
 """
 function logit_solve_lambda(
     gains::NormalFormGains{N},
     lam::AbstractVector{<:Real};
     first_step::Real = 0.03f0,
     max_accel::Real = 1.1f0,
-    settings::TraceSettings{E} = gambit_settings(first_step, max_accel),
+    settings::TraceSettings{E} = gambit_settings(eltype(gains)(first_step), max_accel),
 )::BranchResult{E, N} where {N, E <: Real}
+    require_payoff_type(gains, settings)
     # ponytail: one trace per precision; one trace stopping at each would save the repeated low-precision steps.
     results = lambda_profile.((gains,), E.(lam), (settings,))
     for result in results
@@ -129,7 +139,7 @@ function logit_solve_lambda(
     lam::Real;
     first_step::Real = 0.03f0,
     max_accel::Real = 1.1f0,
-    settings::TraceSettings{E} = gambit_settings(first_step, max_accel),
+    settings::TraceSettings{E} = gambit_settings(eltype(gains)(first_step), max_accel),
 )::BranchResult{E, N} where {N, E <: Real}
     return logit_solve_lambda(gains, [lam]; settings)
 end
@@ -147,18 +157,19 @@ function logit_solve_branch(
     first_step::Real = 0.03f0,
     max_accel::Real = 1.1f0,
     maximum_precision::Real = 1.0f6,
-    settings::TraceSettings{E} = gambit_settings(first_step, max_accel),
+    settings::TraceSettings{E} = gambit_settings(eltype(gains)(first_step), max_accel),
     maxregret::Real = sqrt(eps(typeof(settings.first_step))),
 )::BranchResult{E, N} where {N, E <: Real}
     if !(maxregret > 0)
         throw(ArgumentError("maxregret must be positive; got $maxregret"))
     end
+    require_payoff_type(gains, settings)
     width = logit_count(gains)
     recorder = BranchRecorder(
         gains,
         E(maximum_precision),
         E(maxregret) * E(payoff_range(gains)),
-        fill(E(NaN32), settings.max_steps + 1),
+        fill(E(NaN), settings.max_steps + 1),
         zeros(E, width, settings.max_steps + 1),
     )
     result = trace_endpoint(LogitGame(gains, E(maximum_precision)), width, settings; keep_going = recorder, context = (; maxregret))
@@ -186,7 +197,7 @@ function logit_solve(
     first_step::Real = 0.03f0,
     max_accel::Real = 1.1f0,
     maximum_precision::Real = 1.0f6,
-    settings::TraceSettings{E} = gambit_settings(first_step, max_accel),
+    settings::TraceSettings{E} = gambit_settings(eltype(gains)(first_step), max_accel),
     maxregret::Real = sqrt(eps(typeof(settings.first_step))),
 )::ProfileResult{E, N} where {N, E <: Real}
     branch = logit_solve_branch(gains; maxregret, maximum_precision, settings)
