@@ -68,7 +68,12 @@ PALC's `step_control` for `control` over `width` gaps in `geometry`: `nothing` w
 `CorrectorQuality`, its distance limit scaled from the gaps' Euclidean length into the norm. Its contraction rate,
 `corrector`'s limit and offset, slows growth only: `CorrectorReach` refuses on the rate in logits.
 """
-corrector_quality(::Nothing, ::CorrectorSettings, ::TraceGeometry, ::Integer)::Nothing = nothing
+corrector_quality(
+    ::Nothing,
+    ::CorrectorSettings,
+    ::TraceGeometry,
+    ::Integer,
+)::Nothing = nothing
 
 function corrector_quality(
     control::StepControl{E},
@@ -96,7 +101,12 @@ function palc_algorithm(
     target_precision::Real;
     orientation_check::Bool = settings.orientation_check,
 )::BifurcationKit.AbstractContinuationAlgorithm where {E <: Real}
-    return palc_with_geometry(settings, width, palc_geometry(settings.geometry, width, target_precision), orientation_check)
+    return palc_with_geometry(
+        settings,
+        width,
+        palc_geometry(settings.geometry, width, target_precision),
+        orientation_check,
+    )
 end
 
 """
@@ -114,7 +124,12 @@ function palc_with_geometry(
         θ = geometry.palc_state_weight,
         dotθ = geometry.dot,
         bls = bordered_linear_solver(settings.bordered_solver, width + 1, E),
-        step_control = corrector_quality(settings.step_control, settings.corrector, settings.geometry, width),
+        step_control = corrector_quality(
+            settings.step_control,
+            settings.corrector,
+            settings.geometry,
+            width,
+        ),
         orientation_check = orientation_check && settings.bordered_solver == MatrixSolve,
         corrector = BifurcationKit.FreeParameterNewton(),
         orientation_dot = PlainOrientation(settings.geometry),
@@ -183,8 +198,10 @@ end
 BifurcationKit's `η` for a trace from the flat start to `target_precision`: its secant solve, `step / η` in the relative
 precision, lies `step / settings.first_tangent_divisor` from the start in the trace's distance (`precision_length`).
 """
-function opening_divisor(settings::TraceSettings{E}, target_precision::Real)::E where {E <: Real}
-    return settings.first_tangent_divisor * precision_length(settings.geometry, zero(E), E(target_precision))
+function opening_divisor(settings::TraceSettings{E}, target_precision::Real)::E where {E <:
+    Real}
+    return settings.first_tangent_divisor *
+        precision_length(settings.geometry, zero(E), E(target_precision))
 end
 
 """
@@ -207,7 +224,12 @@ function trace_iterator(
     return continuation_iterator(
         branch_problem(game, start, last(start); record_from_solution = trace_record_point),
         palc_algorithm(settings, length(start) - 1, game.target_precision),
-        continuation_options(settings, step_length, max_steps, opening_divisor(settings, game.target_precision)),
+        continuation_options(
+            settings,
+            step_length,
+            max_steps,
+            opening_divisor(settings, game.target_precision),
+        ),
         finalise,
         corrector,
     )
@@ -238,11 +260,23 @@ BifurcationKit's first continuation state of `iterator`. From the flat start the
 secant to a second solve. After a redraw, the run opens through BifurcationKit's two-point start toward the point
 `opening`, whose secant is the restart tangent.
 """
-opened_state(iterator::BifurcationKit.ContIterable, ::Nothing)::BifurcationKit.ContState = first(iterate(iterator))
+opened_state(
+    iterator::BifurcationKit.ContIterable,
+    ::Nothing,
+)::BifurcationKit.ContState = first(iterate(iterator))
 
-function opened_state(iterator::BifurcationKit.ContIterable, opening::AbstractVector)::BifurcationKit.ContState
+function opened_state(
+    iterator::BifurcationKit.ContIterable,
+    opening::AbstractVector,
+)::BifurcationKit.ContState
     start = BifurcationKit.getu0(iterator.prob)
-    return first(BifurcationKit.iterate_from_two_points(iterator, start, last(start), opening, last(opening)))
+    return first(BifurcationKit.iterate_from_two_points(
+        iterator,
+        start,
+        last(start),
+        opening,
+        last(opening),
+    ))
 end
 
 """
@@ -259,10 +293,18 @@ function restart_opening(
 )::NamedTuple where {E <: Real}
     algorithm = iterator.alg
     start = BifurcationKit.getu0(iterator.prob)
-    dot, palc_state_weight = BifurcationKit.getdot(algorithm), E(BifurcationKit.getθ(algorithm))
+    dot, palc_state_weight = BifurcationKit.getdot(algorithm),
+        E(BifurcationKit.getθ(algorithm))
     # A Fisher trace's weights are those of the point it restarts from.
     BifurcationKit.reweight!(dot, BifurcationKit.BorderedArray(start, last(start)))
-    tangent = restart_tangent(game, start, old_tangent, dot, palc_state_weight, algorithm.orientation_dot)
+    tangent = restart_tangent(
+        game,
+        start,
+        old_tangent,
+        dot,
+        palc_state_weight,
+        algorithm.orientation_dot,
+    )
     length_in_norm = sqrt(palc_product(dot, palc_state_weight, tangent, tangent))
     return (;
         opening = start .+ (iterator.contparams.ds / length_in_norm) .* tangent,
@@ -308,8 +350,21 @@ function trace_endpoint(
             (; context..., logits = flat, relative_precision = zero(E)),
         ))
     end
-    opening = TraceProgress(payoff_gaps(traced_start)[:], zero(E), 0, zero(E), zero(E), zero(flat), zero(E), false)
-    finalise = TraceFinalise(keep_going, redraw, RedrawSlot(game, game, false, settings.first_step))
+    opening = TraceProgress(
+        payoff_gaps(traced_start)[:],
+        zero(E),
+        0,
+        zero(E),
+        zero(E),
+        zero(flat),
+        zero(E),
+        false,
+    )
+    finalise = TraceFinalise(
+        keep_going,
+        redraw,
+        RedrawSlot(game, game, false, settings.first_step),
+    )
     return redrawn_trace(
         guarded_trace(traced_start, nothing, settings, finalise, accept_corrected, opening),
         finalise,
@@ -342,19 +397,35 @@ function redrawn_trace(
         return reached_state(progress, outcome, slot.game, settings, context)
     end
     slot.pending = false
-    crossing = redraw_crossing(slot.before, slot.game, [progress.gaps; progress.relative_precision], settings)
+    crossing = redraw_crossing(
+        slot.before,
+        slot.game,
+        [progress.gaps; progress.relative_precision],
+        settings,
+    )
     @debug "redraw crossed" _group = :trace reason = crossing.reason steps = crossing.steps
     if crossing.reason != :crossed
         @debug "trace stopped" _group = :trace reason = crossing.reason steps = crossing.steps
         # The context's logits are the accepted point, a root of the game before the swap.
         return Err(TraceFailure(
             TraceStuck,
-            (; stopped_context(progress, outcome, target_precision, context)..., projected = true, crossing.reason),
+            (; stopped_context(
+                progress,
+                outcome,
+                target_precision,
+                context,
+            )..., projected = true, crossing.reason),
         ))
     end
     crossed = TraceProgress{E}(
-        payoff_gaps(crossing.point)[:], progress.relative_precision, progress.steps, progress.precision_min,
-        progress.precision_max, progress.gap_tangent, progress.tangent_precision, progress.unmoved,
+        payoff_gaps(crossing.point)[:],
+        progress.relative_precision,
+        progress.steps,
+        progress.precision_min,
+        progress.precision_max,
+        progress.gap_tangent,
+        progress.tangent_precision,
+        progress.unmoved,
     )
     if crossed.relative_precision == one(E) || crossed.steps >= settings.max_steps
         return reached_state(crossed, outcome, slot.game, settings, context)
@@ -362,7 +433,12 @@ function redrawn_trace(
     return redrawn_trace(
         with_earlier_accuracy(
             guarded_trace(
-                crossing.point, [crossed.gap_tangent; crossed.tangent_precision], settings, finalise, accept_corrected, crossed,
+                crossing.point,
+                [crossed.gap_tangent; crossed.tangent_precision],
+                settings,
+                finalise,
+                accept_corrected,
+                crossed,
             ),
             outcome.logit_accuracy,
         ),
@@ -398,11 +474,23 @@ function guarded_trace(
     accept_corrected::Any,
     opening::TraceProgress{E},
 )::NamedTuple where {E <: Real}
-    corrector = CorrectorReach(accept_corrected, settings.corrector, settings.geometry, similar(start), similar(start), zero(E))
+    corrector = CorrectorReach(
+        accept_corrected,
+        settings.corrector,
+        settings.geometry,
+        similar(start),
+        similar(start),
+        zero(E),
+    )
     return segment_outcome(
         segment_branch(
             trace_iterator(
-                finalise.slot.game, start, settings, finalise, corrector, finalise.slot.step_length,
+                finalise.slot.game,
+                start,
+                settings,
+                finalise,
+                corrector,
+                finalise.slot.step_length,
                 settings.max_steps - opening.steps,
             ),
             finalise.slot.game,
@@ -414,11 +502,18 @@ function guarded_trace(
 end
 
 """`guarded_trace`'s outcome of a segment that `ran` (`segment_branch`) under `corrector`."""
-function segment_outcome(ran::NamedTuple, corrector::CorrectorReach{C, E})::NamedTuple where {C, E <: Real}
+function segment_outcome(
+    ran::NamedTuple,
+    corrector::CorrectorReach{C, E},
+)::NamedTuple where {C, E <: Real}
     return (;
         ran.progress,
         step_length = ifelse(isnothing(ran.exception), corrector.step_length, zero(E)),
-        exhausted = ifelse(isnothing(ran.exception) && noise_confirmed(corrector), corrector.noise.suspect, nothing),
+        exhausted = ifelse(
+            isnothing(ran.exception) && noise_confirmed(corrector),
+            corrector.noise.suspect,
+            nothing,
+        ),
         logit_accuracy = corrector.noise.accuracy,
         ran.exception,
     )
@@ -450,11 +545,18 @@ function segment_branch(
     old_tangent::Union{Nothing, AbstractVector{E}},
     opening::TraceProgress{E},
 )::NamedTuple where {E <: Real}
-    return restarted_segment(iterator, guarded_restart(iterator, game, old_tangent, opening), opening)
+    return restarted_segment(
+        iterator,
+        guarded_restart(iterator, game, old_tangent, opening),
+        opening,
+    )
 end
 
-restarted_segment(::BifurcationKit.ContIterable, thrown::Thrown, opening::TraceProgress)::NamedTuple =
-    (; progress = opening, thrown.exception)
+restarted_segment(
+    ::BifurcationKit.ContIterable,
+    thrown::Thrown,
+    opening::TraceProgress,
+)::NamedTuple = (; progress = opening, thrown.exception)
 
 function restarted_segment(
     iterator::BifurcationKit.ContIterable,
@@ -462,21 +564,35 @@ function restarted_segment(
     opening::TraceProgress{E},
 )::NamedTuple where {E <: Real}
     opened = TraceProgress{E}(
-        opening.gaps, opening.relative_precision, opening.steps, opening.precision_min, opening.precision_max,
-        restart.gap_tangent, restart.tangent_precision, opening.unmoved,
+        opening.gaps,
+        opening.relative_precision,
+        opening.steps,
+        opening.precision_min,
+        opening.precision_max,
+        restart.gap_tangent,
+        restart.tangent_precision,
+        opening.unmoved,
     )
     return opened_segment(iterator, guarded_state(iterator, restart.opening), opened)
 end
 
-opened_segment(::BifurcationKit.ContIterable, thrown::Thrown, opened::TraceProgress)::NamedTuple =
-    (; progress = opened, thrown.exception)
+opened_segment(
+    ::BifurcationKit.ContIterable,
+    thrown::Thrown,
+    opened::TraceProgress,
+)::NamedTuple = (; progress = opened, thrown.exception)
 
 function opened_segment(
     iterator::BifurcationKit.ContIterable,
     state::BifurcationKit.ContState,
     opened::TraceProgress,
 )::NamedTuple
-    return continued_segment(iterator, state, BifurcationKit.ContResult(iterator, state), opened)
+    return continued_segment(
+        iterator,
+        state,
+        BifurcationKit.ContResult(iterator, state),
+        opened,
+    )
 end
 
 """The segment from `state`, its records saved in `branch` as BifurcationKit continues it."""
@@ -490,11 +606,17 @@ function continued_segment(
     return ended_segment(guarded_continuation!(iterator, state, branch), branch, opened)
 end
 
-ended_segment(::Ended, branch::BifurcationKit.ContResult, opened::TraceProgress)::NamedTuple =
-    (; progress = branch_progress(branch.branch, opened), exception = nothing)
+ended_segment(
+    ::Ended,
+    branch::BifurcationKit.ContResult,
+    opened::TraceProgress,
+)::NamedTuple = (; progress = branch_progress(branch.branch, opened), exception = nothing)
 
-ended_segment(thrown::Thrown, branch::BifurcationKit.ContResult, opened::TraceProgress)::NamedTuple =
-    (; progress = branch_progress(branch.branch, opened), thrown.exception)
+ended_segment(
+    thrown::Thrown,
+    branch::BifurcationKit.ContResult,
+    opened::TraceProgress,
+)::NamedTuple = (; progress = branch_progress(branch.branch, opened), thrown.exception)
 
 """`restart_opening`, or the `Thrown` failure that `expected_failure` names; any other exception propagates."""
 function guarded_restart(
@@ -506,10 +628,7 @@ function guarded_restart(
     try
         return restart_opening(iterator, game, old_tangent, opening)
     catch exception
-        if !expected_failure(exception)
-            rethrow()
-        end
-        return Thrown(exception)
+        return thrown_failure(exception)
     end
 end
 
@@ -521,10 +640,7 @@ function guarded_state(
     try
         return opened_state(iterator, opening)
     catch exception
-        if !expected_failure(exception)
-            rethrow()
-        end
-        return Thrown(exception)
+        return thrown_failure(exception)
     end
 end
 
@@ -538,15 +654,21 @@ function guarded_continuation!(
         BifurcationKit.continuation!(iterator, state, branch)
         return Ended()
     catch exception
-        if !expected_failure(exception)
-            rethrow()
-        end
-        return Thrown(exception)
+        return thrown_failure(exception)
     end
 end
 
+"""The `Thrown` failure holding `exception` if `expected_failure` names it; any other exception is rethrown."""
+function thrown_failure(exception::Any)::Thrown
+    if !expected_failure(exception)
+        throw(exception)
+    end
+    return Thrown(exception)
+end
+
 """Whether `exception` is a failure BifurcationKit reports by throwing: an `uncorrected_start` or a `solver_blowup`."""
-expected_failure(exception::Any)::Bool = uncorrected_start(exception) || solver_blowup(exception)
+expected_failure(exception::Any)::Bool = uncorrected_start(exception) ||
+    solver_blowup(exception)
 
 """
     restart_opening(iterator, game, old_tangent, opening)
@@ -593,7 +715,12 @@ function reached_state(
         @debug "trace stopped" _group = :trace reason = :precision_exhausted relative_precision correction
         return Err(TraceFailure(
             PrecisionExhausted,
-            (; lambda = target_precision * relative_precision, correction, stopped_context(progress, outcome, target_precision, context)...),
+            (; lambda = target_precision * relative_precision, correction, stopped_context(
+                progress,
+                outcome,
+                target_precision,
+                context,
+            )...),
         ))
     end
     if isnothing(outcome.exception) && progress.relative_precision == one(E)
@@ -613,7 +740,10 @@ function reached_state(
         :stopped_short
     end
     @debug "trace stopped" _group = :trace reason
-    return Err(TraceFailure(STOP_CAUSES[reason], stopped_context(progress, outcome, target_precision, context)))
+    return Err(TraceFailure(
+        STOP_CAUSES[reason],
+        stopped_context(progress, outcome, target_precision, context),
+    ))
 end
 
 # The cause a trace that stops short for each reason fails with.
@@ -641,7 +771,8 @@ function stopped_context(
         progress.precision_min, progress.precision_max, progress.unmoved,
         logits = progress.relative_precision .* progress.gaps, progress.relative_precision,
         step_length = E(outcome.step_length),
-        logit_tangent = progress.relative_precision .* progress.gap_tangent .+ progress.tangent_precision .* progress.gaps,
+        logit_tangent = progress.relative_precision .* progress.gap_tangent .+
+            progress.tangent_precision .* progress.gaps,
         progress.tangent_precision,
         logit_accuracy = E(outcome.logit_accuracy),
         outcome.exception,

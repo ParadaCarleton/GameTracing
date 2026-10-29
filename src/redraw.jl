@@ -55,15 +55,42 @@ function redraw_crossing(
     settings::TraceSettings{E},
 )::CrossingResult{E} where {E <: Real}
     relative_precision = last(point)
-    corrector = CorrectorReach(AcceptAll(), settings.corrector, settings.geometry, similar(point), similar(point), zero(E))
+    corrector = CorrectorReach(
+        AcceptAll(),
+        settings.corrector,
+        settings.geometry,
+        similar(point),
+        similar(point),
+        zero(E),
+    )
     try
         return homotopy_crossing(
-            branch_problem(before, point, relative_precision; record_from_solution = trace_record_precision),
-            branch_problem(after, point, relative_precision; record_from_solution = trace_record_precision),
+            branch_problem(
+            before,
+            point,
+            relative_precision;
+            record_from_solution = trace_record_point,
+        ),
+            branch_problem(
+            after,
+            point,
+            relative_precision;
+            record_from_solution = trace_record_point,
+        ),
             point,
             # The orientation check flips the tangent at a branch point, which would read a crossing as a fold.
-            palc_algorithm(settings, length(point) - 1, before.target_precision; orientation_check = false),
-            continuation_options(settings, settings.first_step, settings.max_steps, settings.first_tangent_divisor);
+            palc_algorithm(
+            settings,
+            length(point) - 1,
+            before.target_precision;
+            orientation_check = false,
+        ),
+            continuation_options(
+            settings,
+            settings.first_step,
+            settings.max_steps,
+            settings.first_tangent_divisor,
+        );
             callback_newton = corrector,
         )
     catch exception
@@ -91,10 +118,22 @@ function restart_tangent(
     orientation::PlainOrientation{E},
 )::AbstractVector{E} where {E <: Real}
     width = length(point) - 1
-    jacobian = branch_system!(BranchWorkspace(game, point), game, point, last(point)).jacobian
+    jacobian = branch_system!(
+        BranchWorkspace(game, point),
+        game,
+        point,
+        last(point),
+    ).jacobian
     border = palc_border(dot, state_weight, old_tangent)
     # fatou-ignore call-arity: Base `view` takes any number of indices (jolars/fatou#125)
     bordered = [view(jacobian, 1:width, :); transpose(border)]
     tangent = bordered \ setindex!(zeros(E, width + 1), one(E), width + 1)
-    return sign(orientation(old_tangent, tangent, last(old_tangent), last(tangent), state_weight)) .* tangent
+    return sign(orientation(
+        old_tangent,
+        tangent,
+        last(old_tangent),
+        last(tangent),
+        state_weight,
+    )) .*
+        tangent
 end
