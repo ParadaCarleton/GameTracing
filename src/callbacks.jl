@@ -42,15 +42,16 @@ within_limit(::Nothing, ::Real)::Bool = true
 within_limit(limit::Real, measured::Real)::Bool = measured <= limit
 
 """
-    NoiseRecord(accuracy, suspect)
+    NoiseRecord(accuracy, suspect, accepted_step)
 
 A corrector's record over its trace. `accuracy`: the largest last correction of a closing point the corrector
 accepted. `suspect`: the last suspected stall at rounding noise, or `nothing`; `confirmed` means it exhausted the
-precision.
+precision. `accepted_step`: the `step_length` of the last corrector that closed converged, zero before any did.
 """
 struct NoiseRecord{E <: Real}
     accuracy::E
     suspect::Union{Nothing, @NamedTuple{relative_precision::E, correction::E, confirmed::Bool}}
+    accepted_step::E
 end
 
 """
@@ -104,7 +105,7 @@ function CorrectorReach(
     # A plain Newton solve has no predictor move: NaN fails the noise test, so its stalls refuse.
     return CorrectorReach{C, E}(
         accept_corrected, settings, geometry, collect(previous), collect(predicted), step_length,
-        E(NaN32), collect(previous), E(NaN32), 0, false, NoiseRecord(zero(E), nothing),
+        E(NaN32), collect(previous), E(NaN32), 0, false, NoiseRecord(zero(E), nothing, zero(E)),
     )
 end
 
@@ -182,7 +183,10 @@ function (check::CorrectorReach{C, E})(iterate::I;
     # A solve that settled at its start has no correction (NaN). An unsettled exact root's next correction is 0.
     closing_correction = ifelse(check.settled_here, check.correction, zero(E))
     if converged && !isnan(closing_correction)
-        check.noise = NoiseRecord(max(check.noise.accuracy, closing_correction), check.noise.suspect)
+        check.noise = NoiseRecord(max(check.noise.accuracy, closing_correction), check.noise.suspect, check.noise.accepted_step)
+    end
+    if converged
+        check.noise = NoiseRecord(check.noise.accuracy, check.noise.suspect, check.step_length)
     end
     return closing_verdict(check, true)
 end
@@ -218,7 +222,7 @@ function corrected!(
         return false
     end
     if settled(check, iterate, correction)
-        check.settled_here, check.noise = true, NoiseRecord(check.noise.accuracy, nothing)
+        check.settled_here, check.noise = true, NoiseRecord(check.noise.accuracy, nothing, check.noise.accepted_step)
         return BifurcationKit.NewtonConverged()
     end
     (; contraction_limit, contraction_offset, logit_tolerance) = check.settings
@@ -239,7 +243,7 @@ function corrected!(
     suspect = check.noise.suspect
     confirmed = !isnothing(suspect) && correction >= suspect.correction / 2
     @debug "corrector stopped" _group = :trace reason = :noise confirmed correction predictor_move = check.predictor_move
-    check.noise = NoiseRecord(check.noise.accuracy, (; relative_precision = last(iterate.x), correction, confirmed))
+    check.noise = NoiseRecord(check.noise.accuracy, (; relative_precision = last(iterate.x), correction, confirmed), check.noise.accepted_step)
     return false
 end
 
