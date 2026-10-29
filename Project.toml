@@ -11,7 +11,7 @@ Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
 
 [sources]
 Corset = {url = "https://github.com/ParadaCarleton/Corset.jl", rev = "main"}
-BifurcationKit = {url = "https://github.com/ParadaCarleton/BifurcationKit.jl", rev = "irv"}
+BifurcationKit = {url = "https://github.com/ParadaCarleton/BifurcationKit.jl", rev = "orientation-at-exact-root"}
 
 [extras]
 CondaPkg = "992eb4ea-22a4-4c89-a5bb-47a3300528ab"
