@@ -424,10 +424,16 @@ function segment_outcome(ran::NamedTuple, corrector::CorrectorReach{C, E})::Name
     )
 end
 
+"""How a guarded BifurcationKit call ended other than with its result: `Thrown` or `Ended`."""
+abstract type GuardedEnd end
+
 """An exception BifurcationKit threw that `expected_failure` names, held as a value."""
-struct Thrown{X}
+struct Thrown{X} <: GuardedEnd
     exception::X
 end
+
+"""BifurcationKit's `continuation!` ran to its end."""
+struct Ended <: GuardedEnd end
 
 """
     segment_branch(iterator, game, old_tangent, opening)
@@ -484,7 +490,7 @@ function continued_segment(
     return ended_segment(guarded_continuation!(iterator, state, branch), branch, opened)
 end
 
-ended_segment(::Nothing, branch::BifurcationKit.ContResult, opened::TraceProgress)::NamedTuple =
+ended_segment(::Ended, branch::BifurcationKit.ContResult, opened::TraceProgress)::NamedTuple =
     (; progress = branch_progress(branch.branch, opened), exception = nothing)
 
 ended_segment(thrown::Thrown, branch::BifurcationKit.ContResult, opened::TraceProgress)::NamedTuple =
@@ -496,7 +502,7 @@ function guarded_restart(
     game::LogitGame,
     old_tangent::Union{Nothing, AbstractVector{E}},
     opening::TraceProgress{E},
-)::Union{NamedTuple, Thrown} where {E <: Real}
+)::Union{NamedTuple, GuardedEnd} where {E <: Real}
     try
         return restart_opening(iterator, game, old_tangent, opening)
     catch exception
@@ -511,7 +517,7 @@ end
 function guarded_state(
     iterator::BifurcationKit.ContIterable,
     opening::Union{Nothing, AbstractVector},
-)::Union{BifurcationKit.ContState, Thrown}
+)::Union{BifurcationKit.ContState, GuardedEnd}
     try
         return opened_state(iterator, opening)
     catch exception
@@ -522,15 +528,15 @@ function guarded_state(
     end
 end
 
-"""BifurcationKit's `continuation!`, `nothing` once it ends, or the `Thrown` failure that `expected_failure` names."""
+"""BifurcationKit's `continuation!`: `Ended` once it ends, or the `Thrown` failure that `expected_failure` names."""
 function guarded_continuation!(
     iterator::BifurcationKit.ContIterable,
     state::BifurcationKit.ContState,
     branch::BifurcationKit.ContResult,
-)::Union{Nothing, Thrown}
+)::GuardedEnd
     try
         BifurcationKit.continuation!(iterator, state, branch)
-        return nothing
+        return Ended()
     catch exception
         if !expected_failure(exception)
             rethrow()
