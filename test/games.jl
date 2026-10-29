@@ -86,12 +86,14 @@ function (::PrecisionGainPass)(
 end
 
 """
-One logit with a flat gain `level` plus deterministic noise of size `noise`: a uniform draw in `[-1, 1)` hashed from the
-logit's bits, which the slope does not see. Newton's corrections there are `λ noise` times a difference of two draws.
+One logit with a flat gain `level`, plus deterministic noise of size `noise` past the precision `onset`: a uniform draw
+in `[-1, 1)` hashed from the logit's bits, which the slope does not see. Newton's corrections there are `λ noise` times
+a difference of two draws.
 """
 struct NoisyFlatPass{E <: Real}
     level::E
     noise::E
+    onset::E
 end
 
 function (pass::NoisyFlatPass)(
@@ -99,9 +101,9 @@ function (pass::NoisyFlatPass)(
     gain_slope::AbstractMatrix,
     gain_precision_slope::AbstractVector,
     logits::AbstractVector{E},
-    ::Real,
+    precision::Real,
 )::Nothing where {E <: Real}
-    draw = E(hash(only(logits)) % 65536) / 32768 - one(E)
+    draw = (E(hash(only(logits)) % 65536) / 32768 - one(E)) * (precision > pass.onset)
     fill!(gain, pass.level + pass.noise * draw)
     fill!(gain_slope, zero(E))
     fill!(gain_precision_slope, zero(E))

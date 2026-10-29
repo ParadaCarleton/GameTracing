@@ -132,9 +132,9 @@ end
 end
 
 @testset "a gain with noise of size η fails PrecisionExhausted where λ η passes the logit tolerance" begin
-    # The trace's gaps `w = target G` carry noise `target η` at every precision: 1e-2 here, under the gaps' 10.
-    # A target of 1e6 at η = 1e-6 put noise 1 in the gaps from the start, where the steps went into it and λ stalled.
-    pass, target = NoisyFlatPass(1.0f-4, 1.0f-7), 1.0f5
+    # The noise starts at λ = 10, far under the predicted λ = tolerance / η = 1e3. Hashed noise from the flat start
+    # stalled the opening at ρ ≈ 4e-19, whatever η: zero-slope gains whose every evaluation jumps leave no first step.
+    pass, target = NoisyFlatPass(1.0f-4, 1.0f-7, 10.0f0), 1.0f5
     settings = TraceSettings{Float32}(; LOG_PRECISION_SETTINGS.geometry, max_steps = 20_000)
     tolerance = settings.corrector.logit_tolerance
     failure = unwrap_error(trace_endpoint(LogitGame(pass, target), 1, settings))
