@@ -134,8 +134,8 @@ end
 end
 
 @testset "the default smallest step is the smallest positive number of the settings' element type" begin
-    for element in (Float16, Float32, Float64)
-        @test TraceSettings{element}().min_step == floatmin(element)
+    for element in (Float16, Float32, float(Int))
+        @test TraceSettings{element}().min_step == nextfloat(zero(element))
     end
 end
 
