@@ -85,6 +85,29 @@ function (::PrecisionGainPass)(
     return nothing
 end
 
+"""
+One logit with a flat gain `level` plus deterministic noise of size `noise`: a uniform draw in `[-1, 1)` hashed from the
+logit's bits, which the slope does not see. Newton's corrections there are `λ noise` times a difference of two draws.
+"""
+struct NoisyFlatPass{E <: Real}
+    level::E
+    noise::E
+end
+
+function (pass::NoisyFlatPass)(
+    gain::AbstractVector,
+    gain_slope::AbstractMatrix,
+    gain_precision_slope::AbstractVector,
+    logits::AbstractVector{E},
+    ::Real,
+)::Nothing where {E <: Real}
+    draw = E(hash(only(logits)) % 65536) / 32768 - one(E)
+    fill!(gain, pass.level + pass.noise * draw)
+    fill!(gain_slope, zero(E))
+    fill!(gain_precision_slope, zero(E))
+    return nothing
+end
+
 """A pass whose gain and slopes are NaN once the precision passes `poison`, as a game that overflows there is."""
 struct PoisonedPass{P, E <: Real}
     pass::P

@@ -117,17 +117,20 @@ end
     @test solve_verdicts(noisy, Float32[0]) == [false]
 end
 
-@testset "a pure equilibrium traced in Float32 to 1e6 fails PrecisionExhausted where a logit's rounding passes the tolerance" begin
-    gains = NormalFormGains(map(table -> Float32.(table), LOGITNASH_GAMES.prisoners_dilemma))
+@testset "a gain with noise of size η fails PrecisionExhausted where λ η passes the logit tolerance" begin
+    pass = NoisyFlatPass(1.0f-2, 1.0f-6)
     settings = LOG_PRECISION_SETTINGS
-    failure = unwrap_error(trace_endpoint(LogitGame(gains, FAR_TARGET), GameTracing.logit_count(gains), settings))
+    tolerance = settings.corrector.logit_tolerance
+    failure = unwrap_error(trace_endpoint(LogitGame(pass, FAR_TARGET), 1, settings))
     @test failure.cause == GameTracing.PrecisionExhausted
-    (; lambda, correction, logits) = failure.context
-    @test 1 < lambda < FAR_TARGET
-    @test correction > settings.corrector.logit_tolerance
-    # The logits grow as λ times the payoff gaps; Newton settles to their rounding, an ulp of the largest.
-    @test settings.corrector.logit_tolerance / 16 <= eps(maximum(abs, logits)) <= 16 * settings.corrector.logit_tolerance
-    @info "precision exhausted" lambda correction largest_logit = maximum(abs, logits)
+    (; lambda, correction) = failure.context
+    # Corrections are at most 2 λ η, so every one settles below λ = tolerance / 2η.
+    @test lambda > tolerance / (2 * pass.noise)
+    # Past 100 tolerance / η a correction settles about once in a hundred; the trace halves into the noise long before.
+    @test lambda < 100 * tolerance / pass.noise
+    # Two roundings of the logit `λ level` add to the noise.
+    @test tolerance < correction <= 2 * lambda * pass.noise + 2 * eps(lambda * pass.level)
+    @info "precision exhausted" lambda correction predicted = tolerance / pass.noise
 end
 
 """A `keep_going` that writes each accepted point of a trace to `target` into `precisions` and `logits`, and stops past `ceiling`."""
