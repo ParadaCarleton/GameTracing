@@ -283,5 +283,47 @@ function stall_experiment(arms::Tuple)::Nothing
     for arm in arms
         println(stall_report(arm, precision, reference))
     end
+    for arm in ("B4", "E")
+        jump_report(arm, precision, (0.79f0, 0.9f0))
+    end
+    return nothing
+end
+
+"""
+Print arm `arm`'s accepted points with λ in `window`: λ, logits, step length, predictor move, last correction,
+reach move over predictor move, angle and the solve's contraction rates, then its endpoint logits.
+"""
+function jump_report(arm::AbstractString, precision::Real, window::Tuple)::Nothing
+    E = ifelse(arm == "E", typeof(float(1)), Float32)
+    settings = arm_settings(ARMS.fisher_log_precision_reach, E(1) / 100)
+    logs, result = collect_test_logs(StallTrace(stall_game(arm, E(precision)), settings); min_level = Debug)
+    records = [record for record in logs if record.group == :trace]
+    # Each solve logs its corrections, then "corrector closed", then "corrector closing" once it converged.
+    solve_start, rates, closing = 1, Float32[], nothing
+    for (position, record) in pairs(records)
+        if record.message == "corrector closed"
+            solve = view(records, solve_start:position)
+            corrections = [entry.kwargs[:correction] for entry in solve if entry.message == "corrector correction"]
+            rates = corrections[2:end] ./ corrections[1:(end - 1)]
+            solve_start = position + 1
+        elseif record.message == "corrector closing"
+            closing = (; record.kwargs..., rates)
+        elseif record.message == "trace point"
+            state = record.kwargs[:state]
+            level = last(state) * precision
+            if first(window) <= level <= last(window) && !isnothing(closing)
+                logits = last(state) .* state[1:(end - 1)]
+                println(@sprintf("JUMP %s λ=%.6f z=(%.5f, %.5f) ds=%.3e predictor_move=%.3e correction=%.3e reach_ratio=%.3f angle=%.4f rates=%s",
+                    arm, level, first(logits), last(logits), closing.step_length, closing.predictor_move, closing.correction,
+                    closing.reach_move / closing.predictor_move, closing.angle, join([@sprintf("%.3f", rate) for rate in closing.rates], ",")))
+            end
+            closing = nothing
+        end
+    end
+    if is_error(result)
+        println("JUMP ", arm, " endpoint failed ", unwrap_error(result).cause)
+    else
+        println("JUMP ", arm, " endpoint ", unwrap(result).logits)
+    end
     return nothing
 end

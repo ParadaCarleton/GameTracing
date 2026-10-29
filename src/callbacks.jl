@@ -111,6 +111,9 @@ end
 """Whether `check` accepts its corrector's converged closing point `corrected` (reach, KL and angle)."""
 function closing_accepted(check::CorrectorReach{C, E}, corrected::AbstractVector{E})::Bool where {C, E <: Real}
     (; settings) = check
+    @debug "corrector closing" _group = :trace reach_move = logit_change(check.predicted, corrected) predictor_move = check.predictor_move angle = chord_angle(
+        check.previous, check.predicted, corrected,
+    ) step_length = check.step_length correction = check.correction relative_precision = last(corrected)
     if !within_reach(check, corrected)
         @debug "corrector refused" _group = :trace reason = :reach predictor_move = check.predictor_move
         return false

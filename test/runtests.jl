@@ -16,7 +16,7 @@ const WIDTH = 2
 @testset "GameTracing" begin
     include("float32_stall_experiment.jl")
     # A, B and E ran in run 40814179626, C and D in run 40814692206.
-    # B1 to B5 ran in run 40815333022; A and B rerun beside them as controls.
-    stall_experiment(("A", "B", "B1", "B2", "B3", "B4", "B5", "E"))
+    # B1 to B5 ran in run 40815333022, the A and B controls on a3bde83.
+    stall_experiment(("B4",))
     @test true
 end
