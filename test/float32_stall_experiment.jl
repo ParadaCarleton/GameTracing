@@ -286,10 +286,7 @@ function stall_experiment(arms::Tuple)::Nothing
     for arm in ("B4", "E")
         jump_report(arm, precision, (0.79f0, 0.9f0))
     end
-    noise_report("A", precision, (0.8f0, 0.812f0))
-    for factor in (0.9f0, 0.95f0, 1, 1.05f0, 1.1f0)
-        println("FIRSTSTEP ", factor, " ", first_step_endpoint(precision, factor))
-    end
+    # noise_report and first_step_endpoint ran in run 40816864095.
     return nothing
 end
 
@@ -348,7 +345,7 @@ function jump_report(arm::AbstractString, precision::Real, window::Tuple)::Nothi
     logs, result = collect_test_logs(StallTrace(stall_game(arm, E(precision)), settings); min_level = Debug)
     records = [record for record in logs if record.group == :trace]
     # Each solve logs its corrections, then "corrector closed", then "corrector closing" once it converged.
-    solve_start, rates, closing = 1, Float32[], nothing
+    solve_start, rates, closing, previous_tangent = 1, Float32[], nothing, nothing
     for (position, record) in pairs(records)
         if record.message == "corrector closed"
             solve = view(records, solve_start:position)
@@ -360,13 +357,21 @@ function jump_report(arm::AbstractString, precision::Real, window::Tuple)::Nothi
         elseif record.message == "trace point"
             state = record.kwargs[:state]
             level = last(state) * precision
-            if first(window) <= level <= last(window) && !isnothing(closing)
+            # The logged tangent is BifurcationKit's `τ.u` over `[w; ρ]`; its cosine with the last one is plain.
+            tangent = record.kwargs[:tangent]
+            cosine = ifelse(isnothing(previous_tangent), NaN32,
+                sum(tangent .* something(previous_tangent, tangent)) / sqrt(sum(abs2, tangent) * sum(abs2, something(previous_tangent, tangent))))
+            if first(window) <= level <= last(window)
                 logits = last(state) .* state[1:(end - 1)]
-                println(@sprintf("JUMP %s λ=%.6f z=(%.5f, %.5f) ds=%.3e predictor_move=%.3e correction=%.3e reach_ratio=%.3f angle=%.4f rates=%s",
-                    arm, level, first(logits), last(logits), closing.step_length, closing.predictor_move, closing.correction,
-                    closing.reach_move / closing.predictor_move, closing.angle, join([@sprintf("%.3f", rate) for rate in closing.rates], ",")))
+                println(@sprintf("TANGENT %s step=%d λ=%.6f z=(%.5f, %.5f) dρ=%.3e cosine=%.4f closing=%s",
+                    arm, record.kwargs[:step], level, first(logits), last(logits), last(tangent), cosine, string(!isnothing(closing))))
+                if !isnothing(closing)
+                    println(@sprintf("JUMP %s λ=%.6f z=(%.5f, %.5f) ds=%.3e predictor_move=%.3e correction=%.3e reach_ratio=%.3f angle=%.4f rates=%s",
+                        arm, level, first(logits), last(logits), closing.step_length, closing.predictor_move, closing.correction,
+                        closing.reach_move / closing.predictor_move, closing.angle, join([@sprintf("%.3f", rate) for rate in closing.rates], ",")))
+                end
             end
-            closing = nothing
+            previous_tangent, closing = tangent, nothing
         end
     end
     if is_error(result)
