@@ -86,6 +86,8 @@ end
         )
         @test GameTracing.closing_accepted(check, predicted)
         @test !GameTracing.closing_accepted(check, corrected)
+        # The closing call reads the solve's own verdict: it settled.
+        check.settled_here = true
         @test check((; x = corrected, res_f = zero(corrected), p = 0.5f0, step = 2, residual = 0.0f0); fromNewton = false) === false
     end
 end

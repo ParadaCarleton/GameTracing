@@ -50,8 +50,8 @@ within_limit(limit::Real, measured::Real)::Bool = measured <= limit
 
 The trace's BifurcationKit `callback_newton`, which also decides the corrector's convergence: a `settled` iterate
 ends Newton's method converged (`NewtonConverged`), and a correction that fails to contract stops it (`corrected!`).
-Two such corrections in a row, each larger than the predictor's own move in logits, are rounding noise: the check
-records them in `exhausted` and refuses every later corrector, so the trace ends `PrecisionExhausted`.
+Two such corrections in a row, each larger than the predictor's own move in logits, are suspected rounding noise
+(`noise`), confirmed at the next halved step; the check then refuses every corrector (`exhausted`).
 A non-finite residual stops the corrector,
 and so does any iterate further from the step's predictor than `settings.reach` times the predictor's own step, in
 `geometry`'s plain norm (`arclength_distance`); the step then halves. On a smooth branch that distance is the branch's
@@ -79,7 +79,18 @@ mutable struct CorrectorReach{C, E <: Real}
     correction::E
     stalls::Int
     settled_here::Bool
-    exhausted::Union{Nothing, @NamedTuple{relative_precision::E, correction::E}}
+    noise::Union{Nothing, @NamedTuple{relative_precision::E, correction::E, confirmed::Bool}}
+end
+
+"""
+`(; relative_precision, correction)` where `check`'s corrector met rounding noise, confirmed at a halved step
+(`corrected!`), or `nothing`.
+"""
+function exhausted(check::CorrectorReach{C, E})::Union{Nothing, @NamedTuple{relative_precision::E, correction::E}} where {C, E <: Real}
+    if isnothing(check.noise) || !check.noise.confirmed
+        return nothing
+    end
+    return (; check.noise.relative_precision, check.noise.correction)
 end
 
 function CorrectorReach(
@@ -181,15 +192,16 @@ end
 is the solve's start and never settles. Each later one is a correction `Δz` from the iterate before: it settles
 (`NewtonConverged`) when `settled`. A correction past `contraction_limit` times the one before (plus
 `logit_tolerance · contraction_offset`) fails to contract, Gambit's test (path.cc), and stops the corrector, so the
-step halves; unless it is larger than the predictor's own move, which halving cannot shrink below. Two such in a row
-are rounding noise: `check.exhausted` records `ρ` and the correction, and every later solve refuses at its start.
+step halves. Two in a row, each larger than the predictor's own move, are suspected noise (`check.noise`); the
+step still halves. A second such solve before any settles, its correction at least half the suspect's, confirms it
+(`exhausted`): halving shrinks the corrections of a predictor past a fold, not noise. Every later solve refuses.
 """
 function corrected!(
     check::CorrectorReach{C, E},
     iterate::NamedTuple,
     proceed::Bool,
 )::Union{Bool, BifurcationKit.NewtonConverged} where {C, E <: Real}
-    if !isnothing(check.exhausted)
+    if !isnothing(exhausted(check))
         return false
     end
     if iterate.step == 0
@@ -204,7 +216,7 @@ function corrected!(
         return false
     end
     if settled(check, iterate, correction)
-        check.settled_here = true
+        check.settled_here, check.noise = true, nothing
         return BifurcationKit.NewtonConverged()
     end
     (; contraction_limit, contraction_offset, logit_tolerance) = check.settings
@@ -221,8 +233,11 @@ function corrected!(
     if check.stalls < 2
         return true
     end
-    @debug "corrector stopped" _group = :trace reason = :precision_exhausted correction predictor_move = check.predictor_move
-    check.exhausted = (; relative_precision = last(iterate.x), correction)
+    # A predictor past a fold can draw corrections larger than its own move; halving shrinks those, not noise.
+    suspected = check.noise
+    confirmed = !isnothing(suspected) && correction >= suspected.correction / 2
+    @debug "corrector stopped" _group = :trace reason = :noise confirmed correction predictor_move = check.predictor_move
+    check.noise = (; relative_precision = last(iterate.x), correction, confirmed)
     return false
 end
 

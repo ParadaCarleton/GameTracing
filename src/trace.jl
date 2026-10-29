@@ -223,7 +223,7 @@ function continue_trace(
         finalise,
         corrector,
     )
-    return (; corrector.step_length, corrector.exhausted)
+    return (; corrector.step_length, exhausted = exhausted(corrector))
 end
 
 """
