@@ -1,5 +1,6 @@
 using BifurcationKit: BifurcationKit
 using ErrorTypes: is_error, unwrap, unwrap_error
+using LinearAlgebra: SingularException
 using Random: Random
 
 @testset "trace reaches a fixed point of the logit map" begin
@@ -74,7 +75,8 @@ struct StopPast{E <: Real}
     limit::E
 end
 
-(stop::StopPast)(::AbstractVector, relative_precision::Real)::Bool = relative_precision < stop.limit
+(stop::StopPast)(::AbstractVector, relative_precision::Real)::Bool = relative_precision <
+    stop.limit
 
 @testset "a failure reports its tangent in logits" begin
     result = trace_endpoint(
@@ -84,10 +86,16 @@ end
         keep_going = StopPast(0.75f0),
     )
     @test unwrap_error(result).cause == GameTracing.TraceStuck
-    (; logits, logit_tangent, tangent_precision, relative_precision) = unwrap_error(result).context
+    (; logits, logit_tangent, tangent_precision, relative_precision) = unwrap_error(
+        result,
+    ).context
     # A step `h` along the branch's tangent leaves a residual of order h², far under h ‖dz‖.
     step = 1.0f-2
-    moved = residual_norm(GAME, logits .+ step .* logit_tangent, TARGET_PRECISION * (relative_precision + step * tangent_precision))
+    moved = residual_norm(
+        GAME,
+        logits .+ step .* logit_tangent,
+        TARGET_PRECISION * (relative_precision + step * tangent_precision),
+    )
     @test moved < step * maximum(abs, logit_tangent) / 10
 end
 
@@ -117,11 +125,20 @@ end
     for state_weight in (0.1f0, 0.5f0, 0.9f0), distance in instances(StepDistance)
         geometry = TraceGeometry{Float32}(; distance, state_weight)
         # A log-precision trace carries its state weight in its dot and runs PALC at a weight set by the target.
-        palc_state_weight = ifelse(distance == FisherLogPrecisionDistance, GameTracing.log_precision_palc_state_weight(2.0f0), state_weight)
-        @test GameTracing.palc_geometry(geometry, 1, 2.0f0).palc_state_weight == palc_state_weight
+        palc_state_weight = ifelse(
+            distance == FisherLogPrecisionDistance,
+            GameTracing.log_precision_palc_state_weight(2.0f0),
+            state_weight,
+        )
+        @test GameTracing.palc_geometry(geometry, 1, 2.0f0).palc_state_weight ==
+            palc_state_weight
     end
     for state_weight in (0.0f0, 1.0f0, -0.5f0, NaN32)
-        @test_throws ArgumentError GameTracing.palc_geometry(TraceGeometry{Float32}(; state_weight), 1, 2.0f0)
+        @test_throws ArgumentError GameTracing.palc_geometry(
+            TraceGeometry{Float32}(; state_weight),
+            1,
+            2.0f0,
+        )
     end
     result = trace_endpoint(LogitGame(FOLD_GAME, 2.0f0), 1, TraceSettings{Float32}())
     @test !is_error(result)
@@ -145,7 +162,11 @@ end
             orientation_check = check,
             bordered_solver = solver,
         )
-        oriented = GameTracing.palc_algorithm(settings, WIDTH, TARGET_PRECISION).orientation_check
+        oriented = GameTracing.palc_algorithm(
+            settings,
+            WIDTH,
+            TARGET_PRECISION,
+        ).orientation_check
         @test oriented == (check && solver == MatrixSolve)
     end
 end
@@ -165,7 +186,12 @@ end
                 newton_iterations = rand(rng, 1:20),
             ),
         )
-        options = GameTracing.continuation_options(settings, settings.first_step, settings.max_steps, settings.first_tangent_divisor)
+        options = GameTracing.continuation_options(
+            settings,
+            settings.first_step,
+            settings.max_steps,
+            settings.first_tangent_divisor,
+        )
         @test (options.ds, options.dsmin, options.dsmax, options.a, options.η) ==
             (
                 settings.first_step,
@@ -196,12 +222,20 @@ end
     @test first_jacobian === second_jacobian === workspace.jacobian
     residual, jacobian = system(point, 0.5f0)
     @test residual == GameTracing.GameResidual(game)(point, 0.5f0)
-    @test jacobian == GameTracing.GameJacobian(game, GameTracing.BranchWorkspace(game, point))(point, 0.5f0)
+    @test jacobian ==
+        GameTracing.GameJacobian(game, GameTracing.BranchWorkspace(game, point))(
+            point,
+            0.5f0,
+        )
     # A forward difference in each coordinate checks the Jacobian the pass formed in place.
     for (column, step) in pairs(Float32[1.0f-3, 1.0f-3, 1.0f-3])
         moved = copy(point)
         moved[column] += step
-        slope = (GameTracing.GameResidual(game)(moved, 0.5f0) .- GameTracing.GameResidual(game)(point, 0.5f0)) ./ step
+        slope = (
+            GameTracing.GameResidual(game)(moved, 0.5f0) .-
+                GameTracing.GameResidual(game)(point, 0.5f0)
+        ) ./
+            step
         @test maximum(abs, slope .- jacobian[:, column]) < 1.0f-2
     end
 end
@@ -213,7 +247,10 @@ end
     gains = evaluated(pass, zeros(Float32, 1), 1.0f0).precision_slope
     @test GameTracing.payoff_gaps(start) ≈ 2.0f0 .* gains
     @test last(start) == 0
-    residual, jacobian = GameTracing.GameSystem(game, GameTracing.BranchWorkspace(game, start))(start, 0.0f0)
+    residual, jacobian = GameTracing.GameSystem(
+        game,
+        GameTracing.BranchWorkspace(game, start),
+    )(start, 0.0f0)
     @test maximum(abs, residual) <= 4 * eps(Float32) * maximum(abs, start)
     # At zero precision the gaps decouple from the logits: ∂F/∂w is the identity.
     @test jacobian[1, 1] == 1
@@ -221,17 +258,28 @@ end
 end
 
 @testset "the gap system's Jacobian matches central differences where the gains move with the precision" begin
-    pass = DampedGainPass(LinearGainPass(Float32[1 -2; 0.5f0 1], Float32[0.5f0, -0.25f0]), 0.8f0)
+    pass = DampedGainPass(
+        LinearGainPass(Float32[1 -2; 0.5f0 1], Float32[0.5f0, -0.25f0]),
+        0.8f0,
+    )
     game = LogitGame(pass, 3.0f0)
-    for point in (Float32[0.4f0, -0.7f0, 0], Float32[0.3f0, -0.2f0, 0.6f0], Float32[-1.5f0, 2, 1])
-        _, jacobian = GameTracing.GameSystem(game, GameTracing.BranchWorkspace(game, point))(point, last(point))
+    for point in (
+            Float32[0.4f0, -0.7f0, 0],
+            Float32[0.3f0, -0.2f0, 0.6f0],
+            Float32[-1.5f0, 2, 1],
+        )
+        _, jacobian = GameTracing.GameSystem(
+            game,
+            GameTracing.BranchWorkspace(game, point),
+        )(point, last(point))
         for column in eachindex(point)
             step = 1.0f-2
             nudge = setindex!(zeros(Float32, length(point)), step, column)
             upper = GameTracing.GameResidual(game)(point .+ nudge, last(point))
             lower = GameTracing.GameResidual(game)(point .- nudge, last(point))
             # Truncation h² M₃ / 6 and rounding eps / h each stay under 1e-3 of the Jacobian's scale here.
-            @test maximum(abs, (upper .- lower) ./ 2step .- jacobian[:, column]) < 1.0f-3 * (1 + maximum(abs, jacobian))
+            @test maximum(abs, (upper .- lower) ./ 2step .- jacobian[:, column]) <
+                1.0f-3 * (1 + maximum(abs, jacobian))
         end
     end
     traced = unwrap(trace_endpoint(game, 2, TraceSettings{Float32}()))
@@ -245,10 +293,61 @@ end
         LogitGame(GAME, TARGET_PRECISION),
         point,
         0.5f0;
-        record_from_solution = GameTracing.trace_record_precision,
+        record_from_solution = GameTracing.trace_record_point,
     )
     residual, _ = bifurcation_kit.residual_and_jacobian(problem, point, 0.5f0)
     kept = copy(residual)
     bifurcation_kit.jacobian(problem, point .+ 0.1f0, 0.5f0)
     @test residual == kept
+end
+
+@testset "a restart that cannot be solved ends its segment at the opening; an unexpected exception propagates" begin
+    settings = TraceSettings{Float32}()
+    game = LogitGame(GAME, TARGET_PRECISION)
+    problem = GameTracing.branch_problem(
+        game,
+        zeros(Float32, WIDTH + 1),
+        0.0f0;
+        record_from_solution = GameTracing.trace_record_point,
+    )
+    iterator = GameTracing.BifurcationKit.ContIterable(
+        problem,
+        GameTracing.palc_algorithm(settings, WIDTH, TARGET_PRECISION),
+        GameTracing.continuation_options(
+            settings,
+            settings.first_step,
+            settings.max_steps,
+            settings.first_tangent_divisor,
+        );
+        verbosity = 0,
+    )
+    opening = GameTracing.TraceProgress{Float32}(
+        zeros(Float32, WIDTH),
+        0.0f0,
+        0,
+        0.0f0,
+        0.0f0,
+        zeros(Float32, WIDTH),
+        1.0f0,
+        false,
+    )
+    degenerate = zeros(Float32, WIDTH + 1)
+    thrown = GameTracing.segment_branch(iterator, game, degenerate, opening)
+    @test thrown.progress == opening
+    @test GameTracing.solver_blowup(thrown.exception)
+    @test_throws DimensionMismatch GameTracing.guarded_restart(
+        iterator,
+        game,
+        zeros(Float32, WIDTH + 3),
+        opening,
+    )
+end
+
+@testset "thrown_failure holds an expected failure and rethrows any other" begin
+    @test GameTracing.thrown_failure(SingularException(2)) isa GameTracing.Thrown
+    @test_throws ArgumentError try
+        throw(ArgumentError("bad game"))
+    catch exception
+        GameTracing.thrown_failure(exception)
+    end
 end
