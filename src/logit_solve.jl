@@ -61,8 +61,8 @@ end
 
 """Refuse `settings` whose element type is not `float` of the payoffs' of `gains`: the trace and its profiles run in the settings' type."""
 function require_payoff_type(gains::NormalFormGains, ::TraceSettings{E})::Nothing where {E <: Real}
-    if E != eltype(gains)
-        throw(ArgumentError("settings trace in $E, but the payoffs are $(eltype(gains)); build the settings in $(eltype(gains))"))
+    if E != float(eltype(gains))
+        throw(ArgumentError("settings trace in $E, but the payoffs are $(eltype(gains)); build the settings in $(float(eltype(gains)))"))
     end
     return nothing
 end
@@ -114,7 +114,8 @@ end
 pygambit's `logit_solve_lambda`: the `LogitQREProfile` on the principal branch of the normal-form game `gains`
 (`NormalFormGains`) at each precision in `lam`, a number or a vector, in `lam`'s order, or the first trace's failure.
 `first_step` and `max_accel` set the trace's steps (`gambit_settings`); `settings` replaces them whole. Profiles take
-the payoffs' element type, and `settings` must share it (`ArgumentError` otherwise).
+`float` of the payoffs' element type (Float64 for integer payoffs), and `settings` must share it (`ArgumentError`
+otherwise).
 """
 function logit_solve_lambda(
     gains::NormalFormGains{N},
