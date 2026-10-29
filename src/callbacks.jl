@@ -182,9 +182,10 @@ function (check::CorrectorReach{C, E})(iterate::I;
     if !check.accept_corrected(logits_at(iterate.x), iterate.p, converged)
         return false
     end
-    # A solve that settled at its start has no correction (NaN).
-    if converged && !isnan(check.correction)
-        check.noise = NoiseRecord(max(check.noise.accuracy, check.correction), check.noise.suspect)
+    # A solve that settled at its start has no correction (NaN). An unsettled exact root's next correction is 0.
+    closing_correction = ifelse(check.settled_here, check.correction, zero(E))
+    if converged && !isnan(closing_correction)
+        check.noise = NoiseRecord(max(check.noise.accuracy, closing_correction), check.noise.suspect)
     end
     return closing_verdict(check, true)
 end
