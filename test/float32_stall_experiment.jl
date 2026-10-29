@@ -390,6 +390,11 @@ function jump_report(arm::AbstractString, precision::Real, window::Tuple)::Nothi
             solve = view(records, solve_start:position)
             corrections = [entry.kwargs[:correction] for entry in solve if entry.message == "corrector correction"]
             rates = corrections[2:end] ./ corrections[1:(end - 1)]
+            levels = [entry.kwargs[:relative_precision] * precision for entry in solve if entry.message == "corrector correction"]
+            if !isempty(levels) && first(window) <= last(levels) <= last(window)
+                println(@sprintf("CLOSED %s λ=%.6f residual=%.3e converged=%s corrections=%d last_correction=%.3e",
+                    arm, last(levels), record.kwargs[:residual], string(record.kwargs[:converged]), length(corrections), last(corrections)))
+            end
             solve_start = position + 1
         elseif record.message == "corrector closing"
             closing = (; record.kwargs..., rates)
