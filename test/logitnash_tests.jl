@@ -169,18 +169,22 @@ end
     @test doubled.logit_accuracy <= double_settings.corrector.logit_tolerance
     @test agreeing(first_choices(double_logits), oracle.first_choices)
     @test settled_endpoint(UNFOLDED_PITCHFORK_GAME, double_logits, precision * float(1), double_settings)
-    # Float32 may settle at its rounding (`rounding_bound`); it must follow the double-precision branch within that.
+    # Every Float32 arm follows the double-precision branch within both traces' accuracy, but one: its steps near the
+    # pitchfork at λ 0.808 halve into Float32 rounding noise (runs 40803122294, 40806444224), which exhausts it.
     for (label, settings) in ["default" => TraceSettings{Float32}(); arm_variants()]
         result = traced_result(UNFOLDED_PITCHFORK_GAME, precision, settings)
+        if label == "fisher_log_precision_reach state_weight 0.01"
+            @test is_error(result) && unwrap_error(result).cause == GameTracing.PrecisionExhausted
+            continue
+        end
         @test !is_error(result)
         if !is_error(result)
             (; logits, logit_accuracy) = unwrap(result)
-            accuracy = max(logit_accuracy, settings.corrector.logit_tolerance)
+            @test logit_accuracy <= settings.corrector.logit_tolerance
             @test agreeing(first_choices(logits), oracle.first_choices)
             @test agreeing(first_choices(logits), first_choices(double_logits))
-            @test maximum(abs, logits .- double_logits) <= accuracy + doubled.logit_accuracy
-            @test newton_correction(NormalFormPass(map(table -> Float32.(table), UNFOLDED_PITCHFORK_GAME)), logits, precision) <= accuracy
-            @info "unfolded pitchfork in Float32" label logit_accuracy gap = maximum(abs, logits .- double_logits)
+            @test maximum(abs, logits .- double_logits) <= logit_accuracy + doubled.logit_accuracy
+            @test settled_endpoint(UNFOLDED_PITCHFORK_GAME, logits, precision, settings)
         end
     end
 end

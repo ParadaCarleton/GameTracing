@@ -46,31 +46,19 @@ within_limit(::Nothing, ::Real)::Bool = true
 within_limit(limit::Real, measured::Real)::Bool = measured <= limit
 
 """
-    NoiseRecord(gain_error, accuracy, suspect, floor)
+    NoiseRecord(accuracy, suspect)
 
-A corrector's record of rounding noise. `gain_error`: the rounding allowance of `P G`, the target precision times
-`gain_rounding`. `accuracy`: the largest last correction of a closing point the corrector accepted. `suspect`: the
-last suspected stall, or `nothing`; `confirmed` means it exhausted the precision. `floor`: a confirmed stall fell
-within `rounding_bound`, so later iterates settle within it too.
+A corrector's record over its trace. `accuracy`: the largest last correction of a closing point the corrector
+accepted. `suspect`: the last suspected stall at rounding noise, or `nothing`; `confirmed` means it exhausted the
+precision.
 """
 struct NoiseRecord{E <: Real}
-    gain_error::E
     accuracy::E
     suspect::Union{Nothing, @NamedTuple{relative_precision::E, correction::E, confirmed::Bool}}
-    floor::Bool
-end
-
-"""`record` with its `suspect` replaced, and `floor` set when `floor` is true."""
-function suspected(
-    record::NoiseRecord{E},
-    suspect::Union{Nothing, @NamedTuple{relative_precision::E, correction::E, confirmed::Bool}},
-    floor::Bool,
-)::NoiseRecord{E} where {E <: Real}
-    return NoiseRecord(record.gain_error, record.accuracy, suspect, record.floor || floor)
 end
 
 """
-    CorrectorReach(accept_corrected, settings, geometry, previous, predicted, step_length, gain_error = 0)
+    CorrectorReach(accept_corrected, settings, geometry, previous, predicted, step_length)
 
 The trace's BifurcationKit `callback_newton`, which also decides the corrector's convergence: a `settled` iterate
 ends Newton's method converged (`NewtonConverged`), and a correction that fails to contract stops it (`corrected!`).
@@ -105,7 +93,7 @@ mutable struct CorrectorReach{C, E <: Real}
     noise::NoiseRecord{E}
 end
 
-"""Whether `check`'s corrector met rounding noise beyond `rounding_bound`, confirmed at a halved step (`corrected!`)."""
+"""Whether `check`'s corrector met rounding noise, confirmed at a halved step (`corrected!`)."""
 function noise_confirmed(check::CorrectorReach)::Bool
     return !isnothing(check.noise.suspect) && check.noise.suspect.confirmed
 end
@@ -117,12 +105,11 @@ function CorrectorReach(
     previous::AbstractVector{E},
     predicted::AbstractVector{E},
     step_length::E,
-    gain_error::E = zero(E),
 )::CorrectorReach{C, E} where {C, E <: Real}
     # A plain Newton solve has no predictor move: NaN fails the noise test, so its stalls refuse.
     return CorrectorReach{C, E}(
         accept_corrected, settings, geometry, collect(previous), collect(predicted), step_length,
-        E(NaN32), collect(previous), E(NaN32), 0, false, NoiseRecord(gain_error, zero(E), nothing, false),
+        E(NaN32), collect(previous), E(NaN32), 0, false, NoiseRecord(zero(E), nothing),
     )
 end
 
@@ -202,8 +189,7 @@ function (check::CorrectorReach{C, E})(iterate::I;
     end
     # A solve that settled at its start has no correction (NaN).
     if converged && !isnan(check.correction)
-        (; gain_error, accuracy, suspect, floor) = check.noise
-        check.noise = NoiseRecord(gain_error, max(accuracy, check.correction), suspect, floor)
+        check.noise = NoiseRecord(max(check.noise.accuracy, check.correction), check.noise.suspect)
     end
     return closing_verdict(check, true)
 end
@@ -217,9 +203,7 @@ is the solve's start and never settles. Each later one is a correction `Δz` fro
 `logit_tolerance · contraction_offset`) fails to contract, Gambit's test (path.cc), and stops the corrector, so the
 step halves. Two in a row, each larger than the predictor's own move, are suspected noise (`check.noise`); the
 step still halves. A second such solve before any settles, its correction at least half the suspect's, confirms it
-(`noise_confirmed`): halving shrinks the corrections of a predictor past a fold, not noise. A confirmed stall within
-`rounding_bound` settles instead, and later corrections within that bound settle too (`NoiseRecord`'s `floor`).
-Past the bound, every later solve refuses.
+(`noise_confirmed`): halving shrinks the corrections of a predictor past a fold, not noise. Every later solve refuses.
 """
 function corrected!(
     check::CorrectorReach{C, E},
@@ -241,7 +225,7 @@ function corrected!(
         return false
     end
     if settled(check, iterate, correction)
-        check.settled_here, check.noise = true, suspected(check.noise, nothing, false)
+        check.settled_here, check.noise = true, NoiseRecord(check.noise.accuracy, nothing)
         return BifurcationKit.NewtonConverged()
     end
     (; contraction_limit, contraction_offset, logit_tolerance) = check.settings
@@ -261,43 +245,9 @@ function corrected!(
     # Halving leaves noise's corrections alike (ratio 1) and shrinks an overshot predictor's by 1/4; 1/2 splits them.
     suspect = check.noise.suspect
     confirmed = !isnothing(suspect) && correction >= suspect.correction / 2
-    if confirmed && within_rounding(check, iterate, correction)
-        @debug "corrector settled at rounding" _group = :trace correction relative_precision = last(iterate.x)
-        check.settled_here, check.noise = true, suspected(check.noise, nothing, true)
-        return BifurcationKit.NewtonConverged()
-    end
     @debug "corrector stopped" _group = :trace reason = :noise confirmed correction predictor_move = check.predictor_move
-    check.noise = suspected(check.noise, (; relative_precision = last(iterate.x), correction, confirmed), false)
+    check.noise = NoiseRecord(check.noise.accuracy, (; relative_precision = last(iterate.x), correction, confirmed))
     return false
-end
-
-"""
-    rounding_bound(jacobian, point, gain_error)
-
-The largest logit correction rounding explains at `point = [w; ρ]` of a branch whose Jacobian is `jacobian`. Newton's
-limiting accuracy in floating point (Higham, Accuracy and Stability, ch. 25) is `‖Δw‖ ≤ ‖(∂F/∂w)⁻¹‖ ψ` for a residual
-`F = w - P G` computed with error at most `ψ`. Rounding `P G` and the subtraction add `3 u ‖w‖∞` at a root, `u = eps / 2`,
-to the pass's own `gain_error` (`P` times `gain_rounding`). Logits `z = ρ w` scale that by `ρ`, and a correction is
-the difference of two such iterates: `2 ρ ‖(∂F/∂w)⁻¹‖∞ (3 u ‖w‖∞ + gain_error)`.
-"""
-function rounding_bound(jacobian::AbstractMatrix{E}, point::AbstractVector{E}, gain_error::E)::E where {E <: Real}
-    gaps = payoff_gaps(point)
-    # fatou-ignore call-arity: Base `view` takes any number of indices (jolars/fatou#125)
-    gap_jacobian = view(jacobian, eachindex(gaps), eachindex(gaps))
-    residual_error = 3 * (eps(E) / 2) * maximum(abs, gaps) + gain_error
-    # The infinity norm of the inverse: its largest absolute row sum.
-    return 2 * last(point) * maximum(sum(abs, inv(collect(gap_jacobian)); dims = 2)) * residual_error
-end
-
-"""
-Whether a Newton `correction` of `check`'s corrector at `iterate` is within `rounding_bound`. A pass without a
-`gain_rounding` (zero `gain_error`) allows none, and an iterate without a Jacobian (a solve's start) has no bound.
-"""
-function within_rounding(check::CorrectorReach, iterate::NamedTuple, correction::Real)::Bool
-    if !(check.noise.gain_error > 0) || !haskey(iterate, :J) || isnothing(iterate.J)
-        return false
-    end
-    return correction <= rounding_bound(iterate.J, iterate.x, check.noise.gain_error)
 end
 
 """The pin row `ρ - pin` of a corrector `iterate`'s residual: the last entry of Newton's `fx` or of PALC's `res_f`."""
@@ -312,16 +262,12 @@ end
 Whether `check`'s corrector has settled `iterate`, reached by a Newton `correction` in logits: the correction moved no
 logit more than `logit_tolerance`, and the relative precision `ρ` is at its pin to the relative `pin_tolerance`. The pin
 needs its own test: a far target's logits barely move with `ρ`, so they would pass a `ρ` that never left its start.
-Once a confirmed stall fell within `rounding_bound` (`check.noise.floor`), a correction within that bound settles too.
 """
 function settled(check::CorrectorReach, iterate::I, correction::Real)::Bool where {I <: NamedTuple}
     relative_precision = last(iterate.x)
     offset = pin_residual(iterate)
     pin_scale = max(abs(relative_precision), abs(relative_precision - offset))
-    if abs(offset) > check.settings.pin_tolerance * pin_scale
-        return false
-    end
-    return correction <= check.settings.logit_tolerance || (check.noise.floor && within_rounding(check, iterate, correction))
+    return correction <= check.settings.logit_tolerance && abs(offset) <= check.settings.pin_tolerance * pin_scale
 end
 
 """

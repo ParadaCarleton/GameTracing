@@ -193,7 +193,7 @@ end
 Runs the PALC continuation of `game`'s branch from `start = [w; ρ]` toward relative precision one, with `finalise` at
 each accepted point and `corrector` (`CorrectorReach`) at each Newton iterate, and returns
 `(; step_length, exhausted, logit_accuracy)`: the step length its last corrector tried, the corrector's confirmed
-stall past `rounding_bound` (or `nothing`), and the largest last correction of an accepted point.
+stall at rounding noise (or `nothing`), and the largest last correction of an accepted point.
 From the flat start (`old_tangent` is `nothing`) the first tangent is BifurcationKit's secant; a restart after a
 redraw opens along `restart_tangent`, oriented by the trace's `old_tangent`. BifurcationKit's constructors are not
 inferable, so each is built in its own function and passed on without a named local; it runs once per segment.
@@ -402,8 +402,7 @@ end
     guarded_trace(start, old_tangent, settings, finalise, accept_corrected)
 
 `(; step_length, exhausted, logit_accuracy, exception)` of `continue_trace` on `finalise.slot`'s game for the steps
-`settings.max_steps` leaves, its corrector allowing the pass's `gain_rounding` at the target precision: the exception
-is `nothing` for a trace that ran, else the third-party failure it ended on. BifurcationKit throws a
+`settings.max_steps` leaves: the exception is `nothing` for a trace that ran, else the third-party failure it ended on. BifurcationKit throws a
 `String` when Newton misses its first point and an `ErrorException` at its second; a non-finite Jacobian reaches
 LAPACK, and so does a singular restart tangent. Any other exception propagates.
 """
@@ -415,8 +414,7 @@ function guarded_trace(
     accept_corrected::Any,
 )::NamedTuple where {E <: Real}
     (; game) = finalise.slot
-    gain_error = E(game.target_precision * gain_rounding(game.pass!, E))
-    corrector = CorrectorReach(accept_corrected, settings.corrector, settings.geometry, similar(start), similar(start), zero(E), gain_error)
+    corrector = CorrectorReach(accept_corrected, settings.corrector, settings.geometry, similar(start), similar(start), zero(E))
     try
         return (;
             continue_trace(

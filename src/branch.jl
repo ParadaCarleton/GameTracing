@@ -31,23 +31,6 @@ with work arrays is called as `pass!(work, gain, gain_slope, gain_precision_slop
 """
 pass_workspace(::Any, ::AbstractVector)::Nothing = nothing
 
-"""
-    gain_rounding(pass!, E)
-
-An upper bound on the absolute rounding error of each gain `G` that `pass!` computes in float type `E`. The default,
-zero, allows no rounding: a trace whose corrector stalls at rounding noise fails `PrecisionExhausted`. A positive bound
-lets the corrector accept a confirmed stall within `rounding_bound`, reporting its size (`Traced`'s `logit_accuracy`).
-"""
-function gain_rounding(::Any, ::Type{E})::E where {E <: Real}
-    return zero(E)
-end
-
-"""Higham's `γ_count = count u / (1 - count u)`, `u = eps(E) / 2`: the relative error bound of `count` rounded operations."""
-function rounding_gamma(count::Integer, ::Type{E})::E where {E <: Real}
-    unit = eps(E) / 2
-    return count * unit / (one(E) - count * unit)
-end
-
 """Call `pass!` on its outputs, with its work arrays `work` unless it has none."""
 function run_pass!(
     pass!::Any,

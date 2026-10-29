@@ -1,9 +1,8 @@
 using ErrorTypes: Result
 using LinearAlgebra: LAPACKException, SingularException
 """
-Why a trace stopped short of its target precision. `PrecisionExhausted`: Newton's corrections stopped contracting
-at noise past the pass's rounding allowance (`rounding_bound`), before the target (`CorrectorReach`); a wider float
-type goes further.
+Why a trace stopped short of its target precision. `PrecisionExhausted`: Newton's corrections stopped contracting at
+the float type's rounding noise, before the target (`CorrectorReach`); a wider float type goes further.
 """
 @enum TraceCause NoConvergence TraceStuck NotFinite Singular PrecisionExhausted
 
@@ -23,8 +22,8 @@ end
     Traced(logits, steps, logit_accuracy)
 
 The `logits` of a trace at its target precision, a root of the game in effect there, the continuation `steps` it took
-over every segment, and `logit_accuracy`: the largest last Newton correction in logits of any accepted point. It is
-at most the corrector's `logit_tolerance`, unless a point stalled within the pass's rounding (`rounding_bound`).
+over every segment, and `logit_accuracy`: the largest last Newton correction in logits of any accepted point, at most
+the corrector's `logit_tolerance`.
 """
 struct Traced{E <: Real}
     logits::Vector{E}

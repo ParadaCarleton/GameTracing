@@ -52,19 +52,6 @@ function pass_workspace(gains::NormalFormGains, ::AbstractVector{E})::NamedTuple
     )
 end
 
-"""
-A bound on the rounding error of each gain of `gains` in `E` (`gain_rounding`). A player's expected payoff `U(k)` sums
-at most `prod(counts)` products of a payoff and its rivals' probabilities, each from a softmax over at most
-`maximum(counts)` strategies (an exponential per strategy, a sum, a division). With Higham's `γ` (§3.1) every term and
-the sum carry relative error at most `γ_K`, `K = prod(counts) + N (maximum(counts) + 3)`, and the rival weights sum to
-one, so `|fl(U(k)) - U(k)| ≤ γ_K max|payoff|`. The gain `U(k) - U(1)` adds one subtraction: `2 γ_(K+1) max|payoff|`.
-"""
-function gain_rounding(gains::NormalFormGains, ::Type{E})::E where {E <: Real}
-    counts = size(first(gains.payoffs))
-    operations = prod(counts) + length(counts) * (maximum(counts) + 3) + 1
-    return 2 * rounding_gamma(operations, E) * E(maximum(maximum(abs, payoff) for payoff in gains.payoffs))
-end
-
 """Write into `strategy` the mixed strategy `softmax([0; logits])` of a player whose logits are against its first strategy."""
 function reference_softmax!(strategy::AbstractVector{E}, logits::AbstractVector{E})::AbstractVector{E} where {E <: Real}
     shift = max(zero(E), maximum(logits; init = zero(E)))

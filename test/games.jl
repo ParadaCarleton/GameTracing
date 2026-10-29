@@ -247,16 +247,6 @@ function (pass::NormalFormPass{N})(
     return nothing
 end
 
-"""
-A bound on the rounding error of each gain of a two-action `NormalFormPass` in `E` (`gain_rounding`). Each of the `2^N`
-profile terms multiplies a payoff by `N - 1` probabilities, each a logistic (an exponential, an addition, a division)
-or one less one, whose absolute error is at most `4 u`: a term errs by at most `5 N u max|payoff|`. Their sum, whose
-weights total two, adds `γ_(2^N) 2 max|payoff|`. Both lie under `2 γ_(2^N (5N + 1)) max|payoff|`.
-"""
-function GameTracing.gain_rounding(pass::NormalFormPass{N}, ::Type{E})::E where {N, E <: Real}
-    return 2 * GameTracing.rounding_gamma(2^N * (5 * N + 1), E) * E(maximum(maximum(abs, payoff) for payoff in pass.payoffs))
-end
-
 """Whether `logits` solves `pass` at `precision` to `Float64` rounding at `scale`, times the logits' size."""
 function settled_root(pass::Any, logits::AbstractVector{E}, precision::E, scale::E)::Bool where {E <: Real}
     return residual_norm(pass, logits, precision) <= 10^4 * eps(scale) * (1 + maximum(abs, logits))
