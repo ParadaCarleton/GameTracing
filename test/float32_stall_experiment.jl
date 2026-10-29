@@ -313,6 +313,28 @@ function race_report(precision::Real)::Nothing
     return nothing
 end
 
+"""Print the steps and endpoint of every trace in test/fold_tests.jl."""
+function fold_report()::Nothing
+    fold_settings = (
+        "default" => TraceSettings{Float32}(),
+        "secant" => TraceSettings{Float32}(tangent = BifurcationKit.Secant()),
+        "bordering" => TraceSettings{Float32}(bordered_solver = BorderingSolve),
+        "no_step_control" => TraceSettings{Float32}(step_control = nothing),
+        "bordering_tol1e-5" => TraceSettings{Float32}(
+            bordered_solver = BorderingSolve, corrector = CorrectorSettings{Float32}(; logit_tolerance = 1.0f-5),
+        ),
+    )
+    for target in (2.0f0, 1.0f0), (name, settings) in fold_settings
+        result = trace_endpoint(LogitGame(FOLD_GAME, target), 1, settings)
+        if is_error(result)
+            println("FOLD target=", target, " ", name, " error ", unwrap_error(result).cause, " steps ", unwrap_error(result).context.steps)
+        else
+            println("FOLD target=", target, " ", name, " steps ", unwrap(result).steps, " logit ", only(unwrap(result).logits))
+        end
+    end
+    return nothing
+end
+
 """Print each of `arms`' reports at LogitNash's stopping precision past 4, as the unfolded-pitchfork test traces."""
 function stall_experiment(arms::Tuple)::Nothing
     profile_status = LogitNash.solve(map(float, UNFOLDED_PITCHFORK_GAME); stop_lambda = float(4), stop_eps = zero(float(4)))
@@ -321,11 +343,8 @@ function stall_experiment(arms::Tuple)::Nothing
     for arm in arms
         println(stall_report(arm, precision, reference))
     end
-    for arm in ("B4", "E")
-        jump_report(arm, precision, (0.79f0, 0.9f0))
-    end
-    # noise_report and first_step_endpoint ran in run 40816864095.
-    race_report(precision)
+    # jump_report and race_report ran on a160163; noise_report and first_step_endpoint in run 40816864095.
+    fold_report()
     return nothing
 end
 
