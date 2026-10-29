@@ -133,7 +133,7 @@ end
     @test GameTracing.matrix_bls(WIDTH, Float32) isa GameTracing.InPlaceMatrixBLS
 end
 
-@testset "the default smallest step is the smallest normal number of the settings' element type" begin
+@testset "the default smallest step is the smallest positive number of the settings' element type" begin
     for element in (Float16, Float32, Float64)
         @test TraceSettings{element}().min_step == floatmin(element)
     end
