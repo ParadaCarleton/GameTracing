@@ -381,15 +381,21 @@ function redrawn_trace(
         return reached_state(progress, outcome, slot.game, settings, context)
     end
     next = TraceFinalise(progress, finalise.keep_going, finalise.redraw, slot, progress.steps)
-    restarted = guarded_trace(crossing.point, [progress.gap_tangent; progress.tangent_precision], settings, next, accept_corrected)
-    # The accuracy spans every segment of the trace.
     return redrawn_trace(
-        (; restarted..., logit_accuracy = max(restarted.logit_accuracy, outcome.logit_accuracy)),
+        with_earlier_accuracy(
+            guarded_trace(crossing.point, [progress.gap_tangent; progress.tangent_precision], settings, next, accept_corrected),
+            outcome.logit_accuracy,
+        ),
         next,
         settings,
         accept_corrected,
         context,
     )
+end
+
+"""A segment's `outcome` whose `logit_accuracy` also spans the earlier segments' `earlier` accuracy."""
+function with_earlier_accuracy(outcome::NamedTuple, earlier::Real)::NamedTuple
+    return (; outcome..., logit_accuracy = max(outcome.logit_accuracy, earlier))
 end
 
 """
