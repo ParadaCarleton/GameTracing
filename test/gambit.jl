@@ -25,6 +25,30 @@ function gambit_branch(payoffs::Tuple, precision::E)::NamedTuple{(:precision, :f
 end
 
 """
+Whether Gambit's logit branch of `payoffs` folds back in `λ` before it first reaches `precision`: a point of
+`pygambit.qre.logit_solve_branch` below the point before it. `logit_solve_lambda` takes the same steps and finds a
+crossing only between consecutive points, so a step that rounds such a fold can hide the first crossing.
+"""
+function gambit_folds_before(payoffs::Tuple, precision::Real)::Bool
+    gambit, numpy = pyimport("pygambit"), pyimport("numpy")
+    game = gambit.Game.from_arrays((numpy.asarray(float.(table)) for table in payoffs)...)
+    # Regret 1e-12 of the payoff range ends the branch far past any precision these tests ask for.
+    branch = gambit.qre.logit_solve_branch(game; maxregret = inv(float(10^12)))
+    previous = zero(float(precision))
+    for point in branch
+        lam = pyconvert(typeof(float(precision)), point.lam)
+        if lam >= precision
+            return false
+        end
+        if lam < previous
+            return true
+        end
+        previous = lam
+    end
+    return false
+end
+
+"""
 Gambit's logit QRE of the normal-form game `payoffs` at `precision`, from `pygambit.qre.logit_solve_lambda`:
 `(; precision, strategies)`, each player's mixed strategy in `precision`'s type.
 """
