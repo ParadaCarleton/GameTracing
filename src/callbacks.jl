@@ -206,6 +206,7 @@ function corrected!(
     correction, before = logit_change(check.iterate, iterate.x), check.correction
     copyto!(check.iterate, iterate.x)
     check.correction = correction
+    @debug "corrector correction" _group = :trace step = iterate.step correction pin = pin_residual(iterate) relative_precision = last(iterate.x) predictor_move = check.predictor_move
     if !proceed
         return false
     end
