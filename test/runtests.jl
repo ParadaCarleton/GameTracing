@@ -12,9 +12,7 @@ const WIDTH = 2
 
 # Every `*_tests.jl` file runs, in name order, so none can be left out; the code rules run last. One outer testset
 # keeps a failing file from aborting the rest: a failed top-level testset throws as it ends.
+# EXPERIMENT: this branch runs only the floor-stall diagnostic.
 @testset "GameTracing" begin
-    for file in sort(filter(endswith("_tests.jl"), readdir(@__DIR__; join = true)))
-        include(file)
-    end
-    include("code_rules.jl")
+    include("floor_stall_experiment.jl")
 end

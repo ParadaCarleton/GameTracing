@@ -237,6 +237,7 @@ function corrected!(
     correction, before = logit_change(check.iterate, iterate.x), check.correction
     copyto!(check.iterate, iterate.x)
     check.correction = correction
+    @debug "corrector correction" _group = :trace step = iterate.step correction pin = pin_residual(iterate) relative_precision = last(iterate.x) predictor_move = check.predictor_move floor = check.noise.floor bound = experiment_bound(check, iterate) proceed
     if !proceed
         return false
     end
@@ -287,6 +288,14 @@ function rounding_bound(jacobian::AbstractMatrix{E}, point::AbstractVector{E}, g
     residual_error = 3 * (eps(E) / 2) * maximum(abs, gaps) + gain_error
     # The infinity norm of the inverse: its largest absolute row sum.
     return 2 * last(point) * maximum(sum(abs, inv(collect(gap_jacobian)); dims = 2)) * residual_error
+end
+
+"""EXPERIMENT: `rounding_bound` at `iterate`, NaN without a Jacobian or allowance."""
+function experiment_bound(check::CorrectorReach{C, E}, iterate::NamedTuple)::E where {C, E <: Real}
+    if !(check.noise.gain_error > 0) || !haskey(iterate, :J) || isnothing(iterate.J)
+        return E(NaN32)
+    end
+    return rounding_bound(iterate.J, iterate.x, check.noise.gain_error)
 end
 
 """
