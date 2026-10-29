@@ -92,6 +92,68 @@ function GameTracing.branch_system!(
     return workspace
 end
 
+"""Arm B4: a pass that runs the `widen(E)` pass `wide` and rounds its gains and slopes to the trace's `E`."""
+struct WideGains{W}
+    wide::W
+end
+
+function (gains::WideGains)(
+    gain::AbstractVector{E},
+    gain_slope::AbstractMatrix{E},
+    gain_precision_slope::AbstractVector{E},
+    logits::AbstractVector{E},
+    precision::Real,
+)::Nothing where {E <: Real}
+    wide_gain, wide_slope, wide_precision_slope = widen(E).(gain), widen(E).(gain_slope), widen(E).(gain_precision_slope)
+    gains.wide(wide_gain, wide_slope, wide_precision_slope, widen(E).(logits), widen(E)(precision))
+    gain .= E.(wide_gain)
+    gain_slope .= E.(wide_slope)
+    gain_precision_slope .= E.(wide_precision_slope)
+    return nothing
+end
+
+"""A pass that runs the pass `narrow` in its payoffs' element type and writes its gains and slopes into wider arrays."""
+struct NarrowGains{P}
+    narrow::P
+end
+
+function (gains::NarrowGains)(
+    gain::AbstractVector{W},
+    gain_slope::AbstractMatrix{W},
+    gain_precision_slope::AbstractVector{W},
+    logits::AbstractVector{W},
+    precision::Real,
+)::Nothing where {W <: Real}
+    narrow_type = eltype(first(gains.narrow.payoffs))
+    narrow_gain, narrow_slope = narrow_type.(gain), narrow_type.(gain_slope)
+    narrow_precision_slope = narrow_type.(gain_precision_slope)
+    gains.narrow(narrow_gain, narrow_slope, narrow_precision_slope, narrow_type.(logits), narrow_type(precision))
+    gain .= narrow_gain
+    gain_slope .= narrow_slope
+    gain_precision_slope .= narrow_precision_slope
+    return nothing
+end
+
+"""Arm B5: the `E` pass `narrow`, its gains and slopes assembled into the branch system in `widen(E)`, then rounded."""
+struct WideAssembly{P}
+    narrow::P
+end
+
+function GameTracing.branch_system!(
+    workspace::GameTracing.BranchWorkspace{E},
+    game::LogitGame{<:WideAssembly},
+    point::AbstractVector{E},
+    pin::Real,
+)::typeof(workspace) where {E <: Real}
+    wide_game = LogitGame(NarrowGains(game.pass!.narrow), widen(E)(game.target_precision))
+    wide_point = widen(E).(point)
+    filled = GameTracing.branch_system!(GameTracing.BranchWorkspace(wide_game, wide_point), wide_game, wide_point, widen(E)(pin))
+    workspace.residual .= E.(filled.residual)
+    workspace.jacobian .= E.(filled.jacobian)
+    workspace.logits .= E.(filled.logits)
+    return workspace
+end
+
 """`InPlaceMatrixBLS` whose bordered matrix is assembled in `E`, then factored and solved in the wider `wide`'s type."""
 struct WideBLS{E <: BlasFloat, W <: BlasFloat, S <: BifurcationKit.AbstractLinearSolver} <: BifurcationKit.AbstractBorderedLinearSolver
     narrow::Matrix{E}
@@ -167,6 +229,10 @@ function stall_game(arm::AbstractString, precision::E)::LogitGame where {E <: Re
         return LogitGame(SplitPass(narrow, wide, arm == "B1"), precision)
     elseif arm == "B3"
         return LogitGame(FusedPass(narrow), precision)
+    elseif arm == "B4"
+        return LogitGame(WideGains(wide), precision)
+    elseif arm == "B5"
+        return LogitGame(WideAssembly(narrow), precision)
     end
     return LogitGame(narrow, precision)
 end
