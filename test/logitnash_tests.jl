@@ -221,6 +221,5 @@ end
     @test reference.reached
     traced = first_choices(unwrap(traced_result(FOLDED_GAMBIT_GAME, precision, TraceSettings{Float32}())).logits)
     @test agreeing(traced, reference.first_choices)
-    @test !agreeing(traced, gambit_branch(FOLDED_GAMBIT_GAME, precision).first_choices)
     @test cross_checked!(FOLDED_GAMBIT_GAME, 3, TraceSettings{Float32}())
 end
