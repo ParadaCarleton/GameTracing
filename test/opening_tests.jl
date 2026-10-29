@@ -99,7 +99,7 @@ end
     # A predictor that moved the logits by 1 overshot: halving shrinks it, so the corrector stops and nothing is exhausted.
     poor = fresh_check(1.0f0)
     @test solve_verdicts(poor, stalled)[1:3] == [true, true, false]
-    @test isnothing(GameTracing.exhausted(poor))
+    @test !GameTracing.noise_confirmed(poor)
     # It overshoots again at half the step, then the step recovers: the corrections contract and settle.
     poor.predictor_move = 0.5f0
     @test solve_verdicts(poor, stalled[1:3]) == [true, true, false]
@@ -107,25 +107,26 @@ end
     @test settling[1:3] == [true, true, true]
     @test last(settling) isa GameTracing.BifurcationKit.NewtonConverged
     @test poor.settled_here
-    @test isnothing(GameTracing.exhausted(poor))
+    @test !GameTracing.noise_confirmed(poor)
     # A predictor that moved less than the stalled correction cannot be halved under it: the second stall is suspected noise.
     noisy = fresh_check(1.0f-3)
     @test solve_verdicts(noisy, stalled) == [true, true, true, false]
-    @test isnothing(GameTracing.exhausted(noisy))
+    @test !GameTracing.noise_confirmed(noisy)
     # Past a fold, halving shrinks the corrections: a stalled pair under half the suspect's confirms nothing.
     folded = fresh_check(1.0f-3)
     solve_verdicts(folded, stalled)
     folded.predictor_move = 1.0f-4
     @test solve_verdicts(folded, Float32[0, 4.0f-3, 8.0f-3, 1.2f-2]) == [true, true, true, false]
-    @test isnothing(GameTracing.exhausted(folded))
+    @test !GameTracing.noise_confirmed(folded)
     # A settled solve clears the suspicion.
     solve_verdicts(folded, Float32[0, 1.0f-2, 1.1f-2, 1.101f-2])
     @test isnothing(folded.noise)
     # At noise the halved step stalls as before: the suspicion is confirmed.
     noisy.predictor_move = 5.0f-4
     @test solve_verdicts(noisy, stalled) == [true, true, true, false]
-    @test GameTracing.exhausted(noisy).relative_precision == 1
-    @test GameTracing.exhausted(noisy).correction ≈ 1.0f-2
+    @test GameTracing.noise_confirmed(noisy)
+    @test noisy.noise.relative_precision == 1
+    @test noisy.noise.correction ≈ 1.0f-2
     # Every later solve refuses at its start.
     @test solve_verdicts(noisy, Float32[0]) == [false]
 end
@@ -136,6 +137,7 @@ end
     settings = TraceSettings{Float32}(; LOG_PRECISION_SETTINGS.geometry, max_steps = 20_000)
     tolerance = settings.corrector.logit_tolerance
     failure = unwrap_error(trace_endpoint(LogitGame(pass, FAR_TARGET), 1, settings))
+    @info "noisy trace" failure.cause failure.context.precision failure.context.steps failure.context.step_length
     @test failure.cause == GameTracing.PrecisionExhausted
     (; lambda, correction) = failure.context
     # Corrections are at most 2 λ η, so every one settles below λ = tolerance / 2η.

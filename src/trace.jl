@@ -223,7 +223,7 @@ function continue_trace(
         finalise,
         corrector,
     )
-    return (; corrector.step_length, exhausted = exhausted(corrector))
+    return (; corrector.step_length, exhausted = ifelse(noise_confirmed(corrector), corrector.noise, nothing))
 end
 
 """
