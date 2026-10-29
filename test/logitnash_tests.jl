@@ -24,22 +24,9 @@ end
 """Whether two first-action profiles agree to `1e-3` in every probability."""
 agreeing(left::AbstractVector, right::AbstractVector)::Bool = maximum(abs, left .- right) < 1.0f-3
 
-"""
-Whether `logits` solve the game of `pass` at `precision` to the corrector's tolerance there: at relative precision
-one the gap residual the corrector bounds is the logit residual, and twice the tolerance covers recomputing it.
-"""
-function settled_endpoint(pass::Any, logits::AbstractVector{E}, precision::Real, settings::TraceSettings{E})::Bool where {E <: Real}
-    tolerance = GameTracing.corrector_tolerance(
-        settings.corrector.residual_tolerance,
-        settings.corrector.tolerance_floor_ulps,
-        [logits; one(E)],
-    )
-    return residual_norm(pass, logits, precision) < 2 * tolerance
-end
-
-"""`settled_endpoint` for the two-action payoff tables `payoffs` (`NormalFormPass`)."""
+"""`settled_logits` for the two-action payoff tables `payoffs` (`NormalFormPass`)."""
 function settled_endpoint(payoffs::Tuple, logits::AbstractVector{E}, precision::Real, settings::TraceSettings{E})::Bool where {E <: Real}
-    return settled_endpoint(NormalFormPass(map(table -> E.(table), payoffs)), logits, precision, settings)
+    return settled_logits(NormalFormPass(map(table -> E.(table), payoffs)), logits, precision, settings)
 end
 
 """
@@ -140,14 +127,15 @@ end
     end
 end
 
-@testset "past an exact pitchfork the trace ends at an equilibrium or fails as Singular" begin
+@testset "past an exact pitchfork the trace ends at an equilibrium or fails as Singular or PrecisionExhausted" begin
     for name in PITCHFORK_GAMES, tangent in (BifurcationKit.Bordered(), BifurcationKit.Secant())
         pass = NormalFormPass(map(table -> Float32.(table), LOGITNASH_GAMES[name]))
         result = trace_endpoint(LogitGame(pass, 4.0f0), length(pass.payoffs), TraceSettings{Float32}(; tangent))
-        # Step halving can bisect onto the branch point itself, where the bordered system is exactly singular.
+        # The cause depends on whether rounding breaks the symmetry: an exact branch point factors singular, while one
+        # that rounding unfolds by about eps (battle_of_the_sexes, rcond ≥ 1e-5) is near-singular and exhausts.
         if is_error(result)
             failure = unwrap_error(result)
-            @test failure.cause == GameTracing.Singular
+            @test failure.cause in (GameTracing.Singular, GameTracing.PrecisionExhausted)
             # A trace that broke at its start never reached the pitchfork.
             @test failure.context.relative_precision > 0
         else
@@ -178,12 +166,29 @@ end
     @test maximum(abs, reference.logits .- arm_root) < inv(float(10^6))
     oracle = gambit_branch(UNFOLDED_PITCHFORK_GAME, precision)
     @test agreeing(reference.first_choices, oracle.first_choices)
-    for (_, settings) in ["default" => TraceSettings{Float32}(); arm_variants()]
+    # At Gambit's precision the trace keeps the 1e-4 rule: its accepted corrections all lie within it.
+    double_settings = TraceSettings{typeof(float(1))}()
+    # A failed double trace throws here, an error of this testset.
+    doubled = unwrap(traced_result(UNFOLDED_PITCHFORK_GAME, precision * float(1), double_settings))
+    double_logits = doubled.logits
+    @test doubled.logit_accuracy <= double_settings.corrector.logit_tolerance
+    @test agreeing(first_choices(double_logits), oracle.first_choices)
+    @test settled_endpoint(UNFOLDED_PITCHFORK_GAME, double_logits, precision * float(1), double_settings)
+    # Every Float32 arm follows the double-precision branch within both traces' accuracy, but one: its steps near the
+    # pitchfork at λ 0.808 halve into Float32 rounding noise (runs 40803122294, 40806444224), which exhausts it.
+    for (label, settings) in ["default" => TraceSettings{Float32}(); arm_variants()]
         result = traced_result(UNFOLDED_PITCHFORK_GAME, precision, settings)
+        if label == "fisher_log_precision_reach state_weight 0.01"
+            @test is_error(result) && unwrap_error(result).cause == GameTracing.PrecisionExhausted
+            continue
+        end
         @test !is_error(result)
         if !is_error(result)
-            logits = unwrap(result).logits
+            (; logits, logit_accuracy) = unwrap(result)
+            @test logit_accuracy <= settings.corrector.logit_tolerance
             @test agreeing(first_choices(logits), oracle.first_choices)
+            @test agreeing(first_choices(logits), first_choices(double_logits))
+            @test maximum(abs, logits .- double_logits) <= logit_accuracy + doubled.logit_accuracy
             @test settled_endpoint(UNFOLDED_PITCHFORK_GAME, logits, precision, settings)
         end
     end

@@ -115,6 +115,17 @@ end
     @test GameTracing.within_reach(check, ones(Float32, 3))
 end
 
+@testset "reach measures logits: a far target's gap rounding is within it, a logit jump is not" begin
+    # At ρ = 1e-5 a gap move of 1e-2, a far target's rounding of w = P G, moves the logit 1e-7.
+    previous, predicted = Float32[0, 1.0f-5], Float32[1, 1.0f-5]
+    check = GameTracing.CorrectorReach(
+        GameTracing.AcceptAll(), CorrectorSettings{Float32}(), TraceGeometry{Float32}(), previous, predicted, 1.0f0,
+    )
+    check.predictor_move = GameTracing.logit_change(previous, predicted)
+    @test GameTracing.within_reach(check, predicted .+ Float32[1.0f-2, 0])
+    @test !GameTracing.within_reach(check, predicted .+ Float32[3, 0])
+end
+
 @testset "a game that is non-finite at every positive precision fails at the first step" begin
     result = trace_endpoint(
         LogitGame(PoisonedPass(GAME, 0.0f0), TARGET_PRECISION),
@@ -139,7 +150,7 @@ end
     )
     result = GameTracing.reached_state(
         progress,
-        (; step_length = 0.0f0, exception = "Stopping continuation."),
+        (; step_length = 0.0f0, exhausted = nothing, logit_accuracy = 0.0f0, exception = "Stopping continuation."),
         LogitGame(GAME, TARGET_PRECISION),
         TraceSettings{Float32}(; max_steps = 10),
         (;),
@@ -154,7 +165,7 @@ end
     moved = (; u = Float32[0.1f0, 0.2f0, 0.5f0], p = 0.5f0)
     @test progress(moved, tangent, 1, nothing)
     @test !progress.unmoved
-    outcome = (; step_length = 0.0f0, exception = nothing)
+    outcome = (; step_length = 0.0f0, exhausted = nothing, logit_accuracy = 0.0f0, exception = nothing)
     @test unwrap_error(GameTracing.reached_state(progress, outcome, LogitGame(GAME, TARGET_PRECISION), TraceSettings{Float32}(; max_steps = 2), (;))).cause == GameTracing.TraceStuck
     @test !progress(moved, tangent, 2, nothing)
     @test progress.unmoved

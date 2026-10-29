@@ -1,10 +1,10 @@
 using ErrorTypes: Result
 using LinearAlgebra: LAPACKException, SingularException
 """
-Why a trace stopped short of its target precision. `OffMap`: the trace reached the target, but its endpoint misses the
-corrector tolerance on the game in effect there, a bug in the tracer that the endpoint check catches.
+Why a trace stopped short of its target precision. `PrecisionExhausted`: Newton's corrections stopped contracting at
+the float type's rounding noise, before the target (`CorrectorReach`); a wider float type goes further.
 """
-@enum TraceCause NoConvergence TraceStuck NotFinite Singular OffMap
+@enum TraceCause NoConvergence TraceStuck NotFinite Singular PrecisionExhausted
 
 """
     TraceFailure(cause, context)
@@ -19,14 +19,16 @@ struct TraceFailure{C <: NamedTuple}
 end
 
 """
-    Traced(logits, steps)
+    Traced(logits, steps, logit_accuracy)
 
-The `logits` of a trace at its target precision, a root of the game in effect there to the corrector's tolerance,
-and the continuation `steps` it took, over every segment.
+The `logits` of a trace at its target precision, a root of the game in effect there, the continuation `steps` it took
+over every segment, and `logit_accuracy`: the largest last Newton correction in logits of any accepted point, at most
+the corrector's `logit_tolerance`.
 """
 struct Traced{E <: Real}
     logits::Vector{E}
     steps::Int
+    logit_accuracy::E
 end
 
 """
