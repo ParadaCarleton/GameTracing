@@ -188,11 +188,12 @@ function opening_divisor(settings::TraceSettings{E}, target_precision::Real)::E 
 end
 
 """
-    continue_trace(game, start, old_tangent, settings, finalise, accept_corrected, step_length, max_steps)
+    continue_trace(game, start, old_tangent, settings, finalise, corrector, step_length, max_steps)
 
 Runs the PALC continuation of `game`'s branch from `start = [w; ρ]` toward relative precision one, with `finalise` at
-each accepted point and `accept_corrected` at each corrector, and returns `(; step_length, exhausted)`: the step
-length its last corrector tried and the corrector's `exhausted` record (`CorrectorReach`).
+each accepted point and `corrector` (`CorrectorReach`) at each Newton iterate, and returns
+`(; step_length, exhausted, logit_accuracy)`: the step length its last corrector tried, the corrector's confirmed
+stall past `rounding_bound` (or `nothing`), and the largest last correction of an accepted point.
 From the flat start (`old_tangent` is `nothing`) the first tangent is BifurcationKit's secant; a restart after a
 redraw opens along `restart_tangent`, oriented by the trace's `old_tangent`. BifurcationKit's constructors are not
 inferable, so each is built in its own function and passed on without a named local; it runs once per segment.
@@ -203,18 +204,10 @@ function continue_trace(
     old_tangent::Union{Nothing, AbstractVector{E}},
     settings::TraceSettings{E},
     finalise::TraceFinalise,
-    accept_corrected::Any,
+    corrector::CorrectorReach,
     step_length::E,
     max_steps::Integer,
 )::NamedTuple where {E <: Real}
-    corrector = CorrectorReach(
-        accept_corrected,
-        settings.corrector,
-        settings.geometry,
-        similar(start),
-        similar(start),
-        zero(E),
-    )
     opened_continuation!(
         branch_problem(game, start, last(start); record_from_solution = trace_record_precision),
         palc_algorithm(settings, length(start) - 1, game.target_precision),
@@ -223,7 +216,11 @@ function continue_trace(
         finalise,
         corrector,
     )
-    return (; corrector.step_length, exhausted = ifelse(noise_confirmed(corrector), corrector.noise, nothing))
+    return (;
+        corrector.step_length,
+        exhausted = ifelse(noise_confirmed(corrector), corrector.noise.suspect, nothing),
+        logit_accuracy = corrector.noise.accuracy,
+    )
 end
 
 """
@@ -384,8 +381,10 @@ function redrawn_trace(
         return reached_state(progress, outcome, slot.game, settings, context)
     end
     next = TraceFinalise(progress, finalise.keep_going, finalise.redraw, slot, progress.steps)
+    restarted = guarded_trace(crossing.point, [progress.gap_tangent; progress.tangent_precision], settings, next, accept_corrected)
+    # The accuracy spans every segment of the trace.
     return redrawn_trace(
-        guarded_trace(crossing.point, [progress.gap_tangent; progress.tangent_precision], settings, next, accept_corrected),
+        (; restarted..., logit_accuracy = max(restarted.logit_accuracy, outcome.logit_accuracy)),
         next,
         settings,
         accept_corrected,
@@ -396,8 +395,9 @@ end
 """
     guarded_trace(start, old_tangent, settings, finalise, accept_corrected)
 
-`(; step_length, exception)` of `continue_trace` on `finalise.slot`'s game for the steps `settings.max_steps` leaves:
-the exception is `nothing` for a trace that ran, else the third-party failure it ended on. BifurcationKit throws a
+`(; step_length, exhausted, logit_accuracy, exception)` of `continue_trace` on `finalise.slot`'s game for the steps
+`settings.max_steps` leaves, its corrector allowing the pass's `gain_rounding` at the target precision: the exception
+is `nothing` for a trace that ran, else the third-party failure it ended on. BifurcationKit throws a
 `String` when Newton misses its first point and an `ErrorException` at its second; a non-finite Jacobian reaches
 LAPACK, and so does a singular restart tangent. Any other exception propagates.
 """
@@ -408,15 +408,18 @@ function guarded_trace(
     finalise::TraceFinalise,
     accept_corrected::Any,
 )::NamedTuple where {E <: Real}
+    (; game) = finalise.slot
+    gain_error = E(game.target_precision * gain_rounding(game.pass!, E))
+    corrector = CorrectorReach(accept_corrected, settings.corrector, settings.geometry, similar(start), similar(start), zero(E), gain_error)
     try
         return (;
             continue_trace(
-                finalise.slot.game,
+                game,
                 start,
                 old_tangent,
                 settings,
                 finalise,
-                accept_corrected,
+                corrector,
                 finalise.slot.step_length,
                 settings.max_steps - finalise.step_offset,
             )...,
@@ -426,7 +429,7 @@ function guarded_trace(
         if !uncorrected_start(exception) && !solver_blowup(exception)
             rethrow()
         end
-        return (; step_length = zero(E), exhausted = nothing, exception)
+        return (; step_length = zero(E), exhausted = nothing, logit_accuracy = corrector.noise.accuracy, exception)
     end
 end
 
@@ -455,7 +458,7 @@ function reached_state(
         ))
     end
     if isnothing(outcome.exception) && progress.relative_precision == one(E)
-        return Ok(Traced(copy(progress.gaps), progress.steps))
+        return Ok(Traced(copy(progress.gaps), progress.steps, E(outcome.logit_accuracy)))
     end
     # Why the trace stopped short: a start that would not correct, a broken linear solve, a point that did not move,
     # spent steps, or else a step below `min_step`, `keep_going` or a refusal (`STOP_CAUSES`).
@@ -484,7 +487,8 @@ const STOP_CAUSES = (;
     stopped_context(progress, outcome, target_precision, context)
 
 The context of a trace that stopped at `progress`'s last accepted point after `outcome`: `context`, the steps, the
-precision and its range, the logits, the step held, the tangent in logits and the exception.
+precision and its range, the logits, the step held, the tangent in logits, the `logit_accuracy` of its accepted points
+and the exception.
 """
 function stopped_context(
     progress::TraceProgress{E},
@@ -500,6 +504,7 @@ function stopped_context(
         step_length = E(outcome.step_length),
         logit_tangent = progress.relative_precision .* progress.gap_tangent .+ progress.tangent_precision .* progress.gaps,
         progress.tangent_precision,
+        logit_accuracy = E(outcome.logit_accuracy),
         outcome.exception,
     )
 end

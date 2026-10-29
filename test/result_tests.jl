@@ -3,7 +3,7 @@ using Mooncake: Mooncake
 
 """The sum of twice `point`, reached through a successful `TraceResult` that a caller must unwrap."""
 function unwrapped_total(point::AbstractVector{E})::E where {E <: Real}
-    result::GameTracing.TraceResult{E} = Ok(Traced(2 .* point, 0))
+    result::GameTracing.TraceResult{E} = Ok(Traced(2 .* point, 0, zero(E)))
     return sum(unwrap(result).logits)
 end
 

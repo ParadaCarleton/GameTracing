@@ -120,13 +120,13 @@ end
     @test !GameTracing.noise_confirmed(folded)
     # A settled solve clears the suspicion.
     solve_verdicts(folded, Float32[0, 1.0f-2, 1.1f-2, 1.101f-2])
-    @test isnothing(folded.noise)
+    @test isnothing(folded.noise.suspect)
     # At noise the halved step stalls as before: the suspicion is confirmed.
     noisy.predictor_move = 5.0f-4
     @test solve_verdicts(noisy, stalled) == [true, true, true, false]
     @test GameTracing.noise_confirmed(noisy)
-    @test noisy.noise.relative_precision == 1
-    @test noisy.noise.correction ≈ 1.0f-2
+    @test noisy.noise.suspect.relative_precision == 1
+    @test noisy.noise.suspect.correction ≈ 1.0f-2
     # Every later solve refuses at its start.
     @test solve_verdicts(noisy, Float32[0]) == [false]
 end

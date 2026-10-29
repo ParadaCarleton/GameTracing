@@ -161,13 +161,26 @@ end
     @test maximum(abs, reference.logits .- arm_root) < inv(float(10^6))
     oracle = gambit_branch(UNFOLDED_PITCHFORK_GAME, precision)
     @test agreeing(reference.first_choices, oracle.first_choices)
-    for (_, settings) in ["default" => TraceSettings{Float32}(); arm_variants()]
+    # At Gambit's precision the trace keeps the 1e-4 rule: its accepted corrections all lie within it.
+    double_settings = TraceSettings{typeof(float(1))}()
+    # A failed double trace throws here, an error of this testset.
+    doubled = unwrap(traced_result(UNFOLDED_PITCHFORK_GAME, precision * float(1), double_settings))
+    double_logits = doubled.logits
+    @test doubled.logit_accuracy <= double_settings.corrector.logit_tolerance
+    @test agreeing(first_choices(double_logits), oracle.first_choices)
+    @test settled_endpoint(UNFOLDED_PITCHFORK_GAME, double_logits, precision * float(1), double_settings)
+    # Float32 may settle at its rounding (`rounding_bound`); it must follow the double-precision branch within that.
+    for (label, settings) in ["default" => TraceSettings{Float32}(); arm_variants()]
         result = traced_result(UNFOLDED_PITCHFORK_GAME, precision, settings)
         @test !is_error(result)
         if !is_error(result)
-            logits = unwrap(result).logits
+            (; logits, logit_accuracy) = unwrap(result)
+            accuracy = max(logit_accuracy, settings.corrector.logit_tolerance)
             @test agreeing(first_choices(logits), oracle.first_choices)
-            @test settled_endpoint(UNFOLDED_PITCHFORK_GAME, logits, precision, settings)
+            @test agreeing(first_choices(logits), first_choices(double_logits))
+            @test maximum(abs, logits .- double_logits) <= accuracy + doubled.logit_accuracy
+            @test newton_correction(NormalFormPass(map(table -> Float32.(table), UNFOLDED_PITCHFORK_GAME)), logits, precision) <= accuracy
+            @info "unfolded pitchfork in Float32" label logit_accuracy gap = maximum(abs, logits .- double_logits)
         end
     end
 end
