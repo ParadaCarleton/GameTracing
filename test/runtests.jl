@@ -17,6 +17,9 @@ const WIDTH = 2
     include("float32_stall_experiment.jl")
     # A, B and E ran in run 40814179626, C and D in run 40814692206.
     # B1 to B5 ran in run 40815333022, the A and B controls on a3bde83.
-    stall_experiment(("A", "B4", "E"))
+    # Arm order: does B2's step count depend on the arms traced before it in the process?
+    for arms in (["B2"], ["B2"], ["A", "B4", "E", "B2"], ["E", "B1", "B2"], ["E", "A", "B", "B1", "B2"],["seed1", "B2"], ["seed2", "B2"])
+        run(`$(Base.julia_cmd()) --project=$(Base.active_project()) $(joinpath(@__DIR__, "float32_stall_order.jl")) $arms`)
+    end
     @test true
 end
