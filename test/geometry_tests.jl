@@ -96,6 +96,20 @@ end
     end
 end
 
+@testset "a point closed at an exact root records a correction of 0, a settled one its last correction" begin
+    previous, predicted = Float32[0, 0, 0.5f0], Float32[1, 0, 0.5f0]
+    closing = (; x = predicted, res_f = zero(predicted), p = 0.5f0, step = 2, residual = 0.0f0)
+    for (settled, recorded) in ((false, 0.0f0), (true, 0.25f0))
+        check = GameTracing.CorrectorReach(
+            GameTracing.AcceptAll(), CorrectorSettings{Float32}(), TraceGeometry{Float32}(), previous, predicted, 1.0f0,
+        )
+        check.predictor_move = GameTracing.logit_change(previous, predicted)
+        check.correction, check.settled_here = 0.25f0, settled
+        @test check(closing; fromNewton = false) !== false
+        @test check.noise.accuracy == recorded
+    end
+end
+
 @testset "a projection in the summed norm lands on the branch" begin
     game = LogitGame(GAME, TARGET_PRECISION)
     traced = unwrap(trace_endpoint(game, WIDTH, TraceSettings{Float32}()))
