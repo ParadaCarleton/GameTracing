@@ -4,8 +4,8 @@ using Logging: @debug
     CorrectorSettings{E}(; reach, max_kl, max_angle, max_step_kl, logit_tolerance, pin_tolerance, contraction_limit,
                          contraction_offset, newton_iterations)
 
-The corrector's controls (`CorrectorReach`); `nothing` switches a limit off. `reach`: a corrector further than this
-times its step from its predictor is refused. `max_kl`: a corrected point whose largest per-logit probability KL from
+The corrector's controls (`CorrectorReach`); `nothing` switches a limit off. `reach`: a corrector that moves a logit
+further from the predictor than this times the predictor's own largest logit move is refused. `max_kl`: a corrected point whose largest per-logit probability KL from
 the predictor passes this is refused. `max_angle`: so is one whose chord turns past this many radians from the
 predictor's direction. `max_step_kl`: so is one whose largest per-logit probability KL `KL(corrected ‖ previous)` from
 the step's start passes this, whether the predictor or Newton made the jump; the KL reads fresh probabilities, which
@@ -53,13 +53,12 @@ ends Newton's method converged (`NewtonConverged`), and a correction that fails 
 Two such corrections in a row, each larger than the predictor's own move in logits, are suspected rounding noise
 (`noise`), confirmed at the next halved step; the check then refuses every corrector (`noise_confirmed`).
 A non-finite residual stops the corrector,
-and so does any iterate further from the step's predictor than `settings.reach` times the predictor's own step, in
-`geometry`'s plain norm (`arclength_distance`); the step then halves. On a smooth branch that distance is the branch's
-curvature times `ds² / 2`, so halving brings any step under it, while an iterate that lands on another branch is far
-from it. A converged closing point is refused the same way past `reach`, past a largest probability KL
+and so does any iterate whose logits are further from the predictor's than `settings.reach` times the predictor's own
+largest logit move (`within_reach`); the step then halves. On a smooth branch that distance is the branch's curvature
+times `ds² / 2`, so halving brings any step under it, while an iterate that lands on another branch is far from it. A converged closing point is refused the same way past `reach`, past a largest probability KL
 `KL(corrected ‖ predicted)` of `settings.max_kl` (`largest_kl`), past a `KL(corrected ‖ previous)` of
 `settings.max_step_kl`, or past a turn of `settings.max_angle` radians from
-the predictor's direction (`chord_angle`, from `previous`). A predictor that did not move has no reach to compare.
+the predictor's logit move (`chord_angle`, from `previous`). A predictor that did not move has no reach to compare.
 `accept_corrected(logits, ρ, converged)` then sees every other closing point. `previous`, `predicted` and
 `step_length` hold the current step's start and predictor, `predictor_move` the predictor's largest logit change.
 `iterate`, `correction`, `stalls` and `settled_here` follow the current solve: its last iterate, its last correction
@@ -104,9 +103,9 @@ end
 
 """Whether `check` accepts its corrector's converged closing point `corrected` (reach, KL and angle)."""
 function closing_accepted(check::CorrectorReach{C, E}, corrected::AbstractVector{E})::Bool where {C, E <: Real}
-    (; settings, geometry) = check
+    (; settings) = check
     if !within_reach(check, corrected)
-        @debug "corrector refused" _group = :trace reason = :reach step_length = check.step_length
+        @debug "corrector refused" _group = :trace reason = :reach predictor_move = check.predictor_move
         return false
     end
     if !within_limit(settings.max_kl, largest_kl(corrected, check.predicted))
@@ -117,7 +116,7 @@ function closing_accepted(check::CorrectorReach{C, E}, corrected::AbstractVector
         @debug "corrector refused" _group = :trace reason = :step_kl
         return false
     end
-    if !within_limit(settings.max_angle, chord_angle(check.previous, check.predicted, corrected, geometry))
+    if !within_limit(settings.max_angle, chord_angle(check.previous, check.predicted, corrected))
         @debug "corrector refused" _group = :trace reason = :angle
         return false
     end
@@ -255,14 +254,18 @@ function settled(check::CorrectorReach, iterate::I, correction::Real)::Bool wher
     return correction <= check.settings.logit_tolerance && abs(offset) <= check.settings.pin_tolerance * pin_scale
 end
 
-"""Whether `point` is within `check.settings.reach` times the predictor's step of the predictor."""
+"""
+Whether `point` moved no logit further from the predictor's than `check.settings.reach` times the predictor's own
+largest logit move (`logit_change`). Logits are target-free, as the convergence test is; a weighted norm can shrink a
+branch jump (frozen Fisher weights) or swell a settled point (gaps `w = P G` at a far target).
+"""
 function within_reach(check::CorrectorReach, point::AbstractVector)::Bool
-    if !(check.step_length > 0)
+    if !(check.predictor_move > 0)
         return true
     end
     return within_limit(
-        scaled_limit(check.settings.reach, check.step_length),
-        arclength_distance(check.predicted, point, check.geometry),
+        scaled_limit(check.settings.reach, check.predictor_move),
+        logit_change(check.predicted, point),
     )
 end
 

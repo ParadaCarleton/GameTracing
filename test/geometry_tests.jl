@@ -13,12 +13,13 @@ using ErrorTypes: is_error, unwrap, unwrap_error
     @test isfinite(GameTracing.bernoulli_kl(40.0f0, -40.0f0))
 end
 
-@testset "chord_angle measures the turn from the predictor, and an empty chord has none" begin
-    geometry = TraceGeometry{Float32}(distance = SummedDistance, state_weight = 0.5f0)
-    start = zeros(Float32, 3)
-    @test GameTracing.chord_angle(start, Float32[1, 0, 0], Float32[2, 0, 0], geometry) ≈ 0 atol = 1.0f-3
-    @test GameTracing.chord_angle(start, Float32[1, 0, 0], Float32[0, 1, 0], geometry) ≈ Float32(π / 2)
-    @test GameTracing.chord_angle(start, Float32[1, 0, 0], start, geometry) == 0
+@testset "chord_angle measures the turn of the logits from the predictor's, and an empty chord has none" begin
+    start = Float32[0, 0, 1]
+    @test GameTracing.chord_angle(start, Float32[1, 0, 1], Float32[2, 0, 1]) ≈ 0 atol = 1.0f-3
+    @test GameTracing.chord_angle(start, Float32[1, 0, 1], Float32[0, 1, 1]) ≈ Float32(π / 2)
+    @test GameTracing.chord_angle(start, Float32[1, 0, 1], start) == 0
+    # A move in ρ alone at zero gaps leaves the logits, so it turns nothing.
+    @test GameTracing.chord_angle(start, Float32[1, 0, 1], Float32[0, 0, 2]) == 0
 end
 
 @testset "each distance weighs coordinates and precision as documented, the Fisher distances measuring in the summed norm" begin
@@ -68,9 +69,9 @@ end
 @testset "a converged corrector past the KL, angle or reach limit is refused, in the default geometry" begin
     geometry = TraceGeometry{Float32}()
     predicted = Float32[1, 0, 0.5f0]
-    # A move of twice the reach in the geometry's own norm, whatever its state weight; the step is 1.
-    beyond_reach = predicted .+ [2 * 0.5f0 / sqrt(GameTracing.coordinate_weight(geometry, 2)), 0, 0]
-    @test GameTracing.arclength_distance(predicted, beyond_reach, geometry) ≈ 1
+    # The predictor moves the first logit by 0.5; this moves it 0.5 more, twice the reach of 0.5 times that move.
+    beyond_reach = predicted .+ Float32[1, 0, 0]
+    @test GameTracing.logit_change(predicted, beyond_reach) ≈ 2 * 0.5f0 *GameTracing.logit_change(Float32[0, 0, 0.5f0], predicted)
     for (corrector, corrected) in (
             (CorrectorSettings{Float32}(reach = nothing, max_kl = 1.0f-3), Float32[3, 0, 0.5f0]),
             (CorrectorSettings{Float32}(reach = nothing, max_angle = 0.1f0), Float32[0, 1, 0.5f0]),
@@ -84,6 +85,7 @@ end
             predicted,
             1.0f0,
         )
+        check.predictor_move = GameTracing.logit_change(check.previous, predicted)
         @test GameTracing.closing_accepted(check, predicted)
         @test !GameTracing.closing_accepted(check, corrected)
         # The closing call reads the solve's own verdict: it settled.
