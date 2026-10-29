@@ -286,7 +286,56 @@ function stall_experiment(arms::Tuple)::Nothing
     for arm in ("B4", "E")
         jump_report(arm, precision, (0.79f0, 0.9f0))
     end
+    noise_report("A", precision, (0.8f0, 0.812f0))
+    for factor in (0.9f0, 0.95f0, 1, 1.05f0, 1.1f0)
+        println("FIRSTSTEP ", factor, " ", first_step_endpoint(precision, factor))
+    end
     return nothing
+end
+
+"""
+Print every corrector iterate, stop and accepted point of arm `arm` with λ in `window`: its λ, logits and correction,
+or the stop's message and reason.
+"""
+function noise_report(arm::AbstractString, precision::Real, window::Tuple)::Nothing
+    E = ifelse(arm == "E", typeof(float(1)), Float32)
+    settings = arm_settings(ARMS.fisher_log_precision_reach, E(1) / 100)
+    logs, _ = collect_test_logs(StallTrace(stall_game(arm, E(precision)), settings); min_level = Debug)
+    level = precision
+    for record in logs
+        if record.group != :trace
+            continue
+        end
+        level = get(record.kwargs, :relative_precision, level / precision) * precision
+        if !(first(window) <= level <= last(window))
+            continue
+        end
+        if record.message == "corrector correction"
+            logits = record.kwargs[:logits]
+            println(@sprintf("NOISE %s iterate λ=%.6f z=(%.5f, %.5f) correction=%.3e", arm, level, first(logits), last(logits), record.kwargs[:correction]))
+        elseif record.message == "trace point"
+            state = record.kwargs[:state]
+            logits = last(state) .* state[1:(end - 1)]
+            println(@sprintf("NOISE %s accepted λ=%.6f z=(%.5f, %.5f)", arm, level, first(logits), last(logits)))
+        elseif record.message in ("corrector stopped", "corrector refused", "trace stopped")
+            println("NOISE ", arm, " ", record.message, " ", get(record.kwargs, :reason, ""), " ", get(record.kwargs, :correction, ""))
+        end
+    end
+    return nothing
+end
+
+"""The equilibrium arm E reaches at `precision` with its `first_step` scaled by `factor`, and its endpoint logits."""
+function first_step_endpoint(precision::Real, factor::Real)::String
+    E = typeof(float(1))
+    first_step = TraceSettings{E}().first_step * factor
+    settings = arm_settings(ARMS.fisher_log_precision_reach, E(1) / 100; first_step)
+    result = trace_endpoint(stall_game("E", E(precision)), length(UNFOLDED_PITCHFORK_GAME), settings)
+    if is_error(result)
+        return string("failed ", unwrap_error(result).cause)
+    end
+    logits = unwrap(result).logits
+    named = ifelse(all(>(5), logits), "(1, 1)", ifelse(all(<(-5), logits), "(2, 2)", "other"))
+    return string(named, " ", logits, " steps ", unwrap(result).steps)
 end
 
 """
