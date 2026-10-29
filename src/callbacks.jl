@@ -212,6 +212,7 @@ function corrected!(
     correction, before = logit_change(check.iterate, iterate.x), check.correction
     copyto!(check.iterate, iterate.x)
     check.correction = correction
+    @debug "corrector correction" _group = :trace correction relative_precision = last(iterate.x)
     if !proceed
         return false
     end
