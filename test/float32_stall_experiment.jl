@@ -2,7 +2,7 @@
 # Arms: A all Float32; B residual and Jacobian in Float64, rounded; C bordered solve in Float64, rounded; D both; E all Float64.
 using BifurcationKit: BifurcationKit
 using ErrorTypes: is_error, unwrap, unwrap_error
-using LinearAlgebra: BlasFloat, BlasInt, LAPACK, LU, SingularException, istril, istriu, logabsdet
+using LinearAlgebra: BLAS, BlasFloat, BlasInt, LAPACK, LU, SingularException, istril, istriu, logabsdet
 using LogitNash: LogitNash
 using Logging: Debug
 using Printf: @sprintf
@@ -275,6 +275,44 @@ function stall_reference(precision::Real)::Vector
     return unwrap(trace_endpoint(stall_game("E", E(precision)), length(UNFOLDED_PITCHFORK_GAME), settings)).logits
 end
 
+# BifurcationKit irv's `_turns_forward!` (Palc.jl:396-418) with one added debug line: the cosine it tests, in its metric.
+@eval BifurcationKit function _turns_forward!(check::PALCStepCheck, znew::BorderedArray)
+    if ~tracks_turn(check.alg)
+        return true
+    end
+    state = check.state
+    cosine, next_tangent = turn_cosine(check.alg.tangent, state, check.iter, znew, getdot(check.alg))
+    @debug "turn cosine" _group = :trace cosine relative_precision = last(znew.u) orientation_check = check.alg.orientation_check
+    if check.alg.orientation_check && points_back(cosine)
+        return false
+    end
+    turn = acos(clamp(cosine, -one(cosine), one(cosine)))
+    if _rejects_turn(check.control, turn)
+        return false
+    end
+    state.cache = _update(state.cache; quality = _observe_turn(check.control, state.cache.quality, turn))
+    state.next_tangent = next_tangent
+    return true
+end
+
+"""Print the machine, then arms B2, B3 and B5 traced three times each, at the default BLAS threads and at one."""
+function race_report(precision::Real)::Nothing
+    println("RACE cpu_name=", Sys.CPU_NAME, " model=", first(Sys.cpu_info()).model, " threads=", Threads.nthreads(),
+        " blas_threads=", BLAS.get_num_threads())
+    for blas_threads in (BLAS.get_num_threads(), 1)
+        BLAS.set_num_threads(blas_threads)
+        for arm in ("B2", "B3", "B5")
+            settings = arm_settings(ARMS.fisher_log_precision_reach, 1.0f0 / 100)
+            steps = [
+                unwrap(trace_endpoint(stall_game(arm, Float32(precision)), length(UNFOLDED_PITCHFORK_GAME), settings)).steps
+                for _ in 1:3
+            ]
+            println("RACE blas_threads=", blas_threads, " arm ", arm, " steps ", steps)
+        end
+    end
+    return nothing
+end
+
 """Print each of `arms`' reports at LogitNash's stopping precision past 4, as the unfolded-pitchfork test traces."""
 function stall_experiment(arms::Tuple)::Nothing
     profile_status = LogitNash.solve(map(float, UNFOLDED_PITCHFORK_GAME); stop_lambda = float(4), stop_eps = zero(float(4)))
@@ -287,6 +325,7 @@ function stall_experiment(arms::Tuple)::Nothing
         jump_report(arm, precision, (0.79f0, 0.9f0))
     end
     # noise_report and first_step_endpoint ran in run 40816864095.
+    race_report(precision)
     return nothing
 end
 
@@ -354,6 +393,11 @@ function jump_report(arm::AbstractString, precision::Real, window::Tuple)::Nothi
             solve_start = position + 1
         elseif record.message == "corrector closing"
             closing = (; record.kwargs..., rates)
+        elseif record.message == "turn cosine"
+            level = record.kwargs[:relative_precision] * precision
+            if first(window) <= level <= last(window)
+                println(@sprintf("TURN %s λ=%.6f cosine=%.4f orientation_check=%s", arm, level, record.kwargs[:cosine], record.kwargs[:orientation_check]))
+            end
         elseif record.message == "trace point"
             state = record.kwargs[:state]
             level = last(state) * precision
