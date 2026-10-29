@@ -68,7 +68,12 @@ PALC's `step_control` for `control` over `width` gaps in `geometry`: `nothing` w
 `CorrectorQuality`, its distance limit scaled from the gaps' Euclidean length into the norm. Its contraction rate,
 `corrector`'s limit and offset, slows growth only: `CorrectorReach` refuses on the rate in logits.
 """
-corrector_quality(::Nothing, ::CorrectorSettings, ::TraceGeometry, ::Integer)::Nothing = nothing
+corrector_quality(
+    ::Nothing,
+    ::CorrectorSettings,
+    ::TraceGeometry,
+    ::Integer,
+)::Nothing = nothing
 
 function corrector_quality(
     control::StepControl{E},
@@ -96,7 +101,12 @@ function palc_algorithm(
     target_precision::Real;
     orientation_check::Bool = settings.orientation_check,
 )::BifurcationKit.AbstractContinuationAlgorithm where {E <: Real}
-    return palc_with_geometry(settings, width, palc_geometry(settings.geometry, width, target_precision), orientation_check)
+    return palc_with_geometry(
+        settings,
+        width,
+        palc_geometry(settings.geometry, width, target_precision),
+        orientation_check,
+    )
 end
 
 """
@@ -114,7 +124,12 @@ function palc_with_geometry(
         θ = geometry.palc_state_weight,
         dotθ = geometry.dot,
         bls = bordered_linear_solver(settings.bordered_solver, width + 1, E),
-        step_control = corrector_quality(settings.step_control, settings.corrector, settings.geometry, width),
+        step_control = corrector_quality(
+            settings.step_control,
+            settings.corrector,
+            settings.geometry,
+            width,
+        ),
         orientation_check = orientation_check && settings.bordered_solver == MatrixSolve,
         corrector = BifurcationKit.FreeParameterNewton(),
         orientation_dot = PlainOrientation(settings.geometry),
@@ -183,8 +198,10 @@ end
 BifurcationKit's `η` for a trace from the flat start to `target_precision`: its secant solve, `step / η` in the relative
 precision, lies `step / settings.first_tangent_divisor` from the start in the trace's distance (`precision_length`).
 """
-function opening_divisor(settings::TraceSettings{E}, target_precision::Real)::E where {E <: Real}
-    return settings.first_tangent_divisor * precision_length(settings.geometry, zero(E), E(target_precision))
+function opening_divisor(settings::TraceSettings{E}, target_precision::Real)::E where {E <:
+    Real}
+    return settings.first_tangent_divisor *
+        precision_length(settings.geometry, zero(E), E(target_precision))
 end
 
 """
@@ -192,7 +209,8 @@ end
 
 Runs the PALC continuation of `game`'s branch from `start = [w; ρ]` toward relative precision one, with `finalise` at
 each accepted point and `corrector` (`CorrectorReach`) at each Newton iterate, and returns
-`(; step_length, exhausted, logit_accuracy)`: the step length its last corrector tried, the corrector's confirmed
+`(; step_length, accepted_step, exhausted, logit_accuracy)`: the step length its last corrector tried, the step length of
+its last corrector to converge (`CorrectorReach.accepted_step`), the corrector's confirmed
 stall at rounding noise (or `nothing`), and the largest last correction of an accepted point.
 From the flat start (`old_tangent` is `nothing`) the first tangent is BifurcationKit's secant; a restart after a
 redraw opens along `restart_tangent`, oriented by the trace's `old_tangent`. BifurcationKit's constructors are not
@@ -209,15 +227,26 @@ function continue_trace(
     max_steps::Integer,
 )::NamedTuple where {E <: Real}
     opened_continuation!(
-        branch_problem(game, start, last(start); record_from_solution = trace_record_precision),
+        branch_problem(
+            game,
+            start,
+            last(start);
+            record_from_solution = trace_record_precision,
+        ),
         palc_algorithm(settings, length(start) - 1, game.target_precision),
-        continuation_options(settings, step_length, max_steps, opening_divisor(settings, game.target_precision)),
+        continuation_options(
+            settings,
+            step_length,
+            max_steps,
+            opening_divisor(settings, game.target_precision),
+        ),
         old_tangent,
         finalise,
         corrector,
     )
     return (;
         corrector.step_length,
+        corrector.accepted_step,
         exhausted = ifelse(noise_confirmed(corrector), corrector.noise.suspect, nothing),
         logit_accuracy = corrector.noise.accuracy,
     )
@@ -259,13 +288,27 @@ function opened_continuation!(
     corrector::CorrectorReach,
 )::Nothing where {E <: Real}
     start = BifurcationKit.getu0(problem)
-    dot, palc_state_weight = BifurcationKit.getdot(algorithm), E(BifurcationKit.getθ(algorithm))
+    dot, palc_state_weight = BifurcationKit.getdot(algorithm),
+        E(BifurcationKit.getθ(algorithm))
     # A Fisher trace's weights are those of the point it restarts from.
     BifurcationKit.reweight!(dot, BifurcationKit.BorderedArray(start, last(start)))
-    tangent = restart_tangent(finalise.slot.game, start, old_tangent, dot, palc_state_weight, algorithm.orientation_dot)
+    tangent = restart_tangent(
+        finalise.slot.game,
+        start,
+        old_tangent,
+        dot,
+        palc_state_weight,
+        algorithm.orientation_dot,
+    )
     length_in_norm = sqrt(palc_product(dot, palc_state_weight, tangent, tangent))
     # The corrected point's tangent is the new map's; a restart that fails before a step reports it.
-    copyto!(finalise.progress.gap_tangent, 1, tangent, 1, length(finalise.progress.gap_tangent))
+    copyto!(
+        finalise.progress.gap_tangent,
+        1,
+        tangent,
+        1,
+        length(finalise.progress.gap_tangent),
+    )
     finalise.progress.tangent_precision = last(tangent) / length_in_norm
     finalise.progress.gap_tangent ./= length_in_norm
     opening = start .+ (options.ds / length_in_norm) .* tangent
@@ -334,7 +377,13 @@ function trace_endpoint(
         zero(E),
         false,
     )
-    finalise = TraceFinalise(progress, keep_going, redraw, RedrawSlot(game, game, false, settings.first_step), 0)
+    finalise = TraceFinalise(
+        progress,
+        keep_going,
+        redraw,
+        RedrawSlot(game, game, false, settings.first_step),
+        0,
+    )
     return redrawn_trace(
         guarded_trace(traced_start, nothing, settings, finalise, accept_corrected),
         finalise,
@@ -366,25 +415,48 @@ function redrawn_trace(
         return reached_state(progress, outcome, slot.game, settings, context)
     end
     slot.pending = false
-    crossing = redraw_crossing(slot.before, slot.game, [progress.gaps; progress.relative_precision], settings)
+    crossing = redraw_crossing(
+        slot.before,
+        slot.game,
+        [progress.gaps; progress.relative_precision],
+        settings,
+    )
     @debug "redraw crossed" _group = :trace reason = crossing.reason steps = crossing.steps
     if crossing.reason != :crossed
         @debug "trace stopped" _group = :trace reason = crossing.reason steps = crossing.steps
         # The context's logits are the accepted point, a root of the game before the swap.
         return Err(TraceFailure(
             TraceStuck,
-            (; stopped_context(progress, outcome, target_precision, context)..., projected = true, crossing.reason),
+            (; stopped_context(
+                progress,
+                outcome,
+                target_precision,
+                context,
+            )..., projected = true, crossing.reason),
         ))
     end
     copyto!(progress.gaps, payoff_gaps(crossing.point))
     if progress.relative_precision == one(E) || progress.steps >= settings.max_steps
         return reached_state(progress, outcome, slot.game, settings, context)
     end
-    next = TraceFinalise(progress, finalise.keep_going, finalise.redraw, slot, progress.steps)
+    next = TraceFinalise(
+        progress,
+        finalise.keep_going,
+        finalise.redraw,
+        slot,
+        progress.steps,
+    )
     return redrawn_trace(
-        with_earlier_accuracy(
-            guarded_trace(crossing.point, [progress.gap_tangent; progress.tangent_precision], settings, next, accept_corrected),
+        with_earlier_segments(
+            guarded_trace(
+                crossing.point,
+                [progress.gap_tangent; progress.tangent_precision],
+                settings,
+                next,
+                accept_corrected,
+            ),
             outcome.logit_accuracy,
+            outcome.accepted_step,
         ),
         next,
         settings,
@@ -393,9 +465,24 @@ function redrawn_trace(
     )
 end
 
-"""A segment's `outcome` whose `logit_accuracy` also spans the earlier segments' `earlier` accuracy."""
-function with_earlier_accuracy(outcome::NamedTuple, earlier::Real)::NamedTuple
-    return (; outcome..., logit_accuracy = max(outcome.logit_accuracy, earlier))
+"""
+A segment's `outcome` whose `logit_accuracy` also spans the earlier segments' `earlier_accuracy`, and whose
+`accepted_step` is the earlier segments' `earlier_step` when this segment accepted none.
+"""
+function with_earlier_segments(
+    outcome::NamedTuple,
+    earlier_accuracy::Real,
+    earlier_step::Real,
+)::NamedTuple
+    return (;
+        outcome...,
+        logit_accuracy = max(outcome.logit_accuracy, earlier_accuracy),
+        accepted_step = ifelse(
+            outcome.accepted_step > 0,
+            outcome.accepted_step,
+            earlier_step,
+        ),
+    )
 end
 
 """
@@ -414,7 +501,14 @@ function guarded_trace(
     accept_corrected::Any,
 )::NamedTuple where {E <: Real}
     (; game) = finalise.slot
-    corrector = CorrectorReach(accept_corrected, settings.corrector, settings.geometry, similar(start), similar(start), zero(E))
+    corrector = CorrectorReach(
+        accept_corrected,
+        settings.corrector,
+        settings.geometry,
+        similar(start),
+        similar(start),
+        zero(E),
+    )
     try
         return (;
             continue_trace(
@@ -433,7 +527,9 @@ function guarded_trace(
         if !uncorrected_start(exception) && !solver_blowup(exception)
             rethrow()
         end
-        return (; step_length = zero(E), exhausted = nothing, logit_accuracy = corrector.noise.accuracy, exception)
+        return (; step_length = zero(
+            E,
+        ), accepted_step = corrector.accepted_step, exhausted = nothing, logit_accuracy = corrector.noise.accuracy, exception)
     end
 end
 
@@ -458,7 +554,12 @@ function reached_state(
         @debug "trace stopped" _group = :trace reason = :precision_exhausted relative_precision correction
         return Err(TraceFailure(
             PrecisionExhausted,
-            (; lambda = target_precision * relative_precision, correction, stopped_context(progress, outcome, target_precision, context)...),
+            (; lambda = target_precision * relative_precision, correction, stopped_context(
+                progress,
+                outcome,
+                target_precision,
+                context,
+            )...),
         ))
     end
     if isnothing(outcome.exception) && progress.relative_precision == one(E)
@@ -478,7 +579,10 @@ function reached_state(
         :stopped_short
     end
     @debug "trace stopped" _group = :trace reason
-    return Err(TraceFailure(STOP_CAUSES[reason], stopped_context(progress, outcome, target_precision, context)))
+    return Err(TraceFailure(
+        STOP_CAUSES[reason],
+        stopped_context(progress, outcome, target_precision, context),
+    ))
 end
 
 # The cause a trace that stops short for each reason fails with.
@@ -491,7 +595,7 @@ const STOP_CAUSES = (;
     stopped_context(progress, outcome, target_precision, context)
 
 The context of a trace that stopped at `progress`'s last accepted point after `outcome`: `context`, the steps, the
-precision and its range, the logits, the step held, the tangent in logits, the `logit_accuracy` of its accepted points
+precision and its range, the logits, the step held and the step last accepted (`accepted_step`, in `settings.geometry`'s norm), the tangent in logits, the `logit_accuracy` of its accepted points
 and the exception.
 """
 function stopped_context(
@@ -506,7 +610,9 @@ function stopped_context(
         progress.precision_min, progress.precision_max, progress.unmoved,
         logits = progress.relative_precision .* progress.gaps, progress.relative_precision,
         step_length = E(outcome.step_length),
-        logit_tangent = progress.relative_precision .* progress.gap_tangent .+ progress.tangent_precision .* progress.gaps,
+        accepted_step = E(outcome.accepted_step),
+        logit_tangent = progress.relative_precision .* progress.gap_tangent .+
+            progress.tangent_precision .* progress.gaps,
         progress.tangent_precision,
         logit_accuracy = E(outcome.logit_accuracy),
         outcome.exception,

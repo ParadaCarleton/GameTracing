@@ -50,7 +50,10 @@ precision.
 """
 struct NoiseRecord{E <: Real}
     accuracy::E
-    suspect::Union{Nothing, @NamedTuple{relative_precision::E, correction::E, confirmed::Bool}}
+    suspect::Union{
+        Nothing,
+        @NamedTuple{relative_precision::E, correction::E, confirmed::Bool},
+    }
 end
 
 """
@@ -68,6 +71,7 @@ times `ds² / 2`, so halving brings any step under it, while an iterate that lan
 the predictor's logit move (`chord_angle`, from `previous`). A predictor that did not move has no reach to compare.
 `accept_corrected(logits, ρ, converged)` then sees every other closing point. `previous`, `predicted` and
 `step_length` hold the current step's start and predictor, `predictor_move` the predictor's largest logit change.
+`accepted_step` is the `step_length` of the last corrector that closed converged, and zero before any did.
 `iterate`, `correction`, `stalls` and `settled_here` follow the current solve: its last iterate, its last correction
 in logits, its non-contracting corrections in a row, and whether it settled. `noise` (`NoiseRecord`) spans the trace.
 """
@@ -86,6 +90,7 @@ mutable struct CorrectorReach{C, E <: Real}
     stalls::Int
     settled_here::Bool
     noise::NoiseRecord{E}
+    accepted_step::E
 end
 
 """Whether `check`'s corrector met rounding noise, confirmed at a halved step (`corrected!`)."""
@@ -103,13 +108,27 @@ function CorrectorReach(
 )::CorrectorReach{C, E} where {C, E <: Real}
     # A plain Newton solve has no predictor move: NaN fails the noise test, so its stalls refuse.
     return CorrectorReach{C, E}(
-        accept_corrected, settings, geometry, collect(previous), collect(predicted), step_length,
-        E(NaN32), collect(previous), E(NaN32), 0, false, NoiseRecord(zero(E), nothing),
+        accept_corrected,
+        settings,
+        geometry,
+        collect(previous),
+        collect(predicted),
+        step_length,
+        E(NaN32),
+        collect(previous),
+        E(NaN32),
+        0,
+        false,
+        NoiseRecord(zero(E), nothing),
+        zero(E),
     )
 end
 
 """Whether `check` accepts its corrector's converged closing point `corrected` (reach, KL and angle)."""
-function closing_accepted(check::CorrectorReach{C, E}, corrected::AbstractVector{E})::Bool where {C, E <: Real}
+function closing_accepted(
+    check::CorrectorReach{C, E},
+    corrected::AbstractVector{E},
+)::Bool where {C, E <: Real}
     (; settings) = check
     if !within_reach(check, corrected)
         @debug "corrector refused" _group = :trace reason = :reach predictor_move = check.predictor_move
@@ -119,7 +138,10 @@ function closing_accepted(check::CorrectorReach{C, E}, corrected::AbstractVector
         @debug "corrector refused" _group = :trace reason = :kl
         return false
     end
-    if !within_limit(settings.max_angle, chord_angle(check.previous, check.predicted, corrected))
+    if !within_limit(
+            settings.max_angle,
+            chord_angle(check.previous, check.predicted, corrected),
+        )
         @debug "corrector refused" _group = :trace reason = :angle
         return false
     end
@@ -127,7 +149,10 @@ function closing_accepted(check::CorrectorReach{C, E}, corrected::AbstractVector
 end
 
 """The verdict that ends a solve: converged (`NewtonConverged`) when it `settled_here`, else `proceed`."""
-function closing_verdict(check::CorrectorReach, proceed::Bool)::Union{Bool, BifurcationKit.NewtonConverged}
+function closing_verdict(check::CorrectorReach, proceed::Bool)::Union{
+    Bool,
+    BifurcationKit.NewtonConverged,
+}
     if check.settled_here
         return BifurcationKit.NewtonConverged()
     end
@@ -171,7 +196,8 @@ function (check::CorrectorReach{C, E})(iterate::I;
         return corrected!(check, iterate, reached)
     end
     # An exact root converges unsettled on BifurcationKit's own test (`residual <= tol`, tol 0), so it meets the same tests.
-    converged = isfinite(iterate.residual) && (check.settled_here || iszero(iterate.residual))
+    converged = isfinite(iterate.residual) &&
+        (check.settled_here || iszero(iterate.residual))
     @debug "corrector closed" _group = :trace step = iterate.step residual = iterate.residual converged step_length = check.step_length
     if converged && !closing_accepted(check, iterate.x)
         return false
@@ -179,10 +205,16 @@ function (check::CorrectorReach{C, E})(iterate::I;
     if !check.accept_corrected(logits_at(iterate.x), iterate.p, converged)
         return false
     end
+    if converged
+        check.accepted_step = check.step_length
+    end
     # A solve that settled at its start has no correction (NaN). An unsettled exact root's next correction is 0.
     closing_correction = ifelse(check.settled_here, check.correction, zero(E))
     if converged && !isnan(closing_correction)
-        check.noise = NoiseRecord(max(check.noise.accuracy, closing_correction), check.noise.suspect)
+        check.noise = NoiseRecord(
+            max(check.noise.accuracy, closing_correction),
+            check.noise.suspect,
+        )
     end
     return closing_verdict(check, true)
 end
@@ -198,11 +230,10 @@ step halves. Two in a row, each larger than the predictor's own move, are suspec
 step still halves. A second such solve before any settles, its correction at least half the suspect's, confirms it
 (`noise_confirmed`): halving shrinks the corrections of a predictor past a fold, not noise. Every later solve refuses.
 """
-function corrected!(
-    check::CorrectorReach{C, E},
-    iterate::NamedTuple,
-    proceed::Bool,
-)::Union{Bool, BifurcationKit.NewtonConverged} where {C, E <: Real}
+function corrected!(check::CorrectorReach{C, E}, iterate::NamedTuple, proceed::Bool)::Union{
+    Bool,
+    BifurcationKit.NewtonConverged,
+} where {C, E <: Real}
     if noise_confirmed(check)
         return false
     end
@@ -223,7 +254,14 @@ function corrected!(
     end
     (; contraction_limit, contraction_offset, logit_tolerance) = check.settings
     # The first correction has no rate (`before` is NaN), so it contracts.
-    if isnan(before) || within_limit(scaled_limit(contraction_limit, before + logit_tolerance * contraction_offset), correction)
+    if isnan(before) ||
+            within_limit(
+                scaled_limit(
+                    contraction_limit,
+                    before + logit_tolerance * contraction_offset,
+                ),
+                correction,
+            )
         check.stalls = 0
         return true
     end
@@ -239,7 +277,10 @@ function corrected!(
     suspect = check.noise.suspect
     confirmed = !isnothing(suspect) && correction >= suspect.correction / 2
     @debug "corrector stopped" _group = :trace reason = :noise confirmed correction predictor_move = check.predictor_move
-    check.noise = NoiseRecord(check.noise.accuracy, (; relative_precision = last(iterate.x), correction, confirmed))
+    check.noise = NoiseRecord(
+        check.noise.accuracy,
+        (; relative_precision = last(iterate.x), correction, confirmed),
+    )
     return false
 end
 
@@ -256,11 +297,13 @@ Whether `check`'s corrector has settled `iterate`, reached by a Newton `correcti
 logit more than `logit_tolerance`, and the relative precision `ρ` is at its pin to the relative `pin_tolerance`. The pin
 needs its own test: a far target's logits barely move with `ρ`, so they would pass a `ρ` that never left its start.
 """
-function settled(check::CorrectorReach, iterate::I, correction::Real)::Bool where {I <: NamedTuple}
+function settled(check::CorrectorReach, iterate::I, correction::Real)::Bool where {I <:
+    NamedTuple}
     relative_precision = last(iterate.x)
     offset = pin_residual(iterate)
     pin_scale = max(abs(relative_precision), abs(relative_precision - offset))
-    return correction <= check.settings.logit_tolerance && abs(offset) <= check.settings.pin_tolerance * pin_scale
+    return correction <= check.settings.logit_tolerance &&
+        abs(offset) <= check.settings.pin_tolerance * pin_scale
 end
 
 """

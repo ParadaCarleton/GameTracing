@@ -14,6 +14,43 @@ const FAILURE_SETTINGS = TraceSettings{Float32}(first_step = 0.01f0, max_step = 
     @test TARGET_PRECISION * unwrap_error(result).context.relative_precision <= 1.0f0
 end
 
+"""A `keep_going` callback that records each accepted point as `[w; ρ]`, the payoff gaps and relative precision."""
+struct AcceptedPoints{V <: AbstractVector}
+    points::V
+end
+
+function (recorder::AcceptedPoints)(
+    logits::AbstractVector{E},
+    relative_precision::E,
+)::Bool where {E <: Real}
+    push!(recorder.points, [logits ./ relative_precision; relative_precision])
+    return true
+end
+
+@testset "a stuck trace reports its last accepted step, not its last attempted one" begin
+    recorder = AcceptedPoints(Vector{Float32}[])
+    result = trace_endpoint(
+        LogitGame(PoisonedPass(GAME, 1.0f0), TARGET_PRECISION),
+        WIDTH,
+        FAILURE_SETTINGS;
+        keep_going = recorder,
+    )
+    context = unwrap_error(result).context
+    points = filter(point -> last(point) > 0, recorder.points)
+    @test length(points) >= 2
+    chord = GameTracing.arclength_distance(
+        points[end - 1],
+        points[end],
+        FAILURE_SETTINGS.geometry,
+    )
+    # A corrector moves its point at most `reach` times the predictor's move, so the chord of the last
+    # accepted step is within that factor of the step the trace reports; the failed halvings are far below it.
+    reach = FAILURE_SETTINGS.corrector.reach
+    @test context.accepted_step <= FAILURE_SETTINGS.max_step
+    @test chord / (1 + reach) <= context.accepted_step <= chord * (1 + reach)
+    @test context.step_length < context.accepted_step / 4
+end
+
 @testset "a non-finite Jacobian is a failure value" begin
     result = trace_endpoint(
         LogitGame(NaNSlopePass(GAME), TARGET_PRECISION),
@@ -119,7 +156,12 @@ end
     # At ρ = 1e-5 a gap move of 1e-2, a far target's rounding of w = P G, moves the logit 1e-7.
     previous, predicted = Float32[0, 1.0f-5], Float32[1, 1.0f-5]
     check = GameTracing.CorrectorReach(
-        GameTracing.AcceptAll(), CorrectorSettings{Float32}(), TraceGeometry{Float32}(), previous, predicted, 1.0f0,
+        GameTracing.AcceptAll(),
+        CorrectorSettings{Float32}(),
+        TraceGeometry{Float32}(),
+        previous,
+        predicted,
+        1.0f0,
     )
     check.predictor_move = GameTracing.logit_change(previous, predicted)
     @test GameTracing.within_reach(check, predicted .+ Float32[1.0f-2, 0])
@@ -135,6 +177,7 @@ end
     @test is_error(result)
     @test unwrap_error(result).cause == GameTracing.TraceStuck
     @test unwrap_error(result).context.steps == 0
+    @test unwrap_error(result).context.accepted_step == 0
 end
 
 @testset "BifurcationKit's report of an uncorrectable start is a stuck trace" begin
@@ -150,7 +193,7 @@ end
     )
     result = GameTracing.reached_state(
         progress,
-        (; step_length = 0.0f0, exhausted = nothing, logit_accuracy = 0.0f0, exception = "Stopping continuation."),
+        (; step_length = 0.0f0, accepted_step = 0.0f0, exhausted = nothing, logit_accuracy = 0.0f0, exception = "Stopping continuation."),
         LogitGame(GAME, TARGET_PRECISION),
         TraceSettings{Float32}(; max_steps = 10),
         (;),
@@ -161,20 +204,49 @@ end
 
 @testset "an accepted point equal to the last one stops the trace as a stall" begin
     tangent = (; u = Float32[0, 0, 1], p = 1.0f0)
-    progress = GameTracing.TraceProgress(zeros(Float32, 2), 0.0f0, 0, 0.0f0, 0.0f0, zeros(Float32, 2), 0.0f0, false)
+    progress = GameTracing.TraceProgress(
+        zeros(Float32, 2),
+        0.0f0,
+        0,
+        0.0f0,
+        0.0f0,
+        zeros(Float32, 2),
+        0.0f0,
+        false,
+    )
     moved = (; u = Float32[0.1f0, 0.2f0, 0.5f0], p = 0.5f0)
     @test progress(moved, tangent, 1, nothing)
     @test !progress.unmoved
-    outcome = (; step_length = 0.0f0, exhausted = nothing, logit_accuracy = 0.0f0, exception = nothing)
-    @test unwrap_error(GameTracing.reached_state(progress, outcome, LogitGame(GAME, TARGET_PRECISION), TraceSettings{Float32}(; max_steps = 2), (;))).cause == GameTracing.TraceStuck
+    outcome = (; step_length = 0.0f0, accepted_step = 0.0f0, exhausted = nothing, logit_accuracy = 0.0f0, exception = nothing)
+    @test unwrap_error(GameTracing.reached_state(
+        progress,
+        outcome,
+        LogitGame(GAME, TARGET_PRECISION),
+        TraceSettings{Float32}(; max_steps = 2),
+        (;),
+    )).cause ==
+        GameTracing.TraceStuck
     @test !progress(moved, tangent, 2, nothing)
     @test progress.unmoved
     # A stall that spends the step budget is still a stall; moving points that spend it are not.
-    stalled = unwrap_error(GameTracing.reached_state(progress, outcome, LogitGame(GAME, TARGET_PRECISION), TraceSettings{Float32}(; max_steps = 2), (;)))
+    stalled = unwrap_error(GameTracing.reached_state(
+        progress,
+        outcome,
+        LogitGame(GAME, TARGET_PRECISION),
+        TraceSettings{Float32}(; max_steps = 2),
+        (;),
+    ))
     @test stalled.cause == GameTracing.TraceStuck
     @test stalled.context.unmoved
     progress.unmoved = false
-    @test unwrap_error(GameTracing.reached_state(progress, outcome, LogitGame(GAME, TARGET_PRECISION), TraceSettings{Float32}(; max_steps = 2), (;))).cause == GameTracing.NoConvergence
+    @test unwrap_error(GameTracing.reached_state(
+        progress,
+        outcome,
+        LogitGame(GAME, TARGET_PRECISION),
+        TraceSettings{Float32}(; max_steps = 2),
+        (;),
+    )).cause ==
+        GameTracing.NoConvergence
     # A change in the precision alone, or in the logits alone, is progress.
     precision_only = (; u = moved.u, p = 0.6f0)
     @test progress(precision_only, tangent, 3, nothing)
