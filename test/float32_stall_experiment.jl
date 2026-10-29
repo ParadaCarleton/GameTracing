@@ -30,6 +30,68 @@ function GameTracing.branch_system!(
     return workspace
 end
 
+"""
+Arms B1 and B2: the branch system formed from the `E` pass `narrow`, with its residual (B1, `wide_residual`) or its
+Jacobian (B2) formed instead from the `widen(E)` pass `wide` and rounded to `E`.
+"""
+struct SplitPass{P, W}
+    narrow::P
+    wide::W
+    wide_residual::Bool
+end
+
+function GameTracing.branch_system!(
+    workspace::GameTracing.BranchWorkspace{E},
+    game::LogitGame{<:SplitPass},
+    point::AbstractVector{E},
+    pin::Real,
+)::typeof(workspace) where {E <: Real}
+    (; narrow, wide, wide_residual) = game.pass!
+    narrow_game = LogitGame(narrow, game.target_precision)
+    wide_game = LogitGame(wide, widen(E)(game.target_precision))
+    wide_point = widen(E).(point)
+    narrow_filled = GameTracing.branch_system!(GameTracing.BranchWorkspace(narrow_game, point), narrow_game, point, pin)
+    wide_filled = GameTracing.branch_system!(GameTracing.BranchWorkspace(wide_game, wide_point), wide_game, wide_point, widen(E)(pin))
+    workspace.residual .= ifelse(wide_residual, E.(wide_filled.residual), narrow_filled.residual)
+    workspace.jacobian .= ifelse(wide_residual, narrow_filled.jacobian, E.(wide_filled.jacobian))
+    workspace.logits .= narrow_filled.logits
+    return workspace
+end
+
+"""Arm B3: the `E` pass `narrow`, its residual's gap rows formed as `fma(-P, G, w)`, one rounding in place of two."""
+struct FusedPass{P}
+    narrow::P
+end
+
+function GameTracing.branch_system!(
+    workspace::GameTracing.BranchWorkspace{E},
+    game::LogitGame{<:FusedPass},
+    point::AbstractVector{E},
+    pin::Real,
+)::typeof(workspace) where {E <: Real}
+    (; residual, jacobian, logits) = workspace
+    gaps = GameTracing.payoff_gaps(point)
+    width = length(gaps)
+    relative_precision = point[end]
+    logits .= relative_precision .* gaps
+    precision = relative_precision * game.target_precision
+    target = game.target_precision
+    gain = view(residual, 1:width)
+    gain_slope = view(jacobian, 1:width, 1:width)
+    precision_column = view(jacobian, 1:width, width + 1)
+    GameTracing.run_pass!(game.pass!.narrow, nothing, gain, gain_slope, precision_column, logits, precision)
+    GameTracing.mul!(precision_column, gain_slope, gaps, -target, -target^2)
+    gain_slope .= .-precision .* gain_slope
+    for diagonal in axes(gain_slope, 1)
+        gain_slope[diagonal, diagonal] += one(E)
+    end
+    gain .= fma.(-target, gain, gaps)
+    fill!(view(jacobian, width + 1, 1:width), zero(E))
+    jacobian[end, end] = one(E)
+    residual[end] = relative_precision - pin
+    return workspace
+end
+
 """`InPlaceMatrixBLS` whose bordered matrix is assembled in `E`, then factored and solved in the wider `wide`'s type."""
 struct WideBLS{E <: BlasFloat, W <: BlasFloat, S <: BifurcationKit.AbstractLinearSolver} <: BifurcationKit.AbstractBorderedLinearSolver
     narrow::Matrix{E}
@@ -97,10 +159,16 @@ end
 
 """The unfolded pitchfork's game in arm `arm`'s pass at `precision`: B and D form the branch system in `widen(E)`."""
 function stall_game(arm::AbstractString, precision::E)::LogitGame where {E <: Real}
+    narrow = NormalFormPass(map(table -> E.(table), UNFOLDED_PITCHFORK_GAME))
+    wide = NormalFormPass(map(table -> widen(E).(table), UNFOLDED_PITCHFORK_GAME))
     if arm in ("B", "D")
-        return LogitGame(WidePass(NormalFormPass(map(table -> widen(E).(table), UNFOLDED_PITCHFORK_GAME))), precision)
+        return LogitGame(WidePass(wide), precision)
+    elseif arm in ("B1", "B2")
+        return LogitGame(SplitPass(narrow, wide, arm == "B1"), precision)
+    elseif arm == "B3"
+        return LogitGame(FusedPass(narrow), precision)
     end
-    return LogitGame(NormalFormPass(map(table -> E.(table), UNFOLDED_PITCHFORK_GAME)), precision)
+    return LogitGame(narrow, precision)
 end
 
 """The unfolded pitchfork traced in `game` under `settings`, a `Function` as `collect_test_logs` takes."""

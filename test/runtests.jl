@@ -15,8 +15,7 @@ const WIDTH = 2
 # EXPERIMENT: this branch runs only the Float32 stall arms; C and D run in their own process (float32_stall_wide_solve.jl).
 @testset "GameTracing" begin
     include("float32_stall_experiment.jl")
-    # A, B and E ran in run 40814179626.
-    stall_experiment(("E",))
-    run(`$(Base.julia_cmd()) --project=$(Base.active_project()) $(joinpath(@__DIR__, "float32_stall_wide_solve.jl"))`)
+    # A, B and E ran in run 40814179626, C and D in run 40814692206.
+    stall_experiment(("B1", "B2", "B3", "E"))
     @test true
 end
