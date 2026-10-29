@@ -132,11 +132,12 @@ end
 end
 
 @testset "a gain with noise of size η fails PrecisionExhausted where λ η passes the logit tolerance" begin
-    # A small level moves λ fast per logit step through the band where noise and tolerance compare.
-    pass = NoisyFlatPass(1.0f-4, 1.0f-6)
+    # The trace's gaps `w = target G` carry noise `target η` at every precision: 1e-2 here, under the gaps' 10.
+    # A target of 1e6 at η = 1e-6 put noise 1 in the gaps from the start, where the steps went into it and λ stalled.
+    pass, target = NoisyFlatPass(1.0f-4, 1.0f-7), 1.0f5
     settings = TraceSettings{Float32}(; LOG_PRECISION_SETTINGS.geometry, max_steps = 20_000)
     tolerance = settings.corrector.logit_tolerance
-    failure = unwrap_error(trace_endpoint(LogitGame(pass, FAR_TARGET), 1, settings))
+    failure = unwrap_error(trace_endpoint(LogitGame(pass, target), 1, settings))
     @info "noisy trace" failure.cause failure.context.precision failure.context.steps failure.context.step_length
     @test failure.cause == GameTracing.PrecisionExhausted
     (; lambda, correction) = failure.context
