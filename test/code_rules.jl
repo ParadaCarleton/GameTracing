@@ -183,7 +183,7 @@ in_benchmark(site::Site)::Bool = normpath(site.file) == ARMS_FILE
 @testset "the arm benchmark's module rules find nothing" begin
     # The quick scope and one pitchfork draw call every function the full runs do, so inference sees concrete argument types.
     ArmBenchmark.main(joinpath(mktempdir(), "arms.csv"), "quick", devnull)
-    ArmBenchmark.pitchfork_benchmark(joinpath(mktempdir(), "pitchfork.csv"), devnull, 1)
+    ArmBenchmark.pitchfork_benchmark(joinpath(mktempdir(), "pitchfork.csv"), devnull, 1, ArmBenchmark.UNFOLDING_SEED)
     inferred = inferred_methods(ArmBenchmark)
     locations = struct_locations([ARMS_FILE])
     @test filter(in_benchmark, hidden_inputs(ArmBenchmark)) == Site[]

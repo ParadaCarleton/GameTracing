@@ -7,7 +7,7 @@ using LogitNash: LogitNash
 using Logging: AbstractLogger, Debug, LogLevel, with_logger
 import Logging: catch_exceptions, handle_message, min_enabled_level, shouldlog
 using Printf: @sprintf
-using Random: AbstractRNG, RandomDevice, Xoshiro
+using Random: AbstractRNG, Xoshiro
 using Statistics: median
 
 const TEST_DIRECTORY = joinpath(@__DIR__, "..", "test")
@@ -382,6 +382,8 @@ end
 # The unfolded pitchforks: battles of the sexes with every payoff moved by Gaussian noise at each scale.
 const UNFOLDING_SCALES = inv.(Float32.((10^4, 10^3, 10^2, 10)))
 const UNFOLDING_DRAWS = 40
+# The same games every run, so two runs on one CPU compare row by row.
+const UNFOLDING_SEED = 20261029
 
 """Moves a payoff table by Gaussian noise of scale `scale` drawn from `rng`."""
 struct ScaledNoise{R <: AbstractRNG, E <: Real}
@@ -455,11 +457,10 @@ function benchmark_variants(scope::AbstractString, shipped::S)::AbstractVector{P
 end
 
 """
-The unfolded-pitchfork benchmark: `draws` draws per scale under the shipped settings and fisher_reach, rows to
-`output`, and a PITCHFORK line per scale and variant to `io`.
+The unfolded-pitchfork benchmark: `draws` draws per scale from `seed` under the shipped settings and fisher_reach,
+rows to `output`, and a PITCHFORK line per scale and variant to `io`.
 """
-function pitchfork_benchmark(output::AbstractString, io::IO, draws::Integer)::AbstractVector{UnfoldedRow}
-    seed = rand(RandomDevice(), UInt)
+function pitchfork_benchmark(output::AbstractString, io::IO, draws::Integer, seed::Integer)::AbstractVector{UnfoldedRow}
     println(io, "SEED | ", seed)
     variants = filter(pitchfork_variant, benchmark_variants("full", TraceSettings{Float32}()))
     # Scales run along the second axis, so the draws come scale by scale, in the order the rows list them.
@@ -502,13 +503,13 @@ end
 """
 Run the benchmark over `scope`, printing to `io`: `"full"` every game and variant, `"quick"` one fixed and one swapped
 game under the shipped settings and the first arm, the load check CI runs; `"pitchfork"` the unfolded pitchforks
-(`pitchfork_benchmark`, `UNFOLDING_DRAWS` draws per scale). Returns the rows it wrote to `output`.
+(`pitchfork_benchmark`, `UNFOLDING_DRAWS` draws per scale from `UNFOLDING_SEED`). Returns the rows it wrote to `output`.
 """
 function main(output::AbstractString, scope::AbstractString, io::IO)::AbstractVector
     # Step counts can differ between runners; the CPU and its LLVM target name the hardware each run used.
     println(io, "RUNNER | ", first(Sys.cpu_info()).model, " | target ", Sys.CPU_NAME, " | threads ", Threads.nthreads(), " | Julia ", VERSION)
     if scope == "pitchfork"
-        return pitchfork_benchmark(output, io, UNFOLDING_DRAWS)
+        return pitchfork_benchmark(output, io, UNFOLDING_DRAWS, UNFOLDING_SEED)
     end
     return benchmark_rows(output, scope_cases(scope), benchmark_variants(scope, TraceSettings{Float32}()), io)
 end
