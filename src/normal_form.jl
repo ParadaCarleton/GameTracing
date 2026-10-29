@@ -25,6 +25,11 @@ function NormalFormGains(payoffs::Tuple)::NormalFormGains
     throw(ArgumentError("payoffs must be arrays of one type with one axis per player; got $(typeof.(payoffs))"))
 end
 
+"""The element type of the payoffs of `gains`."""
+function Base.eltype(::Type{NormalFormGains{N, A}})::Type{eltype(A)} where {N, A}
+    return eltype(A)
+end
+
 """Each player's range in the stacked logits of `gains`: its strategies after the first."""
 function logit_ranges(gains::NormalFormGains{N})::NTuple{N, UnitRange{Int}} where {N}
     counts = size(first(gains.payoffs)) .- 1

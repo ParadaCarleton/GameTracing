@@ -13,6 +13,10 @@ export LogitGame,
     mixed_strategies,
     logit_count,
     pass_workspace,
+    LogitQREProfile,
+    logit_solve,
+    logit_solve_branch,
+    logit_solve_lambda,
     TraceSettings,
     TraceCause,
     TraceFailure,
@@ -42,5 +46,6 @@ include("trace.jl")
 include("crossing.jl")
 include("redraw.jl")
 include("projection.jl")
+include("logit_solve.jl")
 
 end
