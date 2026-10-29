@@ -89,9 +89,10 @@ function BifurcationKit.bordered_determinant_sign(
     return eltype(dFdl)(last(logabsdet(LU(bls.wide, bls.pivots, info))))
 end
 
-"""A `WideBLS` for a `width`-row bordered system in `E`, solved in `widen(E)`."""
+"""A `WideBLS` bordering a `width`-row Jacobian in `E`, solved in `widen(E)`, as `matrix_bls` takes `width`."""
 function wide_bls(width::Integer, ::Type{E})::WideBLS where {E <: BlasFloat}
-    return WideBLS(Matrix{E}(undef, width, width), Matrix{widen(E)}(undef, width, width), Vector{BlasInt}(undef, width), BifurcationKit.DefaultLS())
+    rows = width + 1
+    return WideBLS(Matrix{E}(undef, rows, rows), Matrix{widen(E)}(undef, rows, rows), Vector{BlasInt}(undef, rows), BifurcationKit.DefaultLS())
 end
 
 """The unfolded pitchfork's game in arm `arm`'s pass at `precision`: B and D form the branch system in `widen(E)`."""
