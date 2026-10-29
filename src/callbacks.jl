@@ -297,15 +297,15 @@ struct TraceProgress{E <: Real}
 end
 
 """
-BifurcationKit's branch record of the trace's point `x = [w; ρ]` and the state's tangent: the gaps `w`, their tangent
+BifurcationKit's branch record of the trace's `point = [w; ρ]` and the state's tangent: the gaps `w`, their tangent
 and the tangent's precision part. `branch_progress` reads the trace's progress back from these records.
 """
-function trace_record_point(x::AbstractVector{E}, ::Real;
+function trace_record_point(point::AbstractVector{E}, ::Real;
     state::Any,
     # fatou-ignore unused-argument: BifurcationKit passes keyword arguments this record ignores
     keywords...,
 )::NamedTuple where {E <: Real}
-    return (; gaps = x[begin:(end - 1)], gap_tangent = state.τ.u[begin:(end - 1)], tangent_precision = state.τ.p)
+    return (; gaps = point[begin:(end - 1)], gap_tangent = state.τ.u[begin:(end - 1)], tangent_precision = state.τ.p)
 end
 
 """A branch record's relative precision."""

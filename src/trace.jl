@@ -399,14 +399,22 @@ function guarded_trace(
     opening::TraceProgress{E},
 )::NamedTuple where {E <: Real}
     corrector = CorrectorReach(accept_corrected, settings.corrector, settings.geometry, similar(start), similar(start), zero(E))
-    ran = segment_branch(
-        trace_iterator(
-            finalise.slot.game, start, settings, finalise, corrector, finalise.slot.step_length, settings.max_steps - opening.steps,
+    return segment_outcome(
+        segment_branch(
+            trace_iterator(
+                finalise.slot.game, start, settings, finalise, corrector, finalise.slot.step_length,
+                settings.max_steps - opening.steps,
+            ),
+            finalise.slot.game,
+            old_tangent,
+            opening,
         ),
-        finalise.slot.game,
-        old_tangent,
-        opening,
+        corrector,
     )
+end
+
+"""`guarded_trace`'s outcome of a segment that `ran` (`segment_branch`) under `corrector`."""
+function segment_outcome(ran::NamedTuple, corrector::CorrectorReach{C, E})::NamedTuple where {C, E <: Real}
     return (;
         ran.progress,
         step_length = ifelse(isnothing(ran.exception), corrector.step_length, zero(E)),
@@ -416,13 +424,19 @@ function guarded_trace(
     )
 end
 
+"""An exception BifurcationKit threw that `expected_failure` names, held as a value."""
+struct Thrown{X}
+    exception::X
+end
+
 """
     segment_branch(iterator, game, old_tangent, opening)
 
 `(; progress, exception)` of BifurcationKit's continuation of `iterator` from the point of `opening`: the progress
 after its branch (`branch_progress`), and the exception it threw or `nothing`. A segment that throws before its
 branch exists, or accepts no point, stays at `opening` with the restart tangent once that is computed. Only an
-exception `expected_failure` names is caught; any other propagates.
+exception `expected_failure` names is caught (`Thrown`); any other propagates. Each step is its own method, as
+BifurcationKit's results are not inferable.
 """
 function segment_branch(
     iterator::BifurcationKit.ContIterable,
@@ -430,37 +444,99 @@ function segment_branch(
     old_tangent::Union{Nothing, AbstractVector{E}},
     opening::TraceProgress{E},
 )::NamedTuple where {E <: Real}
-    restart = try
-        restart_opening(iterator, game, old_tangent, opening)
-    catch exception
-        if !expected_failure(exception)
-            rethrow()
-        end
-        return (; progress = opening, exception)
-    end
+    return restarted_segment(iterator, guarded_restart(iterator, game, old_tangent, opening), opening)
+end
+
+restarted_segment(::BifurcationKit.ContIterable, thrown::Thrown, opening::TraceProgress)::NamedTuple =
+    (; progress = opening, thrown.exception)
+
+function restarted_segment(
+    iterator::BifurcationKit.ContIterable,
+    restart::NamedTuple,
+    opening::TraceProgress{E},
+)::NamedTuple where {E <: Real}
     opened = TraceProgress{E}(
         opening.gaps, opening.relative_precision, opening.steps, opening.precision_min, opening.precision_max,
         restart.gap_tangent, restart.tangent_precision, opening.unmoved,
     )
-    state = try
-        opened_state(iterator, restart.opening)
+    return opened_segment(iterator, guarded_state(iterator, restart.opening), opened)
+end
+
+opened_segment(::BifurcationKit.ContIterable, thrown::Thrown, opened::TraceProgress)::NamedTuple =
+    (; progress = opened, thrown.exception)
+
+function opened_segment(
+    iterator::BifurcationKit.ContIterable,
+    state::BifurcationKit.ContState,
+    opened::TraceProgress,
+)::NamedTuple
+    return continued_segment(iterator, state, BifurcationKit.ContResult(iterator, state), opened)
+end
+
+"""The segment from `state`, its records saved in `branch` as BifurcationKit continues it."""
+function continued_segment(
+    iterator::BifurcationKit.ContIterable,
+    state::BifurcationKit.ContState,
+    branch::BifurcationKit.ContResult,
+    opened::TraceProgress,
+)::NamedTuple
+    # `guarded_continuation!` runs before `ended_segment` reads the branch it filled.
+    return ended_segment(guarded_continuation!(iterator, state, branch), branch, opened)
+end
+
+ended_segment(::Nothing, branch::BifurcationKit.ContResult, opened::TraceProgress)::NamedTuple =
+    (; progress = branch_progress(branch.branch, opened), exception = nothing)
+
+ended_segment(thrown::Thrown, branch::BifurcationKit.ContResult, opened::TraceProgress)::NamedTuple =
+    (; progress = branch_progress(branch.branch, opened), thrown.exception)
+
+"""`restart_opening`, or the `Thrown` failure that `expected_failure` names; any other exception propagates."""
+function guarded_restart(
+    iterator::BifurcationKit.ContIterable,
+    game::LogitGame,
+    old_tangent::Union{Nothing, AbstractVector{E}},
+    opening::TraceProgress{E},
+)::Union{NamedTuple, Thrown} where {E <: Real}
+    try
+        return restart_opening(iterator, game, old_tangent, opening)
     catch exception
         if !expected_failure(exception)
             rethrow()
         end
-        return (; progress = opened, exception)
+        return Thrown(exception)
     end
-    branch = BifurcationKit.ContResult(iterator, state)
-    exception = try
+end
+
+"""`opened_state`, or the `Thrown` failure that `expected_failure` names; any other exception propagates."""
+function guarded_state(
+    iterator::BifurcationKit.ContIterable,
+    opening::Union{Nothing, AbstractVector},
+)::Union{BifurcationKit.ContState, Thrown}
+    try
+        return opened_state(iterator, opening)
+    catch exception
+        if !expected_failure(exception)
+            rethrow()
+        end
+        return Thrown(exception)
+    end
+end
+
+"""BifurcationKit's `continuation!`, `nothing` once it ends, or the `Thrown` failure that `expected_failure` names."""
+function guarded_continuation!(
+    iterator::BifurcationKit.ContIterable,
+    state::BifurcationKit.ContState,
+    branch::BifurcationKit.ContResult,
+)::Union{Nothing, Thrown}
+    try
         BifurcationKit.continuation!(iterator, state, branch)
-        nothing
+        return nothing
     catch exception
         if !expected_failure(exception)
             rethrow()
         end
-        exception
+        return Thrown(exception)
     end
-    return (; progress = branch_progress(branch.branch, opened), exception)
 end
 
 """Whether `exception` is a failure BifurcationKit reports by throwing: an `uncorrected_start` or a `solver_blowup`."""
