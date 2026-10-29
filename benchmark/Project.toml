@@ -10,7 +10,7 @@ Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 
 [sources]
 GameTracing = {path = ".."}
-BifurcationKit = {url = "https://github.com/ParadaCarleton/BifurcationKit.jl", rev = "irv"}
+BifurcationKit = {url = "https://github.com/ParadaCarleton/BifurcationKit.jl", rev = "scale-free-deps"}
 
 [compat]
 LogitNash = "=0.3.0"
