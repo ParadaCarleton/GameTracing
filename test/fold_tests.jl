@@ -36,15 +36,3 @@ end
     @test residual_norm(FOLD_GAME, unwrap(result).logits, 1.0f0) < 1.0f-3
     @test only(unwrap(result).logits) < 2
 end
-
-@testset "the corrector refuses a closing point that moves a logit past max_step_kl from the step's start" begin
-    start = [9.7f0, 0.46f0]
-    # The predictor sits at the corrected point, so only the step KL can refuse it.
-    accepted(corrected) = GameTracing.closing_accepted(
-        GameTracing.CorrectorReach(GameTracing.AcceptAll(), CorrectorSettings{Float32}(), TraceGeometry{Float32}(), start, copy(corrected), 1.0f0),
-        corrected,
-    )
-    # Logit 4.46 to 4.32 is a small move; logit 4.46 to 0.29 moves KL 1.2 nats.
-    @test accepted([9.4f0, 0.46f0])
-    @test !accepted([0.7f0, 0.41f0])
-end

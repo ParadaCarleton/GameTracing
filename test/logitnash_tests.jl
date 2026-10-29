@@ -36,20 +36,28 @@ Trace `payoffs` to LogitNash's stopping precision past `precision` and test the 
 the oracle, and against `branch_reference`, the Julia cross-check. LogitNash is a cross-check too: a disagreement with it
 fails only when Gambit sides with LogitNash. Near an
 unfolded pitchfork LogitNash can cross onto the middle arm, as on `UNFOLDED_PITCHFORK_GAME`. A reference that does not
-reach the target skips the comparison; every endpoint must also solve the map to the corrector's tolerance.
+reach the target skips the comparison; every endpoint must also solve the map to the corrector's tolerance. Where
+Gambit's branch folds before the target (`gambit_folds_before`), Gambit's answer may be a later crossing, so the Gambit
+comparisons are skipped and the reference decides. Returns whether they were skipped.
 """
-function cross_checked!(payoffs::Tuple, precision::Real, settings::TraceSettings{Float32})::Nothing
+function cross_checked!(payoffs::Tuple, precision::Real, settings::TraceSettings{Float32})::Bool
     cross = logitnash_equilibrium(payoffs, precision)
     result = traced_result(payoffs, cross.precision, settings)
     @test !is_error(result)
     if is_error(result)
         @info "trace failed" payoffs unwrap_error(result).cause
-        return nothing
+        return false
     end
     logits = unwrap(result).logits
     traced = first_choices(logits)
-    oracle = gambit_branch(payoffs, cross.precision)
-    @test agreeing(traced, oracle.first_choices)
+    folded = gambit_folds_before(payoffs, cross.precision)
+    if !folded
+        oracle = gambit_branch(payoffs, cross.precision)
+        @test agreeing(traced, oracle.first_choices)
+        if !agreeing(traced, cross.first_choices)
+            @test !agreeing(oracle.first_choices, cross.first_choices)
+        end
+    end
     reference = branch_reference(NormalFormPass(map(float, payoffs)), length(payoffs), cross.precision)
     # A generic game's branch crosses no singular point.
     @test reference.crossings == 0
@@ -57,10 +65,7 @@ function cross_checked!(payoffs::Tuple, precision::Real, settings::TraceSettings
         @test agreeing(traced, reference.first_choices)
     end
     @test settled_endpoint(payoffs, logits, cross.precision, settings)
-    if !agreeing(traced, cross.first_choices)
-        @test !agreeing(oracle.first_choices, cross.first_choices)
-    end
-    return nothing
+    return folded
 end
 
 @testset "Gambit's λ is the trace's precision: its profile solves z = λ G on the raw payoffs" begin
@@ -205,9 +210,27 @@ end
 
 @testset "random games with two actions each: the trace follows the principal branch" begin
     rng = fresh_rng()
+    skipped = 0
     for _ in 1:20
         players = rand(rng, 2:4)
         payoffs = ntuple(_ -> 3 .* randn(rng, ntuple(_ -> 2, players)), players)
-        cross_checked!(payoffs, 3, TraceSettings{Float32}())
+        skipped += cross_checked!(payoffs, 3, TraceSettings{Float32}())
     end
+    @info "Gambit comparisons skipped where its branch folds before the target" skipped
+end
+
+@testset "a branch folds before the target only where its precisions decrease before first reaching it" begin
+    @test !folds_before(Float32[0, 1, 2, 3.5f0], 3)
+    @test folds_before(Float32[0, 1, 2.9f0, 2.5f0, 3.5f0], 3)
+    @test !folds_before(Float32[0, 1, 3.5f0, 3.2f0, 4], 3)
+end
+
+@testset "on a game whose principal branch folds just past the target, the trace meets the reference" begin
+    precision = logitnash_equilibrium(FOLDED_GAMBIT_GAME, 3).precision
+    reference = branch_reference(NormalFormPass(map(float, FOLDED_GAMBIT_GAME)), length(FOLDED_GAMBIT_GAME), precision)
+    @test reference.reached
+    traced = first_choices(unwrap(traced_result(FOLDED_GAMBIT_GAME, precision, TraceSettings{Float32}())).logits)
+    @test agreeing(traced, reference.first_choices)
+    # Whether Gambit's comparison runs here depends on pygambit's step sizes, so only the checks it runs are asserted.
+    cross_checked!(FOLDED_GAMBIT_GAME, 3, TraceSettings{Float32}())
 end
