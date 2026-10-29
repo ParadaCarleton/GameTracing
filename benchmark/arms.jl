@@ -142,8 +142,8 @@ function handle_message(counter::TraceCounter, ::LogLevel, message::Any, ::Modul
     return nothing
 end
 
-# Checks GameTracing's corrector callback logs when it stops or refuses a corrector; contraction refusals happen in
-# BifurcationKit's CorrectorQuality and show only as halved steps.
+# Checks GameTracing's corrector callback logs when it stops or refuses a corrector; its `:contraction` and
+# `:precision_exhausted` stops are not counted, and BifurcationKit's distance refusals show only as halved steps.
 const REFUSAL_CHECKS = (:reach, :kl, :angle, :nonfinite)
 const REFUSAL_MESSAGES = ("corrector refused", "corrector stopped")
 

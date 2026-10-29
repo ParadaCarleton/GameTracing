@@ -22,7 +22,7 @@ end
 
 Trace the normal-form game `payoffs` to LogitNash's stopping precision past `precision` and test the endpoint against
 `branch_reference`, with LogitNash as a cross-check (`cross_checked!`). A branch that folds back in precision has no
-reference; every endpoint must also solve the map to the corrector's tolerance (`settled_endpoint`).
+reference; every endpoint must also solve the map as the corrector settles it (`settled_logits`).
 """
 function strategies_cross_checked!(payoffs::Tuple, precision::Real)::Nothing
     cross = logitnash_profile(payoffs, precision)
@@ -41,7 +41,7 @@ function strategies_cross_checked!(payoffs::Tuple, precision::Real)::Nothing
     if reference.reached
         @test profile_gap(traced, mixed_strategies(reference_gains, reference.logits)) < 1.0f-3
     end
-    @test settled_endpoint(gains, unwrap(result).logits, cross.precision, settings)
+    @test settled_logits(gains, unwrap(result).logits, cross.precision, settings)
     if profile_gap(traced, cross.strategies) >= 1.0f-3 && reference.reached
         @test profile_gap(mixed_strategies(reference_gains, reference.logits), cross.strategies) >= 1.0f-3
     end

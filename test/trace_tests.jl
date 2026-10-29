@@ -19,10 +19,10 @@ end
             TraceSettings{Float32}(tangent = BifurcationKit.Secant()),
             TraceSettings{Float32}(bordered_solver = BorderingSolve),
             TraceSettings{Float32}(step_control = nothing),
-            TraceSettings{Float32}(step_control = StepControl{Float32}(
-                distance_limit = nothing,
-                contraction_limit = nothing,
-            )),
+            TraceSettings{Float32}(
+                step_control = StepControl{Float32}(distance_limit = nothing),
+                corrector = CorrectorSettings{Float32}(contraction_limit = nothing),
+            ),
         )
         traced = trace_endpoint(game, WIDTH, settings)
         @test !is_error(traced)
@@ -161,7 +161,7 @@ end
             first_tangent_divisor = 1 + 100 * rand(rng, Float32),
             max_steps = rand(rng, 1:50),
             corrector = CorrectorSettings{Float32}(
-                residual_tolerance = 1.0f-3 * rand(rng, Float32),
+                logit_tolerance = 1.0f-3 * rand(rng, Float32),
                 newton_iterations = rand(rng, 1:20),
             ),
         )
@@ -176,7 +176,8 @@ end
             )
         @test (options.p_min, options.p_max) == (0, 1)
         @test options.max_steps == settings.max_steps
-        @test options.newton_options.tol == settings.corrector.residual_tolerance
+        # Only the corrector's callback converges a corrector short of an exact root.
+        @test options.newton_options.tol == 0
         @test options.newton_options.max_iterations == settings.corrector.newton_iterations
         @test !options.detect_fold
         @test options.detect_bifurcation == 0

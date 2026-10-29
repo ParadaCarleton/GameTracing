@@ -11,8 +11,8 @@ The trace's step length in a state `x = [w; ρ]` of `k` payoff gaps `w`, at `sta
   the target: Fisher's payoff gains `w / P` beside the step in `log(1 + λ)` to first order, LogitNash's path variable.
   Neither term depends on `P`, so the target only caps the trace.
 
-Both Fisher distances freeze their weights at each accepted point, and their reach and angle checks measure in the
-summed norm.
+Both Fisher distances freeze their weights at each accepted point. The corrector's reach and angle checks measure in
+logits under every distance (`within_reach`, `chord_angle`).
 """
 @enum StepDistance AveragedDistance SummedDistance FisherDistance FisherLogPrecisionDistance
 
@@ -65,24 +65,23 @@ function arclength_distance(
 end
 
 """
-    chord_angle(previous, predicted, corrected, geometry)
+    chord_angle(previous, predicted, corrected)
 
-The angle in radians between the predictor's direction `predicted - previous` and the chord `corrected - previous`,
-in `geometry`'s plain inner product; zero when either is zero.
+The angle in radians between the predictor's logit move and the chord's, from the logits (`logits_at`) of three
+points `[w; ρ]`, in the Euclidean product; zero when either move is zero.
 """
 function chord_angle(
     previous::AbstractVector{E},
     predicted::AbstractVector{E},
     corrected::AbstractVector{E},
-    geometry::TraceGeometry{E},
 )::E where {E <: Real}
-    direction = predicted .- previous
-    chord = corrected .- previous
-    lengths = sqrt(trace_dot(direction, direction, geometry) * trace_dot(chord, chord, geometry))
+    direction = logits_at(predicted) .- logits_at(previous)
+    chord = logits_at(corrected) .- logits_at(previous)
+    lengths = sqrt(dot(direction, direction) * dot(chord, chord))
     if !(lengths > 0)
         return zero(E)
     end
-    return acos(clamp(trace_dot(direction, chord, geometry) / lengths, -one(E), one(E)))
+    return acos(clamp(dot(direction, chord) / lengths, -one(E), one(E)))
 end
 
 """`KL(Bernoulli(logistic(from)) ‖ Bernoulli(logistic(to)))`, from the logits, exact where a probability rounds to 0 or 1."""
