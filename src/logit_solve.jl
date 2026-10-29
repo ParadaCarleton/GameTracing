@@ -59,7 +59,7 @@ function max_regret(gains::NormalFormGains, logits::AbstractVector{E})::E where 
     return maximum(player_regret.(view.((gain,), logit_ranges(gains)), mixed_strategies(gains, logits)))
 end
 
-"""Refuse `settings` whose element type is not the payoffs' of `gains`: the trace and its profiles run in the settings' type."""
+"""Refuse `settings` whose element type is not `float` of the payoffs' of `gains`: the trace and its profiles run in the settings' type."""
 function require_payoff_type(gains::NormalFormGains, ::TraceSettings{E})::Nothing where {E <: Real}
     if E != eltype(gains)
         throw(ArgumentError("settings trace in $E, but the payoffs are $(eltype(gains)); build the settings in $(eltype(gains))"))
@@ -121,7 +121,7 @@ function logit_solve_lambda(
     lam::AbstractVector{<:Real};
     first_step::Real = 0.03f0,
     max_accel::Real = 1.1f0,
-    settings::TraceSettings{E} = gambit_settings(eltype(gains)(first_step), max_accel),
+    settings::TraceSettings{E} = gambit_settings(float(eltype(gains))(first_step), max_accel),
 )::BranchResult{E, N} where {N, E <: Real}
     require_payoff_type(gains, settings)
     # ponytail: one trace per precision; one trace stopping at each would save the repeated low-precision steps.
@@ -139,7 +139,7 @@ function logit_solve_lambda(
     lam::Real;
     first_step::Real = 0.03f0,
     max_accel::Real = 1.1f0,
-    settings::TraceSettings{E} = gambit_settings(eltype(gains)(first_step), max_accel),
+    settings::TraceSettings{E} = gambit_settings(float(eltype(gains))(first_step), max_accel),
 )::BranchResult{E, N} where {N, E <: Real}
     return logit_solve_lambda(gains, [lam]; settings)
 end
@@ -157,7 +157,7 @@ function logit_solve_branch(
     first_step::Real = 0.03f0,
     max_accel::Real = 1.1f0,
     maximum_precision::Real = 1.0f6,
-    settings::TraceSettings{E} = gambit_settings(eltype(gains)(first_step), max_accel),
+    settings::TraceSettings{E} = gambit_settings(float(eltype(gains))(first_step), max_accel),
     maxregret::Real = sqrt(eps(typeof(settings.first_step))),
 )::BranchResult{E, N} where {N, E <: Real}
     if !(maxregret > 0)
@@ -197,7 +197,7 @@ function logit_solve(
     first_step::Real = 0.03f0,
     max_accel::Real = 1.1f0,
     maximum_precision::Real = 1.0f6,
-    settings::TraceSettings{E} = gambit_settings(eltype(gains)(first_step), max_accel),
+    settings::TraceSettings{E} = gambit_settings(float(eltype(gains))(first_step), max_accel),
     maxregret::Real = sqrt(eps(typeof(settings.first_step))),
 )::ProfileResult{E, N} where {N, E <: Real}
     branch = logit_solve_branch(gains; maxregret, maximum_precision, settings)

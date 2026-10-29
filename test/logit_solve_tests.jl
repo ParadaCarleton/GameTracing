@@ -131,6 +131,12 @@ end
         @test_throws ArgumentError logit_solve_branch(gains; settings)
         @test_throws ArgumentError logit_solve(gains; settings)
     end
+    # Integer payoffs trace in Float64, Julia's `float(Int)`.
+    integer = NormalFormGains(ROCK_PAPER_SCISSORS)
+    @test eltype(integer) == Int
+    @test eltype(unwrap(logit_solve(integer)).logits) == Float64
+    @test eltype(only(unwrap(logit_solve_lambda(integer, 2))).logits) == Float64
+    @test_throws ArgumentError logit_solve(integer; settings = TraceSettings{Float32}())
 end
 
 @testset "LogitQREProfile computes its profile from its logits and takes no profile" begin
