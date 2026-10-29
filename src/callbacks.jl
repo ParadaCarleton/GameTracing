@@ -173,7 +173,8 @@ function (check::CorrectorReach{C, E})(iterate::I;
         end
         return corrected!(check, iterate, reached)
     end
-    converged = isfinite(iterate.residual) && check.settled_here
+    # An exact root converges unsettled on BifurcationKit's own test (`residual <= tol`, tol 0), so it meets the same tests.
+    converged = isfinite(iterate.residual) && (check.settled_here || iszero(iterate.residual))
     @debug "corrector closed" _group = :trace step = iterate.step residual = iterate.residual converged step_length = check.step_length
     if converged && !closing_accepted(check, iterate.x)
         return false
