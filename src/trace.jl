@@ -41,7 +41,7 @@ distance (`TraceGeometry`).
 """
 Base.@kwdef struct TraceSettings{E <: Real, T <: BifurcationKit.AbstractTangentComputation}
     first_step::E = 0.05f0
-    min_step::E = 1.1754944f-38
+    min_step::E = nextfloat(zero(E))
     max_step::E = 1000.0f0
     aggressiveness::E = 0.5f0
     geometry::TraceGeometry{E} = TraceGeometry{E}()
@@ -115,7 +115,28 @@ function palc_with_geometry(
         step_control = corrector_quality(settings.step_control, settings.geometry, width),
         orientation_check = orientation_check && settings.bordered_solver == MatrixSolve,
         corrector = BifurcationKit.FreeParameterNewton(),
+        orientation_dot = PlainOrientation(settings.geometry),
     )
+end
+
+"""
+PALC's `orientation_dot`: the plain product `trace_dot` of two branch vectors `[w; ρ]` in `geometry`. Without the
+bordered determinant a new tangent takes the sign that keeps this product with the old one positive; the trace's
+Fisher weights, frozen at a saturated logit, would let `ρ` alone decide that sign past a fold and turn the trace back.
+"""
+struct PlainOrientation{E <: Real}
+    geometry::TraceGeometry{E}
+end
+
+function (orientation::PlainOrientation{E})(
+    left::AbstractVector{E},
+    right::AbstractVector{E},
+    # PALC passes the continuation parameter twice and θ; `trace_dot` reads `ρ` from the vectors.
+    ::Real,
+    ::Real,
+    ::Real,
+)::E where {E <: Real}
+    return trace_dot(left, right, orientation.geometry)
 end
 
 """
@@ -258,7 +279,7 @@ function opened_continuation!(
     dot, palc_state_weight = BifurcationKit.getdot(algorithm), E(BifurcationKit.getθ(algorithm))
     # A Fisher trace's weights are those of the point it restarts from.
     BifurcationKit.reweight!(dot, BifurcationKit.BorderedArray(start, last(start)))
-    tangent = restart_tangent(finalise.slot.game, start, old_tangent, dot, palc_state_weight)
+    tangent = restart_tangent(finalise.slot.game, start, old_tangent, dot, palc_state_weight, algorithm.orientation_dot)
     length_in_norm = sqrt(palc_product(dot, palc_state_weight, tangent, tangent))
     # The corrected point's tangent is the new map's; a restart that fails before a step reports it.
     copyto!(finalise.progress.gap_tangent, 1, tangent, 1, length(finalise.progress.gap_tangent))

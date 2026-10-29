@@ -133,6 +133,12 @@ end
     @test GameTracing.matrix_bls(WIDTH, Float32) isa GameTracing.InPlaceMatrixBLS
 end
 
+@testset "the default smallest step is the smallest positive number of the settings' element type" begin
+    for element in (Float16, Float32, float(Int))
+        @test TraceSettings{element}().min_step == nextfloat(zero(element))
+    end
+end
+
 @testset "PALC orients by determinant only where the solver has one" begin
     for check in (true, false), solver in instances(BorderedSolver)
         settings = TraceSettings{Float32}(

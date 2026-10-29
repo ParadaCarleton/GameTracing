@@ -75,11 +75,12 @@ function redraw_crossing(
 end
 
 """
-    restart_tangent(game, point, old_tangent, dot, state_weight)
+    restart_tangent(game, point, old_tangent, dot, state_weight, orientation)
 
 The tangent of `game`'s branch at `point = [w; ρ]` that keeps the trace's direction: the solution of the bordered
 system `[∂F/∂x; bᵀ] τ = [0; 1]`, whose border `b` is `old_tangent` weighted as PALC's product under the trace's `dot`
-at PALC state weight `state_weight` weights it (`palc_border`). So `τ` has PALC product one with the old tangent.
+at PALC state weight `state_weight` weights it (`palc_border`), with the sign that makes its `orientation` product
+(`PlainOrientation`) with the old tangent positive.
 """
 function restart_tangent(
     game::LogitGame,
@@ -87,11 +88,13 @@ function restart_tangent(
     old_tangent::AbstractVector{E},
     dot::BifurcationKit.DotTheta,
     state_weight::E,
+    orientation::PlainOrientation{E},
 )::AbstractVector{E} where {E <: Real}
     width = length(point) - 1
     jacobian = branch_system!(BranchWorkspace(game, point), game, point, last(point)).jacobian
     border = palc_border(dot, state_weight, old_tangent)
     # fatou-ignore call-arity: Base `view` takes any number of indices (jolars/fatou#125)
     bordered = [view(jacobian, 1:width, :); transpose(border)]
-    return bordered \ setindex!(zeros(E, width + 1), one(E), width + 1)
+    tangent = bordered \ setindex!(zeros(E, width + 1), one(E), width + 1)
+    return sign(orientation(old_tangent, tangent, last(old_tangent), last(tangent), state_weight)) .* tangent
 end
