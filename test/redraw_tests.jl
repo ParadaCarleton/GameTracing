@@ -31,13 +31,7 @@ end
     result = swapped_trace(NEAR_SWAP)
     @test !is_error(result)
     logits = unwrap(result).logits
-    # The corrector's sup-norm residual in gaps equals the logit residual at ρ = 1; 2x covers recomputing it.
-    tolerance = GameTracing.corrector_tolerance(
-        REDRAW_SETTINGS.corrector.residual_tolerance,
-        REDRAW_SETTINGS.corrector.tolerance_floor_ulps,
-        logits,
-    )
-    @test residual_norm(NEAR_SWAP.after, logits, NEAR_SWAP.precision) < 2 * tolerance
+    @test settled_logits(NEAR_SWAP.after, logits, NEAR_SWAP.precision, REDRAW_SETTINGS)
     swap = swap_point(NEAR_SWAP)
     @test swap.relative_precision >= NEAR_SWAP.swap_level
     reference = branch_reference(
@@ -52,21 +46,15 @@ end
     # Probabilities to 1e-3, as the LogitNash cross-check compares a Float32 trace with its reference.
     @test maximum(abs, inv.(1 .+ exp.(-logits)) .- reference.first_choices) < 1.0f-3
     # The swap moved the branch: the endpoint is not the old map's.
-    @test residual_norm(NEAR_SWAP.before, logits, NEAR_SWAP.precision) > 100 * tolerance
+    @test newton_correction(NEAR_SWAP.before, logits, NEAR_SWAP.precision) > 10 * REDRAW_SETTINGS.corrector.logit_tolerance
     @info "bytes per redraw" swapped = @allocated(swapped_trace(NEAR_SWAP)) unswapped = @allocated(
         trace_endpoint(LogitGame(NEAR_SWAP.before, NEAR_SWAP.precision), NEAR_SWAP.width, REDRAW_SETTINGS)
     )
 end
 
-"""Whether the logits of `result` solve `pass` at `precision` to twice the corrector tolerance at `ρ = 1`."""
+"""Whether the logits of `result` solve `pass` at `precision` as the corrector settles them (`settled_logits`)."""
 function on_map(result::TraceResult{Float32}, pass::Any, precision::Real)::Bool
-    logits = unwrap(result).logits
-    tolerance = GameTracing.corrector_tolerance(
-        REDRAW_SETTINGS.corrector.residual_tolerance,
-        REDRAW_SETTINGS.corrector.tolerance_floor_ulps,
-        [logits; 1.0f0],
-    )
-    return residual_norm(pass, logits, precision) < 2 * tolerance
+    return settled_logits(pass, unwrap(result).logits, precision, REDRAW_SETTINGS)
 end
 
 @testset "a redraw whose homotopy rises to the new map's only root crosses there, 3.5 logits on" begin
@@ -131,13 +119,8 @@ end
     result = swapped_trace(swap)
     @test !is_error(result)
     logits = unwrap(result).logits
-    tolerance = GameTracing.corrector_tolerance(
-        REDRAW_SETTINGS.corrector.residual_tolerance,
-        REDRAW_SETTINGS.corrector.tolerance_floor_ulps,
-        [logits; 1.0f0],
-    )
-    @test residual_norm(swap.after, logits, swap.precision) < 2 * tolerance
-    @test residual_norm(swap.before, logits, swap.precision) > 100 * tolerance
+    @test settled_logits(swap.after, logits, swap.precision, REDRAW_SETTINGS)
+    @test newton_correction(swap.before, logits, swap.precision) > 10 * REDRAW_SETTINGS.corrector.logit_tolerance
 end
 
 @testset "every endpoint solves the map in effect at the target, whatever the swap level" begin
@@ -162,16 +145,18 @@ end
     @test on_map(last_step, NEAR_SWAP.after, NEAR_SWAP.precision)
 end
 
-@testset "an endpoint at the target that misses its game's tolerance fails OffMap" begin
+@testset "a corrector at rounding noise fails PrecisionExhausted at its precision, before the target" begin
     game = LogitGame(GAME, TARGET_PRECISION)
     traced = unwrap(trace_endpoint(game, WIDTH, REDRAW_SETTINGS))
-    progress = GameTracing.TraceProgress(copy(traced.logits), 1.0f0, 3, 0.0f0, 1.0f0, zeros(Float32, WIDTH), 0.0f0, false)
-    outcome = (; step_length = 0.1f0, exception = nothing)
-    @test unwrap(GameTracing.reached_state(progress, outcome, game, REDRAW_SETTINGS, (;))).steps == 3
-    moved = LogitGame(LinearGainPass(GAME.interaction, -GAME.stand_alone), TARGET_PRECISION)
-    failure = unwrap_error(GameTracing.reached_state(progress, outcome, moved, REDRAW_SETTINGS, (;)))
-    @test failure.cause == GameTracing.OffMap
-    @test failure.context.residual >= failure.context.tolerance
+    progress = GameTracing.TraceProgress(copy(traced.logits), 0.5f0, 3, 0.0f0, 0.5f0, zeros(Float32, WIDTH), 0.0f0, false)
+    exhausted = (; relative_precision = 0.5f0, correction = 2.0f-3)
+    outcome = (; step_length = 0.1f0, exhausted, exception = nothing)
+    failure = unwrap_error(GameTracing.reached_state(progress, outcome, game, REDRAW_SETTINGS, (;)))
+    @test failure.cause == GameTracing.PrecisionExhausted
+    @test failure.context.lambda == TARGET_PRECISION * exhausted.relative_precision
+    @test failure.context.correction == exhausted.correction
+    reached = GameTracing.TraceProgress(copy(traced.logits), 1.0f0, 3, 0.0f0, 1.0f0, zeros(Float32, WIDTH), 0.0f0, false)
+    @test unwrap(GameTracing.reached_state(reached, (; outcome..., exhausted = nothing), game, REDRAW_SETTINGS, (;))).steps == 3
 end
 
 @testset "a redrawn game must keep the trace's target precision" begin
@@ -207,8 +192,9 @@ end
     reference = branch_reference(reference_after, swap.width, swap.precision; start = logits .* float(1), start_precision = relative_precision * swap.precision)
     @test reference.reached
     @test reference.crossings == 0
-    # The endpoint's residual is under the corrector tolerance at ρ = 1, where gap and logit residuals agree; 2x covers recomputing it.
-    residual = 2 * GameTracing.corrector_tolerance(REDRAW_SETTINGS.corrector.residual_tolerance, REDRAW_SETTINGS.corrector.tolerance_floor_ulps, [endpoint; 1.0f0])
+    @test settled_logits(reference_after, endpoint, swap.precision, REDRAW_SETTINGS)
+    # The bound reads the endpoint's own double-precision residual.
+    residual = 2 * residual_norm(reference_after, endpoint .* float(1), swap.precision * float(1))
     @test maximum(abs, inv.(1 .+ exp.(-endpoint)) .- reference.first_choices) < probability_bound(reference_after, reference.logits, swap.precision, residual, 0.25f0)
 end
 

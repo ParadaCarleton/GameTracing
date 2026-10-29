@@ -139,7 +139,7 @@ end
     )
     result = GameTracing.reached_state(
         progress,
-        (; step_length = 0.0f0, exception = "Stopping continuation."),
+        (; step_length = 0.0f0, exhausted = nothing, exception = "Stopping continuation."),
         LogitGame(GAME, TARGET_PRECISION),
         TraceSettings{Float32}(; max_steps = 10),
         (;),
@@ -154,7 +154,7 @@ end
     moved = (; u = Float32[0.1f0, 0.2f0, 0.5f0], p = 0.5f0)
     @test progress(moved, tangent, 1, nothing)
     @test !progress.unmoved
-    outcome = (; step_length = 0.0f0, exception = nothing)
+    outcome = (; step_length = 0.0f0, exhausted = nothing, exception = nothing)
     @test unwrap_error(GameTracing.reached_state(progress, outcome, LogitGame(GAME, TARGET_PRECISION), TraceSettings{Float32}(; max_steps = 2), (;))).cause == GameTracing.TraceStuck
     @test !progress(moved, tangent, 2, nothing)
     @test progress.unmoved

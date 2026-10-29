@@ -244,6 +244,21 @@ function level_root(pass::Any, logits::AbstractVector, precision::Real)::Abstrac
     error("level_root: Newton did not settle at precision $level")
 end
 
+"""
+The largest logit move of one double-precision Newton correction of `pass`'s map `z = T(z, λ)` from `logits` at
+`precision`: to first order, how far `logits` lie from the root.
+"""
+function newton_correction(pass::Any, logits::AbstractVector, precision::P)::typeof(float(one(P)) * float(1)) where {P <: Real}
+    root, level = float.(collect(logits)) .* float(1), precision * float(1)
+    gains = evaluated(pass, root, level)
+    return maximum(abs, (one(gains.logit_slope) .- gains.logit_slope) \ (root .- gains.response))
+end
+
+"""Whether `logits` solve `pass` at `precision` as the trace's corrector settles them: `newton_correction` within `logit_tolerance`."""
+function settled_logits(pass::Any, logits::AbstractVector, precision::Real, settings::TraceSettings)::Bool
+    return newton_correction(pass, logits, precision) <= settings.corrector.logit_tolerance
+end
+
 """`(; residual, jacobian)` of the branch equations `z - T(z, λ) = 0` of `pass` at `point = [z; λ]`."""
 function reference_system(pass::Any, point::AbstractVector{E})::NamedTuple where {E <: Real}
     logits, level = point[1:(end - 1)], last(point)

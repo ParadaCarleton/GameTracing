@@ -1,17 +1,15 @@
 using BifurcationKit: BifurcationKit
 using ErrorTypes: Err, Ok
 """
-    StepControl{E}(; distance_limit, contraction_limit, growth_limit, contraction_offset)
+    StepControl{E}(; distance_limit, growth_limit)
 
 BifurcationKit's `CorrectorQuality` thresholds, which shrink a step whose corrector looks poor. `distance_limit` is the
-Euclidean length of a Newton step's logit part (Gambit's 0.4 in log probabilities); `contraction_limit`, `growth_limit` and
-`contraction_offset` bound the residual's contraction and growth across iterations. `nothing` switches a threshold off.
+Euclidean length of a Newton step's logit part (Gambit's 0.4 in log probabilities); `growth_limit` bounds a step's
+growth. The corrector's contraction rate (`CorrectorSettings`) also slows growth. `nothing` switches a threshold off.
 """
 Base.@kwdef struct StepControl{E <: Real}
     distance_limit::Union{Nothing, E} = 0.4f0
-    contraction_limit::Union{Nothing, E} = 0.6f0
     growth_limit::Union{Nothing, E} = nothing
-    contraction_offset::E = 0.1f0
 end
 
 """
@@ -67,20 +65,24 @@ scaled_limit(limit::Real, scale::Real)::typeof(limit * scale) = limit * scale
 
 """
 PALC's `step_control` for `control` over `width` gaps in `geometry`: `nothing` when it is off, else BifurcationKit's
-`CorrectorQuality`, its distance limit scaled from the gaps' Euclidean length into the norm.
+`CorrectorQuality`, its distance limit scaled from the gaps' Euclidean length into the norm. Its contraction rate,
+`corrector`'s limit and offset, slows growth only: `CorrectorReach` refuses on the rate in logits.
 """
-corrector_quality(::Nothing, ::TraceGeometry, ::Integer)::Nothing = nothing
+corrector_quality(::Nothing, ::CorrectorSettings, ::TraceGeometry, ::Integer)::Nothing = nothing
 
 function corrector_quality(
     control::StepControl{E},
+    corrector::CorrectorSettings{E},
     geometry::TraceGeometry{E},
     width::Integer,
 )::BifurcationKit.CorrectorQuality{E} where {E <: Real}
     return BifurcationKit.CorrectorQuality{E}(
         scaled_limit(control.distance_limit, sqrt(coordinate_weight(geometry, width))),
-        scaled_limit(control.contraction_limit, one(E)),
+        scaled_limit(corrector.contraction_limit, one(E)),
         scaled_limit(control.growth_limit, one(E)),
-        control.contraction_offset,
+        corrector.contraction_offset,
+        nothing,
+        false,
     )
 end
 
@@ -112,7 +114,7 @@ function palc_with_geometry(
         θ = geometry.palc_state_weight,
         dotθ = geometry.dot,
         bls = bordered_linear_solver(settings.bordered_solver, width + 1, E),
-        step_control = corrector_quality(settings.step_control, settings.geometry, width),
+        step_control = corrector_quality(settings.step_control, settings.corrector, settings.geometry, width),
         orientation_check = orientation_check && settings.bordered_solver == MatrixSolve,
         corrector = BifurcationKit.FreeParameterNewton(),
         orientation_dot = PlainOrientation(settings.geometry),
@@ -161,7 +163,8 @@ function continuation_options(
         p_max = one(E),
         max_steps,
         newton_options = BifurcationKit.NewtonPar(;
-            tol = settings.corrector.residual_tolerance,
+            # Only `CorrectorReach` converges a corrector (`settled`), and an exact root.
+            tol = zero(E),
             max_iterations = settings.corrector.newton_iterations,
             α = one(E),
             αmin = one(E) / 1000,
@@ -185,25 +188,11 @@ function opening_divisor(settings::TraceSettings{E}, target_precision::Real)::E 
 end
 
 """
-    PinScaledNorm(scale)
-
-BifurcationKit's residual norm for a trace: the sup norm, with the pin row `ρ - pin` scaled by `scale`, a unit
-relative-precision step's length at the start in the trace's distance (`precision_length`). Unscaled, a far target's
-pin row sits under Newton's tolerance whatever `ρ`, so Newton stops before it moves `ρ`.
-"""
-struct PinScaledNorm{E <: Real}
-    scale::E
-end
-
-function (norm::PinScaledNorm{E})(residual::AbstractVector{E})::E where {E <: Real}
-    return max(maximum(abs, payoff_gaps(residual)), norm.scale * abs(last(residual)))
-end
-
-"""
     continue_trace(game, start, old_tangent, settings, finalise, accept_corrected, step_length, max_steps)
 
 Runs the PALC continuation of `game`'s branch from `start = [w; ρ]` toward relative precision one, with `finalise` at
-each accepted point and `accept_corrected` at each corrector, and returns the step length its last corrector tried.
+each accepted point and `accept_corrected` at each corrector, and returns `(; step_length, exhausted)`: the step
+length its last corrector tried and the corrector's `exhausted` record (`CorrectorReach`).
 From the flat start (`old_tangent` is `nothing`) the first tangent is BifurcationKit's secant; a restart after a
 redraw opens along `restart_tangent`, oriented by the trace's `old_tangent`. BifurcationKit's constructors are not
 inferable, so each is built in its own function and passed on without a named local; it runs once per segment.
@@ -217,7 +206,7 @@ function continue_trace(
     accept_corrected::Any,
     step_length::E,
     max_steps::Integer,
-)::E where {E <: Real}
+)::NamedTuple where {E <: Real}
     corrector = CorrectorReach(
         accept_corrected,
         settings.corrector,
@@ -233,15 +222,14 @@ function continue_trace(
         old_tangent,
         finalise,
         corrector,
-        PinScaledNorm(precision_length(settings.geometry, zero(E), E(game.target_precision))),
     )
-    return corrector.step_length
+    return (; corrector.step_length, corrector.exhausted)
 end
 
 """
-    opened_continuation!(problem, algorithm, options, old_tangent, finalise, corrector, pin_norm)
+    opened_continuation!(problem, algorithm, options, old_tangent, finalise, corrector)
 
-Runs BifurcationKit's continuation of `problem`, its residuals measured in `pin_norm` (`PinScaledNorm`). From the flat start (`old_tangent` is `nothing`) the first tangent
+Runs BifurcationKit's continuation of `problem`. From the flat start (`old_tangent` is `nothing`) the first tangent
 is BifurcationKit's secant to a second solve. After a redraw, the run opens through BifurcationKit's two-point start
 toward a point `options.ds` along `restart_tangent`, whose secant is that tangent.
 """
@@ -252,13 +240,12 @@ function opened_continuation!(
     ::Nothing,
     finalise::TraceFinalise,
     corrector::CorrectorReach,
-    pin_norm::PinScaledNorm,
 )::Nothing
     BifurcationKit.continuation(
         problem,
         algorithm,
         options;
-        normC = pin_norm,
+        normC = BifurcationKit.norminf,
         verbosity = 0,
         finalise_solution = finalise,
         callback_newton = corrector,
@@ -273,7 +260,6 @@ function opened_continuation!(
     old_tangent::AbstractVector{E},
     finalise::TraceFinalise,
     corrector::CorrectorReach,
-    pin_norm::PinScaledNorm,
 )::Nothing where {E <: Real}
     start = BifurcationKit.getu0(problem)
     dot, palc_state_weight = BifurcationKit.getdot(algorithm), E(BifurcationKit.getθ(algorithm))
@@ -291,7 +277,7 @@ function opened_continuation!(
             problem,
             BifurcationKit.update(algorithm, options, nothing),
             options;
-            normC = pin_norm,
+            normC = BifurcationKit.norminf,
             verbosity = 0,
             finalise_solution = finalise,
             callback_newton = corrector,
@@ -424,7 +410,7 @@ function guarded_trace(
 )::NamedTuple where {E <: Real}
     try
         return (;
-            step_length = continue_trace(
+            continue_trace(
                 finalise.slot.game,
                 start,
                 old_tangent,
@@ -433,14 +419,14 @@ function guarded_trace(
                 accept_corrected,
                 finalise.slot.step_length,
                 settings.max_steps - finalise.step_offset,
-            ),
+            )...,
             exception = nothing,
         )
     catch exception
         if !uncorrected_start(exception) && !solver_blowup(exception)
             rethrow()
         end
-        return (; step_length = zero(E), exception)
+        return (; step_length = zero(E), exhausted = nothing, exception)
     end
 end
 
@@ -448,9 +434,9 @@ end
     reached_state(progress, outcome, game, settings, context)
 
 The `TraceResult` (`Ok(Traced)` or `Err(TraceFailure)`) of a trace whose `progress` holds the last accepted point and
-whose `outcome` is the last corrector's step length or the BifurcationKit exception that ended it. An endpoint at
-the target is checked on `game`, the game in effect there: one whose residual misses the corrector tolerance fails
-`OffMap`, so no trace returns a root of a game it no longer runs.
+whose `outcome` (`guarded_trace`) is the last corrector's step length, its `exhausted` record, or the BifurcationKit
+exception that ended it. A corrector at rounding noise fails `PrecisionExhausted`, its context carrying the precision
+`lambda` and the `correction` in logits there.
 """
 function reached_state(
     progress::TraceProgress{E},
@@ -460,18 +446,16 @@ function reached_state(
     context::NamedTuple,
 )::TraceResult{E} where {E <: Real}
     target_precision = game.target_precision
-    if isnothing(outcome.exception) && progress.relative_precision == one(E)
-        point = [progress.gaps; one(E)]
-        residual = maximum(abs, branch_system!(BranchWorkspace(game, point), game, point, one(E)).residual)
-        tolerance = corrector_tolerance(settings.corrector.residual_tolerance, settings.corrector.tolerance_floor_ulps, point)
-        if residual < tolerance
-            return Ok(Traced(copy(progress.gaps), progress.steps))
-        end
-        @debug "trace stopped" _group = :trace reason = :off_map residual tolerance
+    if !isnothing(outcome.exhausted)
+        (; relative_precision, correction) = outcome.exhausted
+        @debug "trace stopped" _group = :trace reason = :precision_exhausted relative_precision correction
         return Err(TraceFailure(
-            OffMap,
-            (; stopped_context(progress, outcome, target_precision, context)..., residual, tolerance),
+            PrecisionExhausted,
+            (; lambda = target_precision * relative_precision, correction, stopped_context(progress, outcome, target_precision, context)...),
         ))
+    end
+    if isnothing(outcome.exception) && progress.relative_precision == one(E)
+        return Ok(Traced(copy(progress.gaps), progress.steps))
     end
     # Why the trace stopped short: a start that would not correct, a broken linear solve, a point that did not move,
     # spent steps, or else a step below `min_step`, `keep_going` or a refusal (`STOP_CAUSES`).

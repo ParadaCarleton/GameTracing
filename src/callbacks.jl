@@ -1,15 +1,20 @@
 using BifurcationKit: BifurcationKit
 using Logging: @debug
 """
-    CorrectorSettings{E}(; reach, max_kl, max_angle, max_step_kl, residual_tolerance, tolerance_floor_ulps, newton_iterations)
+    CorrectorSettings{E}(; reach, max_kl, max_angle, max_step_kl, logit_tolerance, pin_tolerance, contraction_limit,
+                         contraction_offset, newton_iterations)
 
 The corrector's controls (`CorrectorReach`); `nothing` switches a limit off. `reach`: a corrector further than this
 times its step from its predictor is refused. `max_kl`: a corrected point whose largest per-logit probability KL from
 the predictor passes this is refused. `max_angle`: so is one whose chord turns past this many radians from the
 predictor's direction. `max_step_kl`: so is one whose largest per-logit probability KL `KL(corrected ‖ previous)` from
 the step's start passes this, whether the predictor or Newton made the jump; the KL reads fresh probabilities, which
-frozen Fisher weights cannot shrink. `residual_tolerance`, `tolerance_floor_ulps`: the corrector's sup-norm residual, or
-`tolerance_floor_ulps` ulps of the largest payoff gap where that is larger (`corrector_tolerance`).
+frozen Fisher weights cannot shrink.
+
+Convergence is scale-free, as in Gambit's tracer (path.cc:372, `c_tol` in log probabilities): a Newton correction that
+moves no logit more than `logit_tolerance`, at a relative precision within the relative `pin_tolerance` of its pin.
+A correction that moves the logits more than `contraction_limit` times the one before it (plus `logit_tolerance`
+times `contraction_offset`) fails to contract; BifurcationKit's step growth reads the same rate (`corrector_quality`).
 `newton_iterations`: Newton iterations per corrector.
 """
 Base.@kwdef struct CorrectorSettings{E <: Real}
@@ -18,24 +23,16 @@ Base.@kwdef struct CorrectorSettings{E <: Real}
     max_angle::Union{Nothing, E} = nothing
     # Legitimate steps of the test games move a logit at most 0.07 nats (0.34 once, a 3x3 draw); a branch jump moved 1.2.
     max_step_kl::Union{Nothing, E} = 0.5f0
-    residual_tolerance::E = 1.0f-5
-    tolerance_floor_ulps::E = 32.0f0
+    logit_tolerance::E = 1.0f-4
+    pin_tolerance::E = 1.0f-5
+    contraction_limit::Union{Nothing, E} = 0.6f0
+    contraction_offset::E = 0.1f0
     newton_iterations::Int = 10
 end
 
-"""
-    corrector_tolerance(tolerance, floor_ulps, x)
-
-The residual under which the corrector accepts `x = [w; ρ]`: `tolerance`, or the rounding floor of the
-gap residual `w - P G`, `floor_ulps` ulps of the largest payoff gap.
-"""
-function corrector_tolerance(
-    tolerance::T,
-    floor_ulps::Real,
-    point::AbstractVector,
-)::T where {T <: Real}
-    largest = maximum(abs, payoff_gaps(point))
-    return max(tolerance, convert(T, floor_ulps * eps(typeof(largest)) * largest))
+"""The largest change of a logit from `from` to `to`, two points `[w; ρ]` (`logits_at`)."""
+function logit_change(from::AbstractVector{E}, to::AbstractVector{E})::E where {E <: Real}
+    return maximum(abs, logits_at(to) .- logits_at(from))
 end
 
 """A trace callback that always lets the trace go on: `(logits, relative_precision)` or `(logits, relative_precision, converged)`."""
@@ -52,7 +49,10 @@ within_limit(limit::Real, measured::Real)::Bool = measured <= limit
     CorrectorReach(accept_corrected, settings, geometry, previous, predicted, step_length)
 
 The trace's BifurcationKit `callback_newton`, which also decides the corrector's convergence: a `settled` iterate
-ends Newton's method converged (`NewtonConverged`). A non-finite residual stops the corrector,
+ends Newton's method converged (`NewtonConverged`), and a correction that fails to contract stops it (`corrected!`).
+Two such corrections in a row, each larger than the predictor's own move in logits, are rounding noise: the check
+records them in `exhausted` and refuses every later corrector, so the trace ends `PrecisionExhausted`.
+A non-finite residual stops the corrector,
 and so does any iterate further from the step's predictor than `settings.reach` times the predictor's own step, in
 `geometry`'s plain norm (`arclength_distance`); the step then halves. On a smooth branch that distance is the branch's
 curvature times `ds² / 2`, so halving brings any step under it, while an iterate that lands on another branch is far
@@ -61,7 +61,9 @@ from it. A converged closing point is refused the same way past `reach`, past a 
 `settings.max_step_kl`, or past a turn of `settings.max_angle` radians from
 the predictor's direction (`chord_angle`, from `previous`). A predictor that did not move has no reach to compare.
 `accept_corrected(logits, ρ, converged)` then sees every other closing point. `previous`, `predicted` and
-`step_length` hold the current step's start and predictor.
+`step_length` hold the current step's start and predictor, `predictor_move` the predictor's largest logit change.
+`iterate`, `correction`, `stalls` and `settled_here` follow the current solve: its last iterate, its last correction
+in logits, its non-contracting corrections in a row, and whether it settled.
 """
 mutable struct CorrectorReach{C, E <: Real}
     # Mutable because BifurcationKit shows the predictor only to a corrector's first callback and the
@@ -72,6 +74,27 @@ mutable struct CorrectorReach{C, E <: Real}
     previous::Vector{E}
     predicted::Vector{E}
     step_length::E
+    predictor_move::E
+    iterate::Vector{E}
+    correction::E
+    stalls::Int
+    settled_here::Bool
+    exhausted::Union{Nothing, @NamedTuple{relative_precision::E, correction::E}}
+end
+
+function CorrectorReach(
+    accept_corrected::C,
+    settings::CorrectorSettings{E},
+    geometry::TraceGeometry{E},
+    previous::AbstractVector{E},
+    predicted::AbstractVector{E},
+    step_length::E,
+)::CorrectorReach{C, E} where {C, E <: Real}
+    # A plain Newton solve has no predictor move: NaN fails the noise test, so its stalls refuse.
+    return CorrectorReach{C, E}(
+        accept_corrected, settings, geometry, collect(previous), collect(predicted), step_length,
+        E(NaN32), collect(previous), E(NaN32), 0, false, nothing,
+    )
 end
 
 """Whether `check` accepts its corrector's converged closing point `corrected` (reach, KL and angle)."""
@@ -96,18 +119,28 @@ function closing_accepted(check::CorrectorReach{C, E}, corrected::AbstractVector
     return true
 end
 
-"""The residual under which `check`'s corrector accepts `point` (`corrector_tolerance`)."""
-function settled_tolerance(check::CorrectorReach, point::AbstractVector)::Real
-    return corrector_tolerance(check.settings.residual_tolerance, check.settings.tolerance_floor_ulps, point)
+"""The verdict that ends a solve: converged (`NewtonConverged`) when it `settled_here`, else `proceed`."""
+function closing_verdict(check::CorrectorReach, proceed::Bool)::Union{Bool, BifurcationKit.NewtonConverged}
+    if check.settled_here
+        return BifurcationKit.NewtonConverged()
+    end
+    return proceed
 end
 
-function (check::CorrectorReach)(iterate::I;
+function (check::CorrectorReach{C, E})(iterate::I;
     fromNewton::Bool = true,
     # fatou-ignore unused-argument: BifurcationKit passes keyword arguments this callback ignores
     keywords...,
-)::Union{Bool, BifurcationKit.NewtonConverged} where {I <: NamedTuple}
+)::Union{Bool, BifurcationKit.NewtonConverged} where {C, E <: Real, I <: NamedTuple}
     if fromNewton
-        return newton_verdict(check, iterate, isfinite(iterate.residual))
+        # Newton's closing call is its only one without `J`; an exact root converges on BifurcationKit's own test.
+        if !haskey(iterate, :J)
+            return closing_verdict(check, isfinite(iterate.residual))
+        end
+        if iterate.step == 0
+            check.predictor_move = E(NaN32)
+        end
+        return corrected!(check, iterate, isfinite(iterate.residual))
     end
     # PALC's closing call, the only one without `z0`, ends every corrector.
     if haskey(iterate, :z0)
@@ -118,18 +151,19 @@ function (check::CorrectorReach)(iterate::I;
             copyto!(check.predicted, iterate.x)
             copyto!(check.previous, iterate.z0.u)
             check.step_length = arclength_distance(iterate.z0.u, iterate.x, check.geometry)
+            check.predictor_move = logit_change(iterate.z0.u, iterate.x)
         end
         if !isfinite(iterate.residual)
             @debug "corrector stopped" _group = :trace reason = :nonfinite
-            return false
+            return corrected!(check, iterate, false)
         end
         reached = within_reach(check, iterate.x)
         if !reached
             @debug "corrector stopped" _group = :trace reason = :reach
         end
-        return newton_verdict(check, iterate, reached)
+        return corrected!(check, iterate, reached)
     end
-    converged = isfinite(iterate.residual) && settled(check, iterate)
+    converged = isfinite(iterate.residual) && check.settled_here
     @debug "corrector closed" _group = :trace step = iterate.step residual = iterate.residual converged step_length = check.step_length
     if converged && !closing_accepted(check, iterate.x)
         return false
@@ -137,7 +171,59 @@ function (check::CorrectorReach)(iterate::I;
     if !check.accept_corrected(logits_at(iterate.x), iterate.p, converged)
         return false
     end
-    return newton_verdict(check, iterate, true)
+    return closing_verdict(check, true)
+end
+
+"""
+    corrected!(check, iterate, proceed)
+
+`check`'s verdict on a Newton `iterate` that its other tests let `proceed`, in logits `z = ρ w`. The first iterate
+is the solve's start and never settles. Each later one is a correction `Δz` from the iterate before: it settles
+(`NewtonConverged`) when `settled`. A correction past `contraction_limit` times the one before (plus
+`logit_tolerance · contraction_offset`) fails to contract, Gambit's test (path.cc), and stops the corrector, so the
+step halves; unless it is larger than the predictor's own move, which halving cannot shrink below. Two such in a row
+are rounding noise: `check.exhausted` records `ρ` and the correction, and every later solve refuses at its start.
+"""
+function corrected!(
+    check::CorrectorReach{C, E},
+    iterate::NamedTuple,
+    proceed::Bool,
+)::Union{Bool, BifurcationKit.NewtonConverged} where {C, E <: Real}
+    if !isnothing(check.exhausted)
+        return false
+    end
+    if iterate.step == 0
+        copyto!(check.iterate, iterate.x)
+        check.correction, check.stalls, check.settled_here = E(NaN32), 0, false
+        return proceed
+    end
+    correction, before = logit_change(check.iterate, iterate.x), check.correction
+    copyto!(check.iterate, iterate.x)
+    check.correction = correction
+    if !proceed
+        return false
+    end
+    if settled(check, iterate, correction)
+        check.settled_here = true
+        return BifurcationKit.NewtonConverged()
+    end
+    (; contraction_limit, contraction_offset, logit_tolerance) = check.settings
+    # The first correction has no rate (`before` is NaN), so it contracts.
+    if isnan(before) || within_limit(scaled_limit(contraction_limit, before + logit_tolerance * contraction_offset), correction)
+        check.stalls = 0
+        return true
+    end
+    if !(check.predictor_move <= correction)
+        @debug "corrector stopped" _group = :trace reason = :contraction correction before
+        return false
+    end
+    check.stalls += 1
+    if check.stalls < 2
+        return true
+    end
+    @debug "corrector stopped" _group = :trace reason = :precision_exhausted correction predictor_move = check.predictor_move
+    check.exhausted = (; relative_precision = last(iterate.x), correction)
+    return false
 end
 
 """The pin row `ρ - pin` of a corrector `iterate`'s residual: the last entry of Newton's `fx` or of PALC's `res_f`."""
@@ -149,32 +235,15 @@ function pin_residual(iterate::NamedTuple)::eltype(iterate.x)
 end
 
 """
-Whether `check`'s corrector has settled `iterate`: its residual is under `corrector_tolerance`, and its relative
-precision `ρ` is at the pin to the relative `residual_tolerance`. The pin row needs its own test: the gap floor grows
-with the gaps, so at a far target it would pass a `ρ` that never left its start, a point off the map.
+Whether `check`'s corrector has settled `iterate`, reached by a Newton `correction` in logits: the correction moved no
+logit more than `logit_tolerance`, and the relative precision `ρ` is at its pin to the relative `pin_tolerance`. The pin
+needs its own test: a far target's logits barely move with `ρ`, so they would pass a `ρ` that never left its start.
 """
-function settled(check::CorrectorReach, iterate::I)::Bool where {I <: NamedTuple}
+function settled(check::CorrectorReach, iterate::I, correction::Real)::Bool where {I <: NamedTuple}
     relative_precision = last(iterate.x)
     offset = pin_residual(iterate)
     pin_scale = max(abs(relative_precision), abs(relative_precision - offset))
-    return iterate.residual < settled_tolerance(check, iterate.x) &&
-        abs(offset) <= check.settings.residual_tolerance * pin_scale
-end
-
-"""
-    newton_verdict(check, iterate, proceed)
-
-`check`'s verdict on a Newton `iterate` that its other tests let `proceed`: converged (`NewtonConverged`)
-when `settled`, else `proceed`.
-"""
-function newton_verdict(check::CorrectorReach, iterate::NamedTuple, proceed::T)::Union{
-    T,
-    BifurcationKit.NewtonConverged,
-} where {T <: Bool}
-    if proceed && settled(check, iterate)
-        return BifurcationKit.NewtonConverged()
-    end
-    return proceed
+    return correction <= check.settings.logit_tolerance && abs(offset) <= check.settings.pin_tolerance * pin_scale
 end
 
 """Whether `point` is within `check.settings.reach` times the predictor's step of the predictor."""
