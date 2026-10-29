@@ -10,7 +10,7 @@ The game a trace runs on, the game it ran on before the last swap (`before`), wh
 last restart (`pending`), and the arclength step the trace last held, which a restart carries on.
 """
 mutable struct RedrawSlot{G <: LogitGame, E <: Real}
-    # Mutable because BifurcationKit's finalise callback returns only a `Bool`, as for `TraceProgress`.
+    # Mutable because BifurcationKit's finalise callback returns only a `Bool`.
     game::G
     before::G
     pending::Bool

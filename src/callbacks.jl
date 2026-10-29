@@ -281,11 +281,10 @@ end
     TraceProgress(gaps, relative_precision, steps, precision_min, precision_max, gap_tangent, tangent_precision, unmoved)
 
 The last accepted point `(gaps, relative_precision)` of a trace, its step count, the range of the relative precision
-over accepted points and the tangent there (both in payoff gaps): BifurcationKit's `finalise_solution`
-callback. An accepted point bitwise equal to the one before it (a step below the point's rounding) sets `unmoved` and
-stops the trace, a stall. `JULIA_DEBUG=trace` lists every point.
+over accepted points and the tangent there (both in payoff gaps), read from BifurcationKit's branch (`branch_progress`).
+`unmoved` marks a trace that stopped on an accepted point bitwise equal to the one before it (`TraceFinalise`).
 """
-mutable struct TraceProgress{E <: Real}
+struct TraceProgress{E <: Real}
     gaps::Vector{E}
     relative_precision::E
     steps::Int
@@ -296,39 +295,58 @@ mutable struct TraceProgress{E <: Real}
     unmoved::Bool
 end
 
-function (progress::TraceProgress)(point::P, tangent::T, step::S, ::Any;
-    # fatou-ignore unused-argument: BifurcationKit passes keyword arguments this callback ignores
+"""
+BifurcationKit's branch record of the trace's point `x = [w; ρ]` and the state's tangent: the gaps `w`, their tangent
+and the tangent's precision part. `branch_progress` reads the trace's progress back from these records.
+"""
+function trace_record_point(x::AbstractVector{E}, ::Real;
+    state::Any,
+    # fatou-ignore unused-argument: BifurcationKit passes keyword arguments this record ignores
     keywords...,
-)::Bool where {P, T, S <: Integer}
-    @debug "trace point" _group = :trace step relative_precision = point.p state = copy(
-        point.u,
-    ) tangent = copy(tangent.u)
-    progress.unmoved = point.p == progress.relative_precision &&
-        view(point.u, eachindex(progress.gaps)) == progress.gaps
-    copyto!(progress.gaps, 1, point.u, 1, length(progress.gaps))
-    progress.relative_precision = point.p
-    progress.steps = step
-    progress.precision_min = min(progress.precision_min, point.p)
-    progress.precision_max = max(progress.precision_max, point.p)
-    copyto!(progress.gap_tangent, 1, tangent.u, 1, length(progress.gap_tangent))
-    progress.tangent_precision = tangent.p
-    return !progress.unmoved
+)::NamedTuple where {E <: Real}
+    return (; gaps = x[begin:(end - 1)], gap_tangent = state.τ.u[begin:(end - 1)], tangent_precision = state.τ.p)
+end
+
+"""A branch record's relative precision."""
+record_precision(record::R)::fieldtype(R, :param) where {R <: NamedTuple} = record.param
+
+"""Whether two branch records hold the same point `(w, ρ)`, bitwise: a step below the point's rounding."""
+same_point(record::NamedTuple, other::NamedTuple)::Bool = record.param == other.param && record.gaps == other.gaps
+
+"""
+    branch_progress(branch, opening)
+
+The `TraceProgress` after a segment whose BifurcationKit `branch` of `trace_record_point` records starts at the point of
+`opening`, the progress before the segment: its last record, its steps counted on from `opening.steps`, the precision
+range of both, and `unmoved` when its last two records hold the same point. A branch of its start alone accepted no
+point and leaves `opening` as it was, tangent included.
+"""
+function branch_progress(branch::AbstractVector, opening::TraceProgress{E})::TraceProgress{E} where {E <: Real}
+    if length(branch) == 1
+        return opening
+    end
+    record = last(branch)
+    unmoved = same_point(record, branch[end - 1])
+    return TraceProgress{E}(
+        copy(record.gaps), record.param, opening.steps + record.step,
+        min(opening.precision_min, minimum(record_precision, branch)), max(opening.precision_max, maximum(record_precision, branch)),
+        copy(record.gap_tangent), record.tangent_precision, unmoved,
+    )
 end
 
 """
-    TraceFinalise(progress, keep_going, redraw, slot, step_offset)
+    TraceFinalise(keep_going, redraw, slot)
 
-BifurcationKit's `finalise_solution` of one trace segment: `progress` records the point (its step counted from
-`step_offset`, the steps of earlier segments), and the trace goes on while `keep_going(logits, relative_precision)`
-holds. Then `redraw(logits, relative_precision)` may return a new game: `slot` takes it and the segment stops, for
-`trace_endpoint` to correct the point onto it and restart. A `redraw` that returns `nothing` or the current game swaps nothing.
+BifurcationKit's `finalise_solution` of one trace segment. An accepted point bitwise equal to the branch's last one (a
+step below the point's rounding) stops the trace, a stall. The trace goes on while `keep_going(logits,
+relative_precision)` holds. Then `redraw(logits, relative_precision)` may return a new game: `slot` takes it and the
+segment stops, for `trace_endpoint` to correct the point onto it and restart. A `redraw` that returns `nothing` or the
+current game swaps nothing. `JULIA_DEBUG=trace` lists every point.
 """
-struct TraceFinalise{R <: TraceProgress, A, D, S}
-    progress::R
+struct TraceFinalise{A, D, S}
     keep_going::A
     redraw::D
     slot::S
-    step_offset::Int
 end
 
 function (finalise::TraceFinalise)(point::P, tangent::T, step::S, result::Any;
@@ -336,16 +354,22 @@ function (finalise::TraceFinalise)(point::P, tangent::T, step::S, result::Any;
     # fatou-ignore unused-argument: BifurcationKit passes keyword arguments this callback ignores
     keywords...,
 )::Bool where {P, T, S <: Integer}
-    recorded = finalise.progress(point, tangent, finalise.step_offset + step, result)
+    @debug "trace point" _group = :trace step relative_precision = point.p state = copy(
+        point.u,
+    ) tangent = copy(tangent.u)
+    # BifurcationKit saves the point after this call, so the branch's last record is the point before it.
+    if same_point((; param = point.p, gaps = view(point.u, firstindex(point.u):(lastindex(point.u) - 1))), last(result.branch))
+        return false
+    end
     logits = logits_at(point.u)
-    if !(recorded && finalise.keep_going(logits, point.p))
+    if !finalise.keep_going(logits, point.p)
         return false
     end
     finalise.slot.step_length = abs(state.ds)
     return !swapped!(finalise.slot, finalise.redraw(logits, point.p))
 end
 
-"""One scalar per step for BifurcationKit's branch record, the relative_precision: `TraceProgress` keeps the point."""
+"""One scalar per step for BifurcationKit's branch record, the relative_precision."""
 function trace_record_precision(::Any, relative_precision::L;
     # fatou-ignore unused-argument: BifurcationKit passes keyword arguments this callback ignores
     keywords...,
