@@ -160,9 +160,9 @@ end
 end
 
 """A `trace_record_point` record of BifurcationKit's branch at `step`: the point `(gaps, param)` and a unit tangent."""
-branch_record(gaps::AbstractVector{E}, param::E, step::Integer)::NamedTuple where {E <: Real} = (;
-    gaps, gap_tangent = zero(gaps), tangent_precision = one(E), param, step,
-)
+function branch_record(gaps::AbstractVector{E}, param::E, step::Integer)::NamedTuple where {E <: Real}
+    return (; gaps, gap_tangent = zero(gaps), tangent_precision = one(E), param, step)
+end
 
 """`finalise`'s verdict on the accepted `point` (a `branch_record`) of a branch that so far holds `branch`."""
 function finalised(finalise::GameTracing.TraceFinalise, point::NamedTuple, branch::AbstractVector)::Bool

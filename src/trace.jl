@@ -481,12 +481,14 @@ function restart_opening(
     return (; opening = nothing, opening.gap_tangent, opening.tangent_precision)
 end
 
-restart_opening(
+function restart_opening(
     iterator::BifurcationKit.ContIterable,
     game::LogitGame,
     old_tangent::AbstractVector{E},
     ::TraceProgress{E},
-)::NamedTuple where {E <: Real} = restart_opening(iterator, game, old_tangent)
+)::NamedTuple where {E <: Real}
+    return restart_opening(iterator, game, old_tangent)
+end
 
 """
     reached_state(progress, outcome, game, settings, context)
