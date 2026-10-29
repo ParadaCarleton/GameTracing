@@ -192,7 +192,8 @@ end
 
 Runs the PALC continuation of `game`'s branch from `start = [w; ρ]` toward relative precision one, with `finalise` at
 each accepted point and `corrector` (`CorrectorReach`) at each Newton iterate, and returns
-`(; step_length, exhausted, logit_accuracy)`: the step length its last corrector tried, the corrector's confirmed
+`(; step_length, accepted_step, exhausted, logit_accuracy)`: the step length its last corrector tried, the step length of
+its last corrector to converge (`NoiseRecord.accepted_step`), the corrector's confirmed
 stall at rounding noise (or `nothing`), and the largest last correction of an accepted point.
 From the flat start (`old_tangent` is `nothing`) the first tangent is BifurcationKit's secant; a restart after a
 redraw opens along `restart_tangent`, oriented by the trace's `old_tangent`. BifurcationKit's constructors are not
@@ -218,6 +219,7 @@ function continue_trace(
     )
     return (;
         corrector.step_length,
+        accepted_step = corrector.noise.accepted_step,
         exhausted = ifelse(noise_confirmed(corrector), corrector.noise.suspect, nothing),
         logit_accuracy = corrector.noise.accuracy,
     )
@@ -382,9 +384,10 @@ function redrawn_trace(
     end
     next = TraceFinalise(progress, finalise.keep_going, finalise.redraw, slot, progress.steps)
     return redrawn_trace(
-        with_earlier_accuracy(
+        with_earlier_segments(
             guarded_trace(crossing.point, [progress.gap_tangent; progress.tangent_precision], settings, next, accept_corrected),
             outcome.logit_accuracy,
+            outcome.accepted_step,
         ),
         next,
         settings,
@@ -393,9 +396,16 @@ function redrawn_trace(
     )
 end
 
-"""A segment's `outcome` whose `logit_accuracy` also spans the earlier segments' `earlier` accuracy."""
-function with_earlier_accuracy(outcome::NamedTuple, earlier::Real)::NamedTuple
-    return (; outcome..., logit_accuracy = max(outcome.logit_accuracy, earlier))
+"""
+A segment's `outcome` whose `logit_accuracy` also spans the earlier segments' `earlier_accuracy`, and whose
+`accepted_step` is the earlier segments' `earlier_step` when this segment accepted none.
+"""
+function with_earlier_segments(outcome::NamedTuple, earlier_accuracy::Real, earlier_step::Real)::NamedTuple
+    return (;
+        outcome...,
+        logit_accuracy = max(outcome.logit_accuracy, earlier_accuracy),
+        accepted_step = ifelse(outcome.accepted_step > 0, outcome.accepted_step, earlier_step),
+    )
 end
 
 """
@@ -433,7 +443,7 @@ function guarded_trace(
         if !uncorrected_start(exception) && !solver_blowup(exception)
             rethrow()
         end
-        return (; step_length = zero(E), exhausted = nothing, logit_accuracy = corrector.noise.accuracy, exception)
+        return (; step_length = zero(E), accepted_step = corrector.noise.accepted_step, exhausted = nothing, logit_accuracy = corrector.noise.accuracy, exception)
     end
 end
 
@@ -491,7 +501,7 @@ const STOP_CAUSES = (;
     stopped_context(progress, outcome, target_precision, context)
 
 The context of a trace that stopped at `progress`'s last accepted point after `outcome`: `context`, the steps, the
-precision and its range, the logits, the step held, the tangent in logits, the `logit_accuracy` of its accepted points
+precision and its range, the logits, the step held and the step last accepted (`accepted_step`, in `settings.geometry`'s norm), the tangent in logits, the `logit_accuracy` of its accepted points
 and the exception.
 """
 function stopped_context(
@@ -506,6 +516,7 @@ function stopped_context(
         progress.precision_min, progress.precision_max, progress.unmoved,
         logits = progress.relative_precision .* progress.gaps, progress.relative_precision,
         step_length = E(outcome.step_length),
+        accepted_step = E(outcome.accepted_step),
         logit_tangent = progress.relative_precision .* progress.gap_tangent .+ progress.tangent_precision .* progress.gaps,
         progress.tangent_precision,
         logit_accuracy = E(outcome.logit_accuracy),
