@@ -50,23 +50,24 @@ within_limit(limit::Real, measured::Real)::Bool = measured <= limit
 
 A corrector's record of rounding noise. `gain_error`: the rounding allowance of `P G`, the target precision times
 `gain_rounding`. `accuracy`: the largest last correction of a closing point the corrector accepted. `suspect`: the
-last suspected stall, or `nothing`; `confirmed` means it exhausted the precision. `floor`: a confirmed stall fell
-within `rounding_bound`, so later iterates settle within it too.
+last suspected stall, or `nothing`; `confirmed` means it exhausted the precision. `floor`: zero, or the correction of
+a confirmed stall within `rounding_bound`, the measured noise: later iterates settle within the bound, and reach
+allows the noise (`within_reach`).
 """
 struct NoiseRecord{E <: Real}
     gain_error::E
     accuracy::E
     suspect::Union{Nothing, @NamedTuple{relative_precision::E, correction::E, confirmed::Bool}}
-    floor::Bool
+    floor::E
 end
 
-"""`record` with its `suspect` replaced, and `floor` set when `floor` is true."""
+"""`record` with its `suspect` replaced, and its `floor` the larger of its own and `floor`."""
 function suspected(
     record::NoiseRecord{E},
     suspect::Union{Nothing, @NamedTuple{relative_precision::E, correction::E, confirmed::Bool}},
-    floor::Bool,
+    floor::E,
 )::NoiseRecord{E} where {E <: Real}
-    return NoiseRecord(record.gain_error, record.accuracy, suspect, record.floor || floor)
+    return NoiseRecord(record.gain_error, record.accuracy, suspect, max(record.floor, floor))
 end
 
 """
@@ -122,7 +123,7 @@ function CorrectorReach(
     # A plain Newton solve has no predictor move: NaN fails the noise test, so its stalls refuse.
     return CorrectorReach{C, E}(
         accept_corrected, settings, geometry, collect(previous), collect(predicted), step_length,
-        E(NaN32), collect(previous), E(NaN32), 0, false, NoiseRecord(gain_error, zero(E), nothing, false),
+        E(NaN32), collect(previous), E(NaN32), 0, false, NoiseRecord(gain_error, zero(E), nothing, zero(E)),
     )
 end
 
@@ -241,7 +242,7 @@ function corrected!(
         return false
     end
     if settled(check, iterate, correction)
-        check.settled_here, check.noise = true, suspected(check.noise, nothing, false)
+        check.settled_here, check.noise = true, suspected(check.noise, nothing, zero(E))
         return BifurcationKit.NewtonConverged()
     end
     (; contraction_limit, contraction_offset, logit_tolerance) = check.settings
@@ -263,11 +264,11 @@ function corrected!(
     confirmed = !isnothing(suspect) && correction >= suspect.correction / 2
     if confirmed && within_rounding(check, iterate, correction)
         @debug "corrector settled at rounding" _group = :trace correction relative_precision = last(iterate.x)
-        check.settled_here, check.noise = true, suspected(check.noise, nothing, true)
+        check.settled_here, check.noise = true, suspected(check.noise, nothing, correction)
         return BifurcationKit.NewtonConverged()
     end
     @debug "corrector stopped" _group = :trace reason = :noise confirmed correction predictor_move = check.predictor_move
-    check.noise = suspected(check.noise, (; relative_precision = last(iterate.x), correction, confirmed), false)
+    check.noise = suspected(check.noise, (; relative_precision = last(iterate.x), correction, confirmed), zero(E))
     return false
 end
 
@@ -321,7 +322,7 @@ function settled(check::CorrectorReach, iterate::I, correction::Real)::Bool wher
     if abs(offset) > check.settings.pin_tolerance * pin_scale
         return false
     end
-    return correction <= check.settings.logit_tolerance || (check.noise.floor && within_rounding(check, iterate, correction))
+    return correction <= check.settings.logit_tolerance || (check.noise.floor > 0 && within_rounding(check, iterate, correction))
 end
 
 """
@@ -334,7 +335,8 @@ function within_reach(check::CorrectorReach, point::AbstractVector)::Bool
         return true
     end
     return within_limit(
-        scaled_limit(check.settings.reach, check.predictor_move),
+        # Past a confirmed stall within the rounding bound, a correction of the measured noise is no jump.
+        scaled_limit(check.settings.reach, check.predictor_move + check.noise.floor),
         logit_change(check.predicted, point),
     )
 end
