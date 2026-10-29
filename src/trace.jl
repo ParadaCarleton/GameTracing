@@ -659,7 +659,7 @@ function guarded_continuation!(
 end
 
 """The `Thrown` failure holding `exception` if `expected_failure` names it; any other exception is rethrown."""
-function thrown_failure(exception::Any)::Thrown
+function thrown_failure(exception::X)::Thrown{X} where {X}
     if !expected_failure(exception)
         throw(exception)
     end
