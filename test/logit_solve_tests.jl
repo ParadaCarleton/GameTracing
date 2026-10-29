@@ -100,9 +100,11 @@ end
 @testset "the solvers return the trace's failure when it runs out of steps" begin
     gains = NormalFormGains(map(table -> Float32.(table), LOGITNASH_GAMES.prisoners_dilemma))
     settings = TraceSettings{Float32}(; max_steps = 1)
-    @test unwrap_error(logit_solve_lambda(gains, 100; settings)).cause == GameTracing.NoConvergence
+    # A one-step budget ends a stalled step as a stall (TraceStuck), a moving one as NoConvergence, as on main.
+    spent = (GameTracing.NoConvergence, GameTracing.TraceStuck)
+    @test unwrap_error(logit_solve_lambda(gains, 100; settings)).cause in spent
     for failure in unwrap_error.((logit_solve_branch(gains; settings), logit_solve(gains; settings)))
-        @test failure.cause == GameTracing.NoConvergence
+        @test failure.cause in spent
         # The trace's own failure, not the one logit_solve_branch builds when the trace ends unsettled.
         @test !haskey(failure.context, :maximum_precision)
     end
