@@ -186,7 +186,7 @@ is the solve's start and never settles. Each later one is a correction `Δz` fro
 (`NewtonConverged`) when `settled`. A correction past `contraction_limit` times the one before (plus
 `logit_tolerance · contraction_offset`) fails to contract, Gambit's test (path.cc), and stops the corrector, so the
 step halves. Two in a row, each larger than the predictor's own move, are suspected noise (`check.noise`); the
-step still halves. A second such solve before any settles, its correction at least half the suspect's, confirms it
+step still halves. So is one such correction that another check refuses (`proceed` false at a finite residual). A second such solve before any settles, its correction at least half the suspect's, confirms it
 (`noise_confirmed`): halving shrinks the corrections of a predictor past a fold, not noise. Every later solve refuses.
 """
 function corrected!(
@@ -206,6 +206,10 @@ function corrected!(
     copyto!(check.iterate, iterate.x)
     check.correction = correction
     if !proceed
+        # Noise may trip another check (reach) before it fails to contract; a non-finite residual is no noise.
+        if isfinite(iterate.residual) && check.predictor_move <= correction
+            suspect_noise!(check, last(iterate.x), correction)
+        end
         return false
     end
     if settled(check, iterate, correction)
@@ -226,12 +230,21 @@ function corrected!(
     if check.stalls < 2
         return true
     end
+    suspect_noise!(check, last(iterate.x), correction)
+    return false
+end
+
+"""
+Record in `check` a solve stopped at `relative_precision` by a `correction` no smaller than the predictor's move as
+suspected noise, confirmed when a suspect stands and `correction` is at least half of its correction (`corrected!`).
+"""
+function suspect_noise!(check::CorrectorReach{C, E}, relative_precision::E, correction::E)::Nothing where {C, E <: Real}
     # Halving leaves noise's corrections alike (ratio 1) and shrinks an overshot predictor's by 1/4; 1/2 splits them.
     suspected = check.noise
     confirmed = !isnothing(suspected) && correction >= suspected.correction / 2
     @debug "corrector stopped" _group = :trace reason = :noise confirmed correction predictor_move = check.predictor_move
-    check.noise = (; relative_precision = last(iterate.x), correction, confirmed)
-    return false
+    check.noise = (; relative_precision, correction, confirmed)
+    return nothing
 end
 
 """The pin row `ρ - pin` of a corrector `iterate`'s residual: the last entry of Newton's `fx` or of PALC's `res_f`."""

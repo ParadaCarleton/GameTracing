@@ -131,6 +131,26 @@ end
     @test solve_verdicts(noisy, Float32[0]) == [false]
 end
 
+"""The verdicts of `check` on a solve whose second iterate, first logit `moved` at relative precision one, another check refused at `residual`."""
+function refused_verdicts(check::GameTracing.CorrectorReach, moved::E, residual::E)::Vector where {E <: Real}
+    return [GameTracing.corrected!(check, (; x = E[first, 0, 1], res_f = zeros(E, 3), residual, step), step == 0) for (step, first) in ((0, zero(E)), (1, moved))]
+end
+
+@testset "a correction no smaller than the predictor's move that another check refuses is suspected noise" begin
+    check = fresh_check(1.0f-3)
+    # A non-finite residual is no noise.
+    @test refused_verdicts(check, 1.0f-2, Float32(NaN32)) == [true, false]
+    @test isnothing(check.noise)
+    # A correction under the predictor's move is a poor predictor.
+    @test refused_verdicts(check, 1.0f-4, 0.0f0) == [true, false]
+    @test isnothing(check.noise)
+    @test refused_verdicts(check, 1.0f-2, 0.0f0) == [true, false]
+    @test !GameTracing.noise_confirmed(check)
+    @test check.noise.correction ≈ 1.0f-2
+    @test refused_verdicts(check, 6.0f-3, 0.0f0) == [true, false]
+    @test GameTracing.noise_confirmed(check)
+end
+
 @testset "a gain with noise of size η fails PrecisionExhausted where λ η passes the logit tolerance" begin
     # The noise starts at λ = 10, far under the predicted λ = tolerance / η = 1e3. Hashed noise from the flat start
     # stalled the opening at ρ ≈ 4e-19, whatever η: zero-slope gains whose every evaluation jumps leave no first step.
