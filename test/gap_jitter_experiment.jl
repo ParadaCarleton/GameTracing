@@ -8,7 +8,8 @@ using Test: collect_test_logs
 
 const JITTER_TARGET = 1.0f6
 const JITTER_POINTS = 50
-const JITTER_SETTINGS = TraceSettings{Float32}(; geometry = TraceGeometry{Float32}(; distance = FisherLogPrecisionDistance))
+# The default geometry (FisherDistance); the log-precision run is commit 57ebec7.
+const JITTER_SETTINGS = TraceSettings{Float32}()
 
 """Normal-form games with strategy counts `(3, 3)` and `(2, 2, 2)`, payoffs `3 randn`, as the opening tests draw them."""
 function jitter_games(rng::AbstractRNG)::AbstractVector
