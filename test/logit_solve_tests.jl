@@ -119,23 +119,23 @@ end
 end
 
 @testset "the solvers return profiles in the payoffs' element type and refuse settings in another" begin
-    for element in (Float32, Float64)
+    for element in (Float32, float(Int))
         gains = NormalFormGains(map(table -> element.(table), LOGITNASH_GAMES.prisoners_dilemma))
         @test eltype(gains) == element
         @test unwrap(logit_solve(gains)).lam isa element
         @test eltype(unwrap(logit_solve(gains)).logits) == element
         @test eltype(only(unwrap(logit_solve_lambda(gains, 2))).logits) == element
-        other = element == Float32 ? Float64 : Float32
+        other = element == Float32 ? float(Int) : Float32
         settings = TraceSettings{other}()
         @test_throws ArgumentError logit_solve_lambda(gains, 2; settings)
         @test_throws ArgumentError logit_solve_branch(gains; settings)
         @test_throws ArgumentError logit_solve(gains; settings)
     end
-    # Integer payoffs trace in Float64, Julia's `float(Int)`.
+    # Integer payoffs trace in `float(Int)`, as Julia promotes them.
     integer = NormalFormGains(ROCK_PAPER_SCISSORS)
     @test eltype(integer) == Int
-    @test eltype(unwrap(logit_solve(integer)).logits) == Float64
-    @test eltype(only(unwrap(logit_solve_lambda(integer, 2))).logits) == Float64
+    @test eltype(unwrap(logit_solve(integer)).logits) == float(Int)
+    @test eltype(only(unwrap(logit_solve_lambda(integer, 2))).logits) == float(Int)
     @test_throws ArgumentError logit_solve(integer; settings = TraceSettings{Float32}())
 end
 

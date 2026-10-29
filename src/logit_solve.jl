@@ -169,7 +169,7 @@ function logit_solve_branch(
         gains,
         E(maximum_precision),
         E(maxregret) * E(payoff_range(gains)),
-        fill(E(NaN), settings.max_steps + 1),
+        fill(E(NaN32), settings.max_steps + 1),
         zeros(E, width, settings.max_steps + 1),
     )
     result = trace_endpoint(LogitGame(gains, E(maximum_precision)), width, settings; keep_going = recorder, context = (; maxregret))
