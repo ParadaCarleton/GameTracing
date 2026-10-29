@@ -308,7 +308,9 @@ function trace_record_point(x::AbstractVector{E}, ::Real;
 end
 
 """A branch record's relative precision."""
-record_precision(record::R)::fieldtype(R, :param) where {R <: NamedTuple} = record.param
+function record_precision(record::R)::fieldtype(R, :param) where {R <: NamedTuple}
+    return record.param
+end
 
 """Whether two branch records hold the same point `(w, ρ)`, bitwise: a step below the point's rounding."""
 same_point(record::NamedTuple, other::NamedTuple)::Bool = record.param == other.param && record.gaps == other.gaps
