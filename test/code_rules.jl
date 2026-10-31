@@ -66,15 +66,40 @@ const SOURCE_FILES = [
     if endswith(file, ".jl")
 ]
 
-"""The dispatch-tuple signatures `mod`'s methods have compiled so far, the explicit argument `inferred_methods` takes."""
-function compiled_signatures(mod::Module)::Vector{Type}
-    return Type[
-        specialization.specTypes
-        for method in Corset.module_methods(mod)
-        for specialization in Base.specializations(method)
-        if specialization isa Core.MethodInstance &&
-            Base.isdispatchtuple(specialization.specTypes)
+include("inference_walk.jl")
+
+"""The signatures `GameTracing`'s solver entry points compile, on two- and three-player games."""
+function package_signatures()::Vector{Type}
+    gains = [
+        NormalFormGains(map(table -> Float32.(table), game))
+        for game in (LOGITNASH_GAMES.matching_pennies, OVERSHOT_GAME)
     ]
+    game = LogitGame(GAME, TARGET_PRECISION)
+    seeds = Type[
+        entry_signature(trace_endpoint, game, WIDTH, TraceSettings{Float32}()),
+        (
+            entry_signature(entry, gain)
+            for entry in (logit_solve, logit_solve_branch)
+            for gain in gains
+        )...,
+        (entry_signature(logit_solve_lambda, gain, 2.0f0) for gain in gains)...
+    ]
+    return walked_signatures(seeds, GameTracing)
+end
+
+"""The signatures `ArmBenchmark.main` and the pitchfork benchmark compile."""
+function benchmark_signatures()::Vector{Type}
+    seeds = Type[
+        entry_signature(ArmBenchmark.main, "arms.csv", "quick", devnull),
+        entry_signature(
+            ArmBenchmark.pitchfork_benchmark,
+            "pitchfork.csv",
+            devnull,
+            1,
+            ArmBenchmark.UNFOLDING_SEED,
+        ),
+    ]
+    return walked_signatures(seeds, ArmBenchmark)
 end
 
 @testset "code rules find nothing" begin
@@ -84,7 +109,7 @@ end
         sources,
         Dict(file => located_source(file) for file in BENCHMARK_FILES)
     )
-    inferred = inferred_methods(GameTracing, compiled_signatures(GameTracing))
+    inferred = inferred_methods(GameTracing, package_signatures())
     structs = module_structs(GameTracing)
     locations = struct_locations(SOURCE_FILES)
     @testset "a function reads only its arguments and immutable constants" begin
@@ -215,7 +240,7 @@ in_benchmark(site::Site)::Bool = normpath(site.file) == ARMS_FILE
         1,
         ArmBenchmark.UNFOLDING_SEED,
     )
-    inferred = inferred_methods(ArmBenchmark, compiled_signatures(ArmBenchmark))
+    inferred = inferred_methods(ArmBenchmark, benchmark_signatures())
     locations = struct_locations([ARMS_FILE])
     @test filter(in_benchmark, hidden_inputs(ArmBenchmark)) == Site[]
     @test filter(in_benchmark, abstract_locals(REPOSITORY, inferred)) == Site[]
