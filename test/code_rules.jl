@@ -1,5 +1,6 @@
 # Corset on GameTracing with no baseline: every rule must find nothing.
 
+using Corset
 using Corset:
     Repository,
     Site,
@@ -35,10 +36,18 @@ const FILE_LINE_LIMIT = 1500
 # the parameters. `TraceResult{E}` (an ErrorTypes `Result`) and `CrossingResult{E}` are generic in `E`, with no
 # abstract supertype to name instead; a rename would not change the head's kind.
 const GENERIC_RESULTS = (
-    "trace.jl trace_endpoint", "trace.jl reached_state", "trace.jl redrawn_trace",
-    "crossing.jl homotopy_crossing", "crossing.jl crossing_walk", "crossing.jl crossing_steps", "redraw.jl redraw_crossing",
-    "logit_solve.jl gambit_settings", "logit_solve.jl lambda_profile", "logit_solve.jl logit_solve_lambda",
-    "logit_solve.jl logit_solve_branch", "logit_solve.jl logit_solve",
+    "trace.jl trace_endpoint",
+    "trace.jl reached_state",
+    "trace.jl redrawn_trace",
+    "crossing.jl homotopy_crossing",
+    "crossing.jl crossing_walk",
+    "crossing.jl crossing_steps",
+    "redraw.jl redraw_crossing",
+    "logit_solve.jl gambit_settings",
+    "logit_solve.jl lambda_profile",
+    "logit_solve.jl logit_solve_lambda",
+    "logit_solve.jl logit_solve_branch",
+    "logit_solve.jl logit_solve",
 )
 const SOURCE_DIRECTORIES = ("src", "test", "benchmark")
 
@@ -47,18 +56,35 @@ const BENCHMARK_FILES = [
     for file in readdir(joinpath(pkgdir(GameTracing), "benchmark"); join = true)
     if endswith(file, ".jl")
 ]
-const REPOSITORY = Repository(dirname(@__DIR__); baseline = joinpath(@__DIR__, "no_baseline.toml"))
+const REPOSITORY = Repository(
+    dirname(@__DIR__);
+    baseline = joinpath(@__DIR__, "no_baseline.toml"),
+)
 const SOURCE_FILES = [
     file
     for file in readdir(joinpath(pkgdir(GameTracing), "src"); join = true)
     if endswith(file, ".jl")
 ]
 
+"""The dispatch-tuple signatures `mod`'s methods have compiled so far, the explicit argument `inferred_methods` takes."""
+function compiled_signatures(mod::Module)::Vector{Type}
+    return Type[
+        specialization.specTypes
+        for method in Corset.module_methods(mod)
+        for specialization in Base.specializations(method)
+        if specialization isa Core.MethodInstance &&
+            Base.isdispatchtuple(specialization.specTypes)
+    ]
+end
+
 @testset "code rules find nothing" begin
     sources = Dict(file => located_source(file) for file in SOURCE_FILES)
     # The per-file syntax rules also read the arm benchmark; the module rules need it loaded as a module.
-    syntax_sources = merge(sources, Dict(file => located_source(file) for file in BENCHMARK_FILES))
-    inferred = inferred_methods(GameTracing)
+    syntax_sources = merge(
+        sources,
+        Dict(file => located_source(file) for file in BENCHMARK_FILES)
+    )
+    inferred = inferred_methods(GameTracing, compiled_signatures(GameTracing))
     structs = module_structs(GameTracing)
     locations = struct_locations(SOURCE_FILES)
     @testset "a function reads only its arguments and immutable constants" begin
@@ -183,8 +209,13 @@ in_benchmark(site::Site)::Bool = normpath(site.file) == ARMS_FILE
 @testset "the arm benchmark's module rules find nothing" begin
     # The quick scope and one pitchfork draw call every function the full runs do, so inference sees concrete argument types.
     ArmBenchmark.main(joinpath(mktempdir(), "arms.csv"), "quick", devnull)
-    ArmBenchmark.pitchfork_benchmark(joinpath(mktempdir(), "pitchfork.csv"), devnull, 1, ArmBenchmark.UNFOLDING_SEED)
-    inferred = inferred_methods(ArmBenchmark)
+    ArmBenchmark.pitchfork_benchmark(
+        joinpath(mktempdir(), "pitchfork.csv"),
+        devnull,
+        1,
+        ArmBenchmark.UNFOLDING_SEED,
+    )
+    inferred = inferred_methods(ArmBenchmark, compiled_signatures(ArmBenchmark))
     locations = struct_locations([ARMS_FILE])
     @test filter(in_benchmark, hidden_inputs(ArmBenchmark)) == Site[]
     @test filter(in_benchmark, abstract_locals(REPOSITORY, inferred)) == Site[]
@@ -194,7 +225,10 @@ in_benchmark(site::Site)::Bool = normpath(site.file) == ARMS_FILE
     @test [
         struct_site(nameof(type), locations)
         for type in module_structs(ArmBenchmark)
-        if parentmodule(type) === ArmBenchmark && !isempty(abstract_fields(type)) && haskey(locations, nameof(type))
-    ] == Site[]
+        if parentmodule(type) === ArmBenchmark &&
+            !isempty(abstract_fields(type)) &&
+            haskey(locations, nameof(type))
+    ] ==
+        Site[]
     @test concrete_returns(ARMS_FILE, located_source(ARMS_FILE), ArmBenchmark) == Site[]
 end
