@@ -359,6 +359,7 @@ function trace_endpoint(
         zero(flat),
         zero(E),
         false,
+        false,
     )
     finalise = TraceFinalise(
         keep_going,
@@ -426,6 +427,7 @@ function redrawn_trace(
         progress.gap_tangent,
         progress.tangent_precision,
         progress.unmoved,
+        progress.looped,
     )
     if crossed.relative_precision == one(E) || crossed.steps >= settings.max_steps
         return reached_state(crossed, outcome, slot.game, settings, context)
@@ -572,6 +574,7 @@ function restarted_segment(
         restart.gap_tangent,
         restart.tangent_precision,
         opening.unmoved,
+        opening.looped,
     )
     return opened_segment(iterator, guarded_state(iterator, restart.opening), opened)
 end
@@ -726,7 +729,7 @@ function reached_state(
     if isnothing(outcome.exception) && progress.relative_precision == one(E)
         return Ok(Traced(copy(progress.gaps), progress.steps, E(outcome.logit_accuracy)))
     end
-    # Why the trace stopped short: a start that would not correct, a broken linear solve, a point that did not move,
+    # Why the trace stopped short: a start that would not correct, a broken linear solve, a point that did not move, a loop of the branch,
     # spent steps, or else a step below `min_step`, `keep_going` or a refusal (`STOP_CAUSES`).
     reason = if uncorrected_start(outcome.exception)
         :uncorrected_start
@@ -734,6 +737,8 @@ function reached_state(
         :solver_blowup
     elseif progress.unmoved
         :unmoved
+    elseif progress.looped
+        :loop
     elseif progress.steps >= settings.max_steps
         :max_steps
     else
@@ -748,7 +753,7 @@ end
 
 # The cause a trace that stops short for each reason fails with.
 const STOP_CAUSES = (;
-    uncorrected_start = TraceStuck, solver_blowup = Singular, max_steps = NoConvergence, unmoved = TraceStuck,
+    uncorrected_start = TraceStuck, solver_blowup = Singular, max_steps = NoConvergence, unmoved = TraceStuck, loop = TraceStuck,
     stopped_short = TraceStuck,
 )
 
@@ -768,7 +773,7 @@ function stopped_context(
     return (;
         context..., progress.steps,
         precision = target_precision * progress.relative_precision,
-        progress.precision_min, progress.precision_max, progress.unmoved,
+        progress.precision_min, progress.precision_max, progress.unmoved, progress.looped,
         logits = progress.relative_precision .* progress.gaps, progress.relative_precision,
         step_length = E(outcome.step_length),
         logit_tangent = progress.relative_precision .* progress.gap_tangent .+
