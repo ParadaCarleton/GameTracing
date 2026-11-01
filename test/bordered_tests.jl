@@ -64,8 +64,14 @@ end
     rng = Xoshiro(rand(RandomDevice(), UInt))
     for width in 1:5, _ in 1:20
         system = bordered_system(rng, width, Float32)
-        lower = (; system..., jacobian = tril(system.jacobian), border_column = zeros(Float32, width))
-        upper = (; system..., jacobian = triu(system.jacobian), border_row = zeros(Float32, width))
+        lower = (; system..., jacobian = tril(system.jacobian), border_column = zeros(
+            Float32,
+            width,
+        ))
+        upper = (; system..., jacobian = triu(system.jacobian), border_row = zeros(
+            Float32,
+            width,
+        ))
         @test bit_identical(lower, 0.3f0, 2.0f0)
         @test bit_identical(upper, 0.3f0, 2.0f0)
     end
@@ -99,8 +105,15 @@ end
     )
     non_finite = (; singular..., jacobian = Float32[NaN32 2; 2 4])
     # A zero first column makes the first pivot the zero one (LAPACK `info == 1`).
-    zero_first_column = (; singular..., jacobian = Float32[0 2; 0 4], border_row = Float32[0, 1])
-    cases = ((singular, SingularException), (zero_first_column, SingularException), (non_finite, ArgumentError))
+    zero_first_column = (; singular..., jacobian = Float32[0 2; 0 4], border_row = Float32[
+        0,
+        1,
+    ])
+    cases = (
+        (singular, SingularException),
+        (zero_first_column, SingularException),
+        (non_finite, ArgumentError),
+    )
     for (system, expected) in cases
         @test solve_exception(GameTracing.matrix_bls(2, Float32), system) isa expected
         @test solve_exception(GameTracing.BifurcationKit.MatrixBLS(), system) isa expected
@@ -115,12 +128,17 @@ end
         LogitGame(GAME, TARGET_PRECISION),
         start,
         0.0f0;
-        record_from_solution = GameTracing.trace_record_precision,
+        record_from_solution = GameTracing.trace_record_point,
     )
     iter = kit.ContIterable(
         problem,
         GameTracing.palc_algorithm(settings, WIDTH, TARGET_PRECISION),
-        GameTracing.continuation_options(settings, settings.first_step, settings.max_steps, settings.first_tangent_divisor);
+        GameTracing.continuation_options(
+            settings,
+            settings.first_step,
+            settings.max_steps,
+            settings.first_tangent_divisor,
+        );
         verbosity = 0,
     )
     state, _ = iterate(iter)
@@ -134,8 +152,20 @@ end
     end
     dependent_slope = Float32[1, 2, 0]
     for degenerate in (Float32[1 2 0; 2 4 0; 0 0 1], Float32[NaN32 2 0; 2 4 0; 0 0 1])
-        @test kit.bordered_determinant_sign(ours, iter, state, degenerate, dependent_slope) ==
-            kit.bordered_determinant_sign(kit.MatrixBLS(), iter, state, degenerate, dependent_slope)
+        @test kit.bordered_determinant_sign(
+            ours,
+            iter,
+            state,
+            degenerate,
+            dependent_slope,
+        ) ==
+            kit.bordered_determinant_sign(
+                kit.MatrixBLS(),
+                iter,
+                state,
+                degenerate,
+                dependent_slope,
+            )
     end
 end
 

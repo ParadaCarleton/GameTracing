@@ -119,7 +119,12 @@ end
     # At ρ = 1e-5 a gap move of 1e-2, a far target's rounding of w = P G, moves the logit 1e-7.
     previous, predicted = Float32[0, 1.0f-5], Float32[1, 1.0f-5]
     check = GameTracing.CorrectorReach(
-        GameTracing.AcceptAll(), CorrectorSettings{Float32}(), TraceGeometry{Float32}(), previous, predicted, 1.0f0,
+        GameTracing.AcceptAll(),
+        CorrectorSettings{Float32}(),
+        TraceGeometry{Float32}(),
+        previous,
+        predicted,
+        1.0f0,
     )
     check.predictor_move = GameTracing.logit_change(previous, predicted)
     @test GameTracing.within_reach(check, predicted .+ Float32[1.0f-2, 0])
@@ -159,27 +164,97 @@ end
     @test unwrap_error(result).cause == GameTracing.TraceStuck
 end
 
+"""A `trace_record_point` record of BifurcationKit's branch at `step`: the point `(gaps, param)` and a unit tangent."""
+function branch_record(
+    gaps::AbstractVector{E},
+    param::E,
+    step::Integer,
+)::NamedTuple where {E <: Real}
+    return (; gaps, gap_tangent = zero(gaps), tangent_precision = one(E), param, step)
+end
+
+"""`finalise`'s verdict on the accepted `point` (a `branch_record`) of a branch that so far holds `branch`."""
+function finalised(
+    finalise::GameTracing.TraceFinalise,
+    point::NamedTuple,
+    branch::AbstractVector,
+)::Bool
+    # BifurcationKit calls `finalise` before it saves the point to the branch.
+    tangent = (; u = zero([point.gaps; point.param]), p = one(point.param))
+    return finalise(
+        (; u = [point.gaps; point.param], p = point.param),
+        tangent,
+        point.step,
+        (; branch);
+        state = (; ds = 0.1f0),
+    )
+end
+
 @testset "an accepted point equal to the last one stops the trace as a stall" begin
-    tangent = (; u = Float32[0, 0, 1], p = 1.0f0)
-    progress = GameTracing.TraceProgress(zeros(Float32, 2), 0.0f0, 0, 0.0f0, 0.0f0, zeros(Float32, 2), 0.0f0, false)
-    moved = (; u = Float32[0.1f0, 0.2f0, 0.5f0], p = 0.5f0)
-    @test progress(moved, tangent, 1, nothing)
+    game = LogitGame(GAME, TARGET_PRECISION)
+    finalise = GameTracing.TraceFinalise(
+        GameTracing.AcceptAll(),
+        GameTracing.NoRedraw(),
+        GameTracing.RedrawSlot(game, game, false, 0.1f0),
+    )
+    start, moved = branch_record(Float32[0, 0], 0.0f0, 0),
+        branch_record(Float32[0.1f0, 0.2f0], 0.5f0, 1)
+    @test finalised(finalise, moved, [start])
+    @test !finalised(finalise, branch_record(moved.gaps, moved.param, 2), [start, moved])
+    # A change in the precision alone, or in the logits alone, is progress.
+    @test finalised(finalise, branch_record(moved.gaps, 0.6f0, 2), [start, moved])
+    @test finalised(
+        finalise,
+        branch_record(Float32[0.3f0, 0.2f0], moved.param, 2),
+        [start, moved],
+    )
+
+    opening = GameTracing.TraceProgress(
+        zeros(Float32, 2),
+        0.0f0,
+        0,
+        0.0f0,
+        0.0f0,
+        zeros(Float32, 2),
+        0.0f0,
+        false,
+    )
+    @test GameTracing.branch_progress([start], opening) === opening
+    progress = GameTracing.branch_progress([start, moved], opening)
     @test !progress.unmoved
+    @test (progress.steps, progress.precision_max) == (1, moved.param)
+    @test progress.gaps == moved.gaps && progress.relative_precision == moved.param
     outcome = (; step_length = 0.0f0, exhausted = nothing, logit_accuracy = 0.0f0, exception = nothing)
-    @test unwrap_error(GameTracing.reached_state(progress, outcome, LogitGame(GAME, TARGET_PRECISION), TraceSettings{Float32}(; max_steps = 2), (;))).cause == GameTracing.TraceStuck
-    @test !progress(moved, tangent, 2, nothing)
-    @test progress.unmoved
+    settings = TraceSettings{Float32}(; max_steps = 2)
+    @test unwrap_error(GameTracing.reached_state(
+        progress,
+        outcome,
+        game,
+        settings,
+        (;),
+    )).cause ==
+        GameTracing.TraceStuck
+    stuck = GameTracing.branch_progress(
+        [start, moved, branch_record(moved.gaps, moved.param, 2)],
+        opening,
+    )
+    @test stuck.unmoved
+    @test stuck.steps == 2
     # A stall that spends the step budget is still a stall; moving points that spend it are not.
-    stalled = unwrap_error(GameTracing.reached_state(progress, outcome, LogitGame(GAME, TARGET_PRECISION), TraceSettings{Float32}(; max_steps = 2), (;)))
+    stalled = unwrap_error(GameTracing.reached_state(stuck, outcome, game, settings, (;)))
     @test stalled.cause == GameTracing.TraceStuck
     @test stalled.context.unmoved
-    progress.unmoved = false
-    @test unwrap_error(GameTracing.reached_state(progress, outcome, LogitGame(GAME, TARGET_PRECISION), TraceSettings{Float32}(; max_steps = 2), (;))).cause == GameTracing.NoConvergence
-    # A change in the precision alone, or in the logits alone, is progress.
-    precision_only = (; u = moved.u, p = 0.6f0)
-    @test progress(precision_only, tangent, 3, nothing)
-    @test !progress.unmoved
-    logits_only = (; u = Float32[0.3f0, 0.2f0, 0.6f0], p = 0.6f0)
-    @test progress(logits_only, tangent, 4, nothing)
-    @test !progress.unmoved
+    spent = GameTracing.branch_progress(
+        [start, moved, branch_record(moved.gaps, 0.6f0, 2)],
+        opening,
+    )
+    @test !spent.unmoved
+    @test unwrap_error(GameTracing.reached_state(
+        spent,
+        outcome,
+        game,
+        settings,
+        (;),
+    )).cause ==
+        GameTracing.NoConvergence
 end
