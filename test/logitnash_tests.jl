@@ -208,8 +208,10 @@ end
     end
 end
 
-@testset "random games with two actions each: the trace follows the principal branch" begin
-    rng = fresh_rng()
+# A draw on which the trace left Gambit's branch without a turn test (a four-player game).
+const BRANCH_JUMP_SEED = 0x2c06c04a5d81b3dc
+
+@testset "random games with two actions each: the trace follows the principal branch" for rng in (Xoshiro(BRANCH_JUMP_SEED), fresh_rng())
     skipped = 0
     for _ in 1:20
         players = rand(rng, 2:4)
