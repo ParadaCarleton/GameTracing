@@ -287,17 +287,17 @@ function first_loop(branch::AbstractVector)::Union{Nothing, Int}
     ])
 end
 
-@testset "a branch that goes round a closed loop is flagged $E" for E in (Float32, Float64)
-    circle = circle_branch(E, 3, 20, true)
+@testset "a branch that goes round a closed loop is flagged $element" for element in (Float32, widen(Float32))
+    circle = circle_branch(element, 3, 20, true)
     flagged = first_loop(circle)
     # Fenchel's gate: no flag before the tangents have turned through 2π, which takes 21 records.
     @test !isnothing(flagged) && 21 <= flagged <= 52
     # The gate alone holds back a loop whose tangents never turn; open paths never loop.
-    @test isnothing(first_loop(circle_branch(E, 3, 20, false)))
-    line = [branch_record([E(index) / 10], E(index) / 20, index) for index in 1:60]
+    @test isnothing(first_loop(circle_branch(element, 3, 20, false)))
+    line = [branch_record([element(index) / 10], element(index) / 20, index) for index in 1:60]
     @test isnothing(first_loop(line))
     s_curve = [
-        (; branch_record([E(index) / 10], sin(E(index) / 5), index)..., gap_tangent = [one(E)], tangent_precision = cos(E(index) / 5))
+        (; branch_record([element(index) / 10], sin(element(index) / 5), index)..., gap_tangent = [one(element)], tangent_precision = cos(element(index) / 5))
             for index in 1:60
     ]
     @test isnothing(first_loop(s_curve))
@@ -306,20 +306,20 @@ end
     finalise = GameTracing.TraceFinalise(
         GameTracing.AcceptAll(),
         GameTracing.NoRedraw(),
-        GameTracing.RedrawSlot(game, game, false, E(0.1)),
+        GameTracing.RedrawSlot(game, game, false, element(1) / 10),
     )
     @test finalised(finalise, circle[10], circle[1:9])
     @test !finalised(finalise, circle[flagged], circle[1:(flagged - 1)])
 
-    opening = GameTracing.TraceProgress(zeros(E, 1), zero(E), 0, zero(E), zero(E), zeros(E, 1), zero(E), false, false)
+    opening = GameTracing.TraceProgress(zeros(element, 1), zero(element), 0, zero(element), zero(element), zeros(element, 1), zero(element), false, false)
     @test !GameTracing.branch_progress(circle[1:10], opening).looped
     progress = GameTracing.branch_progress(circle[1:flagged], opening)
     @test progress.looped && !progress.unmoved
     failure = unwrap_error(GameTracing.reached_state(
         progress,
-        (; step_length = zero(E), exhausted = nothing, logit_accuracy = zero(E), exception = nothing),
+        (; step_length = zero(element), exhausted = nothing, logit_accuracy = zero(element), exception = nothing),
         game,
-        TraceSettings{E}(; max_steps = 1000),
+        TraceSettings{element}(; max_steps = 1000),
         (;),
     ))
     @test failure.cause == GameTracing.TraceStuck
