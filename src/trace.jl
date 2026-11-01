@@ -1,15 +1,18 @@
 using BifurcationKit: BifurcationKit
 using ErrorTypes: Err, Ok
 """
-    StepControl{E}(; distance_limit, growth_limit)
+    StepControl{E}(; distance_limit, growth_limit, turn_limit)
 
 BifurcationKit's `CorrectorQuality` thresholds, which shrink a step whose corrector looks poor. `distance_limit` is the
 Euclidean length of a Newton step's logit part (Gambit's 0.4 in log probabilities); `growth_limit` bounds a step's
-growth. The corrector's contraction rate (`CorrectorSettings`) also slows growth. `nothing` switches a threshold off.
+growth. `turn_limit` refuses a step whose tangent turns this many radians from the last one, Allgower and Georg's
+test (6.1.10) for a step across a fold onto another branch; 1 is under Gambit's quarter turn (`t·newT < 0`, path.cc).
+The corrector's contraction rate (`CorrectorSettings`) also slows growth. `nothing` switches a threshold off.
 """
 Base.@kwdef struct StepControl{E <: Real}
     distance_limit::Union{Nothing, E} = 0.4f0
     growth_limit::Union{Nothing, E} = nothing
+    turn_limit::Union{Nothing, E} = 1.0f0
 end
 
 """
@@ -66,27 +69,38 @@ scaled_limit(limit::Real, scale::Real)::typeof(limit * scale) = limit * scale
 """
 PALC's `step_control` for `control` over `width` gaps in `geometry`: `nothing` when it is off, else BifurcationKit's
 `CorrectorQuality`, its distance limit scaled from the gaps' Euclidean length into the norm. Its contraction rate,
-`corrector`'s limit and offset, slows growth only: `CorrectorReach` refuses on the rate in logits.
+`corrector`'s limit and offset, slows growth only: `CorrectorReach` refuses on the rate in logits. A path that is not
+oriented (`oriented` false: a redraw crossing, whose tangent flips at a branch point) has no turn test.
 """
 corrector_quality(
     ::Nothing,
     ::CorrectorSettings,
     ::TraceGeometry,
     ::Integer,
+    ::Bool,
 )::Nothing = nothing
+
+"""`turn_limit` on an oriented path, `nothing` on one that is not."""
+function oriented_turn_limit(turn_limit::L, oriented::Bool)::Union{Nothing, L} where {L <: Union{Nothing, Real}}
+    if !oriented
+        return nothing
+    end
+    return turn_limit
+end
 
 function corrector_quality(
     control::StepControl{E},
     corrector::CorrectorSettings{E},
     geometry::TraceGeometry{E},
     width::Integer,
+    oriented::Bool,
 )::BifurcationKit.CorrectorQuality{E} where {E <: Real}
     return BifurcationKit.CorrectorQuality{E}(
         scaled_limit(control.distance_limit, sqrt(coordinate_weight(geometry, width))),
         scaled_limit(corrector.contraction_limit, one(E)),
         scaled_limit(control.growth_limit, one(E)),
         corrector.contraction_offset,
-        nothing,
+        scaled_limit(oriented_turn_limit(control.turn_limit, oriented), one(E)),
         false,
     )
 end
@@ -129,6 +143,7 @@ function palc_with_geometry(
             settings.corrector,
             settings.geometry,
             width,
+            orientation_check,
         ),
         orientation_check = orientation_check && settings.bordered_solver == MatrixSolve,
         corrector = BifurcationKit.FreeParameterNewton(),
