@@ -352,9 +352,9 @@ end
     end
 end
 
-@testset "the turn test is on by default, on oriented paths only ($E)" for E in (Float32, Float64)
-    corrector, geometry = GameTracing.CorrectorSettings{E}(), GameTracing.TraceGeometry{E}()
-    @test GameTracing.corrector_quality(StepControl{E}(), corrector, geometry, WIDTH, true).max_turn == one(E)
-    @test isnothing(GameTracing.corrector_quality(StepControl{E}(), corrector, geometry, WIDTH, false).max_turn)
-    @test isnothing(GameTracing.corrector_quality(StepControl{E}(turn_limit = nothing), corrector, geometry, WIDTH, true).max_turn)
+@testset "the turn test is on by default, on oriented paths only ($element)" for element in (Float32, widen(Float32))
+    corrector, geometry = GameTracing.CorrectorSettings{element}(), GameTracing.TraceGeometry{element}()
+    @test GameTracing.corrector_quality(StepControl{element}(), corrector, geometry, WIDTH, true).max_turn == one(element)
+    @test isnothing(GameTracing.corrector_quality(StepControl{element}(), corrector, geometry, WIDTH, false).max_turn)
+    @test isnothing(GameTracing.corrector_quality(StepControl{element}(turn_limit = nothing), corrector, geometry, WIDTH, true).max_turn)
 end

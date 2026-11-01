@@ -70,7 +70,8 @@ scaled_limit(limit::Real, scale::Real)::typeof(limit * scale) = limit * scale
 PALC's `step_control` for `control` over `width` gaps in `geometry`: `nothing` when it is off, else BifurcationKit's
 `CorrectorQuality`, its distance limit scaled from the gaps' Euclidean length into the norm. Its contraction rate,
 `corrector`'s limit and offset, slows growth only: `CorrectorReach` refuses on the rate in logits. A path that is not
-oriented (`oriented` false: a redraw crossing, whose tangent flips at a branch point) has no turn test.
+oriented has no turn test: a redraw crossing, whose tangent flips at a branch point, or a solver without the
+bordered determinant that BifurcationKit's turn of a `Bordered` tangent needs.
 """
 corrector_quality(
     ::Nothing,
@@ -79,14 +80,6 @@ corrector_quality(
     ::Integer,
     ::Bool,
 )::Nothing = nothing
-
-"""`turn_limit` on an oriented path, `nothing` on one that is not."""
-function oriented_turn_limit(turn_limit::L, oriented::Bool)::Union{Nothing, L} where {L <: Union{Nothing, Real}}
-    if !oriented
-        return nothing
-    end
-    return turn_limit
-end
 
 function corrector_quality(
     control::StepControl{E},
@@ -100,7 +93,7 @@ function corrector_quality(
         scaled_limit(corrector.contraction_limit, one(E)),
         scaled_limit(control.growth_limit, one(E)),
         corrector.contraction_offset,
-        scaled_limit(oriented_turn_limit(control.turn_limit, oriented), one(E)),
+        scaled_limit(ifelse(oriented, control.turn_limit, nothing), one(E)),
         false,
     )
 end
@@ -133,6 +126,7 @@ function palc_with_geometry(
     geometry::NamedTuple,
     orientation_check::Bool,
 )::BifurcationKit.AbstractContinuationAlgorithm where {E <: Real}
+    oriented = orientation_check && settings.bordered_solver == MatrixSolve
     return BifurcationKit.PALC(;
         tangent = settings.tangent,
         θ = geometry.palc_state_weight,
@@ -143,9 +137,9 @@ function palc_with_geometry(
             settings.corrector,
             settings.geometry,
             width,
-            orientation_check,
+            oriented,
         ),
-        orientation_check = orientation_check && settings.bordered_solver == MatrixSolve,
+        orientation_check = oriented,
         corrector = BifurcationKit.FreeParameterNewton(),
         orientation_dot = PlainOrientation(settings.geometry),
     )
