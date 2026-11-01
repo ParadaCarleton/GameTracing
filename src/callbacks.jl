@@ -171,8 +171,8 @@ function (check::CorrectorReach{C, E})(iterate::I;
         end
         return corrected!(check, iterate, isfinite(iterate.residual))
     end
-    # PALC's closing call, the only one without `z0`, ends every corrector.
-    if haskey(iterate, :z0)
+    # PALC's closing call, marked `closing`, ends every corrector.
+    if !haskey(iterate, :closing)
         @debug "corrector iterate" _group = :trace step = iterate.step residual = iterate.residual relative_precision = last(
             iterate.x,
         )
