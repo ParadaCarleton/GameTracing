@@ -282,9 +282,9 @@ end
 
 """The 1-based index of the first record of `branch` that `looped` flags against the records before it, or `nothing`."""
 function first_loop(branch::AbstractVector)::Union{Nothing, Int}
-    return findfirst(eachindex(branch)) do index
-        GameTracing.looped(view(branch, firstindex(branch):(index - 1)), branch[index])
-    end
+    return findfirst([
+        GameTracing.looped(view(branch, firstindex(branch):(index - 1)), branch[index]) for index in eachindex(branch)
+    ])
 end
 
 @testset "a branch that goes round a closed loop is flagged $E" for E in (Float32, Float64)
