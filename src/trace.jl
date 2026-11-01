@@ -5,11 +5,11 @@ using ErrorTypes: Err, Ok
 
 BifurcationKit's `CorrectorQuality` thresholds, which shrink a step whose corrector looks poor. `distance_limit` is the
 Euclidean length of a Newton step's logit part (Gambit's 0.4 in log probabilities); `growth_limit` bounds a step's
-growth. The corrector's contraction rate (`CorrectorSettings`) also slows growth. `nothing` switches a threshold off.
+growth (Gambit's `max_accel` 1.1), and the step then shrinks as the distance or contraction nears its limit. The corrector's contraction rate (`CorrectorSettings`) also slows growth. `nothing` switches a threshold off.
 """
 Base.@kwdef struct StepControl{E <: Real}
     distance_limit::Union{Nothing, E} = 0.4f0
-    growth_limit::Union{Nothing, E} = nothing
+    growth_limit::Union{Nothing, E} = 1.1f0
 end
 
 """
@@ -22,8 +22,8 @@ distance (`TraceGeometry`).
 
 - `first_step`, `min_step`, `max_step`: first, smallest and largest arclength step. A step whose corrector fails
   halves; the trace ends as `TraceStuck` once the step reaches `min_step`.
-- `aggressiveness` (BifurcationKit's `a`): a step grows by `1 + a ((N - n) / N)²` after a corrector of `n` of
-  its `N = corrector.newton_iterations` iterations.
+- `aggressiveness` (BifurcationKit's `a`): without a `step_control` growth limit, a step grows by
+  `1 + a ((N - n) / N)²` after a corrector of `n` of its `N = corrector.newton_iterations` iterations.
 - `corrector`: a `CorrectorSettings`.
 - `geometry`: a `TraceGeometry`, the norm a trace steps in and its state weight. `first_tangent_divisor`:
   the first tangent is the secant to a solve at `first_step / first_tangent_divisor`.
