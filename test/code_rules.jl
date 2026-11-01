@@ -6,13 +6,12 @@ using Corset:
     Site,
     abstract_fields,
     abstract_locals,
-    boxed_closures,
-    capturing_closures,
     concrete_arguments,
     concrete_returns,
     fatou_sites,
     float64_sites,
     hidden_inputs,
+    impure_anonymous_functions,
     inferred_methods,
     located_source,
     misplaced_imports,
@@ -121,9 +120,8 @@ end
     @testset "a function that always returns nothing is named with a bang" begin
         @test unmarked_effects(REPOSITORY, inferred) == Site[]
     end
-    @testset "no closure captures data or rebinds a captured variable" begin
-        @test capturing_closures(GameTracing) == Site[]
-        @test boxed_closures(GameTracing) == Site[]
+    @testset "no anonymous function captures more than plain immutable data" begin
+        @test impure_anonymous_functions(GameTracing) == Site[]
     end
     @testset "structs hold at most $STRUCT_FIELD_LIMIT fields, each concretely typed, none repeating a prefix" begin
         @test [
@@ -245,8 +243,7 @@ in_benchmark(site::Site)::Bool = normpath(site.file) == ARMS_FILE
     @test filter(in_benchmark, hidden_inputs(ArmBenchmark)) == Site[]
     @test filter(in_benchmark, abstract_locals(REPOSITORY, inferred)) == Site[]
     @test filter(in_benchmark, unmarked_effects(REPOSITORY, inferred)) == Site[]
-    @test filter(in_benchmark, capturing_closures(ArmBenchmark)) == Site[]
-    @test filter(in_benchmark, boxed_closures(ArmBenchmark)) == Site[]
+    @test filter(in_benchmark, impure_anonymous_functions(ArmBenchmark)) == Site[]
     @test [
         struct_site(nameof(type), locations)
         for type in module_structs(ArmBenchmark)
