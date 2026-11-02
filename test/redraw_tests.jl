@@ -221,6 +221,7 @@ end
     check = GameTracing.RootShift(Float32[0.1f0, 0.2f0, 0.5f0], Float32[0, 0, 1], nothing)
     @test !GameTracing.swapped!(slot, check, nothing)
     @test !GameTracing.swapped!(slot, check, slot.game)
+    @test !GameTracing.swapped!(slot, check, check(slot.game))
     @test !slot.pending
     @test_throws ArgumentError GameTracing.swapped!(slot, check, LogitGame(GAME, 2 * TARGET_PRECISION))
     flipped = check(LogitGame(LinearGainPass(GAME.interaction, -GAME.stand_alone), TARGET_PRECISION))
