@@ -136,6 +136,9 @@ end
         if is_error(result)
             failure = unwrap_error(result)
             @test failure.cause in (GameTracing.Singular, GameTracing.PrecisionExhausted)
+            if !(failure.cause in (GameTracing.Singular, GameTracing.PrecisionExhausted))
+                @info "PROBE pitchfork stop" name tangent failure.cause failure.context
+            end
             # A trace that broke at its start never reached the pitchfork.
             @test failure.context.relative_precision > 0
         else
@@ -174,14 +177,10 @@ end
     @test doubled.logit_accuracy <= double_settings.corrector.logit_tolerance
     @test agreeing(first_choices(double_logits), oracle.first_choices)
     @test settled_endpoint(UNFOLDED_PITCHFORK_GAME, double_logits, precision * float(1), double_settings)
-    # Every Float32 arm follows the double-precision branch within both traces' accuracy, but one: its steps near the
-    # pitchfork at λ 0.808 halve into Float32 rounding noise (runs 40803122294, 40806444224), which exhausts it.
-    for (label, settings) in ["default" => TraceSettings{Float32}(); arm_variants()]
+    # Every Float32 arm follows the double-precision branch within both traces' accuracy. Under growth 1.1 this includes
+    # fisher_log_precision_reach at state weight 0.01, which before exhausted near λ 0.808 (runs 40803122294, 40806444224).
+    for (_, settings) in ["default" => TraceSettings{Float32}(); arm_variants()]
         result = traced_result(UNFOLDED_PITCHFORK_GAME, precision, settings)
-        if label == "fisher_log_precision_reach state_weight 0.01"
-            @test is_error(result) && unwrap_error(result).cause == GameTracing.PrecisionExhausted
-            continue
-        end
         @test !is_error(result)
         if !is_error(result)
             (; logits, logit_accuracy) = unwrap(result)

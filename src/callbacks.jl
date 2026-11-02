@@ -14,7 +14,7 @@ Convergence is scale-free, as in Gambit's tracer (path.cc:372, `c_tol` in log pr
 moves no logit more than `logit_tolerance`, at a relative precision within the relative `pin_tolerance` of its pin.
 A correction that moves the logits more than `contraction_limit` times the one before it (plus `logit_tolerance`
 times `contraction_offset`) fails to contract; BifurcationKit's step growth reads the same rate (`corrector_quality`).
-`newton_iterations`: Newton iterations per corrector.
+`newton_iterations`: Newton iterations per corrector (BifurcationKit's default, 25; Gambit's is 100).
 """
 Base.@kwdef struct CorrectorSettings{E <: Real}
     reach::Union{Nothing, E} = 2.0f0
@@ -24,7 +24,7 @@ Base.@kwdef struct CorrectorSettings{E <: Real}
     pin_tolerance::E = 1.0f-5
     contraction_limit::Union{Nothing, E} = 0.6f0
     contraction_offset::E = 0.1f0
-    newton_iterations::Int = 10
+    newton_iterations::Int = 25
 end
 
 """The largest change of a logit from `from` to `to`, two points `[w; ρ]` (`logits_at`)."""
