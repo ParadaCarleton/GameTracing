@@ -208,11 +208,13 @@ end
     end
 end
 
-@testset "where Gambit leaves its branch, the trace still reaches a settled endpoint" begin
-    # Gambit is the trusted oracle, so this game, on which it is wrong, is checked against no reference.
-    traced = traced_result(GAMBIT_LEAVES_GAME, 3.0f0, TraceSettings{Float32}())
+@testset "where Gambit's default steps leave the branch, the trace meets Gambit at fine steps" begin
+    # The oracle is Gambit at a 1e-3 first step that never grows; its default steps end elsewhere (`GAMBIT_LEAVES_GAME`).
+    oracle = gambit_branch(GAMBIT_LEAVES_GAME, 3.0f0; first_step = 1 // 1000, max_accel = 1)
+    traced = traced_result(GAMBIT_LEAVES_GAME, oracle.precision, TraceSettings{Float32}())
     @test !is_error(traced)
-    @test settled_endpoint(GAMBIT_LEAVES_GAME, unwrap(traced).logits, 3.0f0, TraceSettings{Float32}())
+    @test agreeing(first_choices(unwrap(traced).logits), oracle.first_choices)
+    @test settled_endpoint(GAMBIT_LEAVES_GAME, unwrap(traced).logits, oracle.precision, TraceSettings{Float32}())
 end
 
 @testset "random games with two actions each: the trace follows the principal branch" begin
