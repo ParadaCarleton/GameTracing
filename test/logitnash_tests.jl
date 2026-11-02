@@ -127,18 +127,17 @@ end
     end
 end
 
-@testset "past an exact pitchfork the trace ends at an equilibrium or fails as Singular or PrecisionExhausted" begin
+@testset "past an exact pitchfork the trace ends at an equilibrium or fails as Singular, PrecisionExhausted or a stall" begin
     for name in PITCHFORK_GAMES, tangent in (BifurcationKit.Bordered(), BifurcationKit.Secant())
         pass = NormalFormPass(map(table -> Float32.(table), LOGITNASH_GAMES[name]))
         result = trace_endpoint(LogitGame(pass, 4.0f0), length(pass.payoffs), TraceSettings{Float32}(; tangent))
         # The cause depends on whether rounding breaks the symmetry: an exact branch point factors singular, while one
-        # that rounding unfolds by about eps (battle_of_the_sexes, rcond ≥ 1e-5) is near-singular and exhausts.
+        # that rounding unfolds by about eps (battle_of_the_sexes, rcond ≥ 1e-5) is near-singular and exhausts. A step
+        # the turn test refuses at the branch point halves to dsmin, and the unmoved point stops the trace (run 41375663203).
         if is_error(result)
             failure = unwrap_error(result)
-            @test failure.cause in (GameTracing.Singular, GameTracing.PrecisionExhausted)
-            if !(failure.cause in (GameTracing.Singular, GameTracing.PrecisionExhausted))
-                @info "PROBE pitchfork stop" name tangent failure.cause failure.context
-            end
+            @test failure.cause in (GameTracing.Singular, GameTracing.PrecisionExhausted) ||
+                (failure.cause == GameTracing.TraceStuck && failure.context.unmoved)
             # A trace that broke at its start never reached the pitchfork.
             @test failure.context.relative_precision > 0
         else
