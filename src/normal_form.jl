@@ -108,7 +108,6 @@ function (gains::NormalFormGains)(
         view(gain, ranges[player]) .= view(expected, (firstindex(expected) + 1):lastindex(expected)) .- first(expected)
         for (rival, rival_range) in pairs(ranges)
             if rival != player
-                # fatou-ignore call-arity: Base `view` takes any number of indices (jolars/fatou#125)
                 write_gain_slope!(view(gain_slope, ranges[player], rival_range), payoff, work, player, rival)
             end
         end
@@ -141,7 +140,6 @@ function write_gain_slope!(
     rival::Integer,
 )::Nothing where {E <: Real}
     rival_strategy = work.strategies[rival]
-    # fatou-ignore call-arity: Base `view` takes any number of indices (jolars/fatou#125)
     sensitivity = view(work.sensitivity, axes(payoff, player), axes(payoff, rival))
     fill!(sensitivity, zero(E))
     for profile in CartesianIndices(payoff)
@@ -150,9 +148,7 @@ function write_gain_slope!(
     means = mul!(view(work.means, axes(payoff, player)), sensitivity, rival_strategy)
     own, other = axes(sensitivity)
     own_later, later = (first(own) + 1):last(own), (first(other) + 1):last(other)
-    # fatou-ignore call-arity: Base `view` takes any number of indices (jolars/fatou#125)
     first_row = view(sensitivity, first(own):first(own), later)
-    # fatou-ignore call-arity: Base `view` takes any number of indices (jolars/fatou#125)
-    block .= transpose(view(rival_strategy, later)) .* (view(sensitivity, own_later, later) .- view(means, own_later) .- first_row .+ first(means))
+    block .=transpose(view(rival_strategy, later)) .* (view(sensitivity, own_later, later) .- view(means, own_later) .- first_row .+ first(means))
     return nothing
 end

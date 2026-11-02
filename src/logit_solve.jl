@@ -175,7 +175,6 @@ function logit_solve_branch(
     )
     result = trace_endpoint(LogitGame(gains, E(maximum_precision)), width, settings; keep_going = recorder, context = (; maxregret))
     recorded = recorded_points(recorder)
-    # fatou-ignore call-arity: Base `view` takes any number of indices (jolars/fatou#125)
     logits = eachcol(view(recorder.logits, :, recorded))
     settled = !isempty(recorded) && max_regret(gains, last(logits)) <= recorder.tolerance
     if !settled && is_error(result)

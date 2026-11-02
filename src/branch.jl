@@ -151,9 +151,7 @@ function branch_system!(
     precision = precision_at(game, relative_precision)
     target = game.target_precision
     gain = view(residual, 1:width)
-    # fatou-ignore call-arity: Base `view` takes any number of indices (jolars/fatou#125)
     gain_slope = view(jacobian, 1:width, 1:width)
-    # fatou-ignore call-arity: Base `view` takes any number of indices (jolars/fatou#125)
     precision_column = view(jacobian, 1:width, width + 1)
     run_pass!(game.pass!, pass_work, gain, gain_slope, precision_column, logits, precision)
     # `∂F/∂ρ` first: it reads `∂G/∂z`, which the next line overwrites.
@@ -163,7 +161,6 @@ function branch_system!(
         gain_slope[diagonal, diagonal] += one(E)
     end
     gain .= gaps .- target .* gain
-    # fatou-ignore call-arity: Base `view` takes any number of indices (jolars/fatou#125)
     fill!(view(jacobian, width + 1, 1:width), zero(E))
     jacobian[end, end] = one(E)
     residual[end] = relative_precision - pin
