@@ -1,5 +1,4 @@
 using ErrorTypes: is_error, unwrap, unwrap_error
-using LinearAlgebra: norm
 using Logging: Debug
 using Test: collect_test_logs
 
