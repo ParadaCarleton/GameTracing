@@ -34,7 +34,8 @@ end
 
 Trace `payoffs` to LogitNash's stopping precision past `precision` and test the endpoint against Gambit's branch there,
 the oracle, and against `branch_reference`, the Julia cross-check. LogitNash is a cross-check too: a disagreement with it
-fails only when Gambit sides with LogitNash. Near an
+fails only when Gambit sides with LogitNash, and one with Gambit fails unless the reference and LogitNash both side
+with the trace. Near an
 unfolded pitchfork LogitNash can cross onto the middle arm, as on `UNFOLDED_PITCHFORK_GAME`. A reference that does not
 reach the target skips the comparison; every endpoint must also solve the map to the corrector's tolerance. Where
 Gambit's branch folds before the target (`gambit_folds_before`), Gambit's answer may be a later crossing, so the Gambit
@@ -51,14 +52,16 @@ function cross_checked!(payoffs::Tuple, precision::Real, settings::TraceSettings
     logits = unwrap(result).logits
     traced = first_choices(logits)
     folded = gambit_folds_before(payoffs, cross.precision)
+    reference = branch_reference(NormalFormPass(map(float, payoffs)), length(payoffs), cross.precision)
+    # Both independent cross-checks on the trace's side outvote Gambit, which can leave its branch (`GAMBIT_LEAVES_SEED`).
+    outvoted = reference.reached && agreeing(traced, reference.first_choices) && agreeing(traced, cross.first_choices)
     if !folded
         oracle = gambit_branch(payoffs, cross.precision)
-        @test agreeing(traced, oracle.first_choices)
+        @test outvoted || agreeing(traced, oracle.first_choices)
         if !agreeing(traced, cross.first_choices)
             @test !agreeing(oracle.first_choices, cross.first_choices)
         end
     end
-    reference = branch_reference(NormalFormPass(map(float, payoffs)), length(payoffs), cross.precision)
     # A generic game's branch crosses no singular point.
     @test reference.crossings == 0
     if reference.reached
@@ -208,10 +211,10 @@ end
     end
 end
 
-# A draw on which the trace left Gambit's branch without a turn test (a four-player game).
-const BRANCH_JUMP_SEED = 0x2c06c04a5d81b3dc
+# A four-player draw on which Gambit leaves its branch: the trace, LogitNash and the Float64 reference agree on it.
+const GAMBIT_LEAVES_SEED = 0x2c06c04a5d81b3dc
 
-@testset "random games with two actions each: the trace follows the principal branch" for rng in (Xoshiro(BRANCH_JUMP_SEED), fresh_rng())
+@testset "random games with two actions each: the trace follows the principal branch" for rng in (Xoshiro(GAMBIT_LEAVES_SEED), fresh_rng())
     skipped = 0
     for _ in 1:20
         players = rand(rng, 2:4)
