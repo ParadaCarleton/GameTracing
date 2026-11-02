@@ -54,6 +54,10 @@ function cross_checked!(payoffs::Tuple, precision::Real, settings::TraceSettings
     if !folded
         oracle = gambit_branch(payoffs, cross.precision)
         @test agreeing(traced, oracle.first_choices)
+        if !agreeing(traced, oracle.first_choices)
+            probe_reference = branch_reference(NormalFormPass(map(float, payoffs)), length(payoffs), cross.precision)
+            @info "PROBE disagreement" payoffs traced oracle cross probe_reference.reached probe_reference.first_choices probe_reference.crossings unwrap(result).steps
+        end
         if !agreeing(traced, cross.first_choices)
             @test !agreeing(oracle.first_choices, cross.first_choices)
         end
