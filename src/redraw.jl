@@ -4,15 +4,14 @@ struct NoRedraw end
 (::NoRedraw)(::AbstractVector, ::Real)::Nothing = nothing
 
 """
-    RedrawSlot(game, before, pending, step_length)
+    RedrawSlot(game, pending, step_length)
 
-The game a trace runs on, the game it ran on before the last swap (`before`), whether `redraw` swapped it since the
-last restart (`pending`), and the arclength step the trace last held, which a restart carries on.
+The game a trace runs on, whether `redraw` swapped it since the last restart (`pending`), and the arclength step the
+trace last held, which a restart carries on.
 """
 mutable struct RedrawSlot{G <: LogitGame, E <: Real}
     # Mutable because BifurcationKit's finalise callback returns only a `Bool`.
     game::G
-    before::G
     pending::Bool
     step_length::E
 end
@@ -34,72 +33,9 @@ function swapped!(slot::RedrawSlot{G}, redrawn::G)::Bool where {G <: LogitGame}
             "a redrawn game has target precision $(redrawn.target_precision), not the trace's $(slot.game.target_precision)",
         ))
     end
-    slot.before = slot.game
     slot.game = redrawn
     slot.pending = true
     return true
-end
-
-"""
-    redraw_crossing(before, after, point, settings)
-
-The `CrossingResult` of `homotopy_crossing` from `point = [w; ρ]`, a root of game `before`, to a root of game
-`after` at the same `ρ`, under the trace's PALC (`palc_algorithm`), step controls and corrector (`CorrectorReach`). The
-crossing replaces the map at fixed `ρ`, so it lands on the root its zero continues to, or fails. A start that would
-not correct (`uncorrected_start`) or a broken linear solve (`solver_blowup`) ends it as reason `:solver_blowup`.
-"""
-function redraw_crossing(
-    before::LogitGame,
-    after::LogitGame,
-    point::AbstractVector{E},
-    settings::TraceSettings{E},
-)::CrossingResult{E} where {E <: Real}
-    relative_precision = last(point)
-    corrector = CorrectorReach(
-        AcceptAll(),
-        settings.corrector,
-        settings.geometry,
-        similar(point),
-        similar(point),
-        zero(E),
-    )
-    try
-        return homotopy_crossing(
-            branch_problem(
-            before,
-            point,
-            relative_precision;
-            record_from_solution = trace_record_point,
-        ),
-            branch_problem(
-            after,
-            point,
-            relative_precision;
-            record_from_solution = trace_record_point,
-        ),
-            point,
-            # The orientation check flips the tangent at a branch point, which would read a crossing as a fold.
-            palc_algorithm(
-            settings,
-            length(point) - 1,
-            before.target_precision;
-            orientation_check = false,
-            homotopy = true,
-        ),
-            continuation_options(
-            settings,
-            settings.first_step,
-            settings.max_steps,
-            settings.first_tangent_divisor,
-        );
-            callback_newton = corrector,
-        )
-    catch exception
-        if !uncorrected_start(exception) && !solver_blowup(exception)
-            rethrow()
-        end
-        return CrossingResult(collect(point), :solver_blowup, 0)
-    end
 end
 
 """

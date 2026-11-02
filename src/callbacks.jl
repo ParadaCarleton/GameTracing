@@ -464,5 +464,9 @@ function (finalise::TraceFinalise)(point::P, tangent::T, step::S, result::Any;
         return false
     end
     finalise.slot.step_length = abs(state.ds)
+    # A redraw swaps the map for the steps after this point, and the endpoint has none.
+    if point.p == 1
+        return true
+    end
     return !swapped!(finalise.slot, finalise.redraw(logits, point.p))
 end
