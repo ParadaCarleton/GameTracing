@@ -18,7 +18,8 @@ end
 
 """
     TraceSettings{E}(; first_step, min_step, max_step, aggressiveness, geometry, first_tangent_divisor,
-                     corrector, max_steps, tangent, bordered_solver, step_control, orientation_check)
+                     corrector, max_steps, tangent, bordered_solver, step_control, orientation_check, palc_corrector,
+                     palc_options, continuation_options)
 
 BifurcationKit PALC controls for `trace_endpoint`, in `(w, ρ)` with `w = logits / ρ` the payoff gaps and `ρ` the
 relative precision. Step sizes are arclength in `geometry`'s norm (`StepDistance`); the default is the Fisher
@@ -40,8 +41,24 @@ distance (`TraceGeometry`).
 - `step_control`: a `StepControl`, or `nothing` for none.
 - `orientation_check` orients a bordered tangent by the determinant of the bordered matrix. It takes effect only with
   `MatrixSolve`, the one solver that has a determinant.
+- `palc_corrector`: PALC's `corrector` keyword, `nothing` by default, which is BifurcationKit's own Newton method
+  (`newton_palc`; it stops on leaving `[0, 1]`). `BifurcationKit.FreeParameterNewton()` leaves `ρ` free there instead,
+  the trace's choice before this field. `CorrectorReach` reads any corrector's Newton callbacks.
+- `palc_options`: a `NamedTuple` of further keywords for `BifurcationKit.PALC`, which override the trace's own
+  (`tangent`, `θ`, `dotθ`, `bls`, `step_control`, `orientation_check`, `corrector`, `orientation_dot`). Do not override
+  `step_control`, `orientation_check`, `orientation_dot`, `θ`, `dotθ` or `bls`: the trace's step shrinking, tangent orientation
+  and geometry rest on them, and `TraceSettings` fields set them consistently.
+- `continuation_options`: a `NamedTuple` of further keywords for `BifurcationKit.ContinuationPar`, which override the trace's
+  own. Do not override `newton_options`, `p_min`, `p_max`, `ds` or the `dsmin`/`dsmax` pair: `CorrectorReach` converges a
+  corrector on its own test and needs `tol = 0`, and the trace ends at `p_max`.
 """
-Base.@kwdef struct TraceSettings{E <: Real, T <: BifurcationKit.AbstractTangentComputation}
+Base.@kwdef struct TraceSettings{
+        E <: Real,
+        T <: BifurcationKit.AbstractTangentComputation,
+        C,
+        P <: NamedTuple,
+        O <: NamedTuple,
+    }
     first_step::E = 0.05f0
     min_step::E = nextfloat(zero(E))
     max_step::E = 1000.0f0
@@ -54,13 +71,23 @@ Base.@kwdef struct TraceSettings{E <: Real, T <: BifurcationKit.AbstractTangentC
     bordered_solver::BorderedSolver = MatrixSolve
     step_control::Union{Nothing, StepControl{E}} = StepControl{E}()
     orientation_check::Bool = true
+    palc_corrector::C = nothing
+    palc_options::P = (;)
+    continuation_options::O = (;)
 end
 
 function TraceSettings{E}(;
     tangent::T = BifurcationKit.Bordered(),
+    palc_corrector::C = nothing,
+    palc_options::P = (;),
+    continuation_options::O = (;),
     keywords...,
-)::TraceSettings{E, T} where {E <: Real, T <: BifurcationKit.AbstractTangentComputation}
-    return TraceSettings{E, T}(; tangent, keywords...)
+)::TraceSettings{E, T, C, P, O} where {
+        E <: Real, T <: BifurcationKit.AbstractTangentComputation, C, P <: NamedTuple, O <: NamedTuple,
+    }
+    return TraceSettings{E, T, C, P, O}(;
+        tangent, palc_corrector, palc_options, continuation_options, keywords...,
+    )
 end
 
 """`limit * scale`, or `nothing` where the threshold is off (`limit` is `nothing`)."""
@@ -128,7 +155,7 @@ function palc_with_geometry(
     orientation_check::Bool,
 )::BifurcationKit.AbstractContinuationAlgorithm where {E <: Real}
     oriented = orientation_check && settings.bordered_solver == MatrixSolve
-    return BifurcationKit.PALC(;
+    own = (;
         tangent = settings.tangent,
         θ = geometry.palc_state_weight,
         dotθ = geometry.dot,
@@ -141,9 +168,10 @@ function palc_with_geometry(
             oriented,
         ),
         orientation_check = oriented,
-        corrector = BifurcationKit.FreeParameterNewton(),
+        corrector = settings.palc_corrector,
         orientation_dot = PlainOrientation(settings.geometry),
     )
+    return BifurcationKit.PALC(; merge(own, settings.palc_options)...)
 end
 
 """
@@ -178,7 +206,7 @@ function continuation_options(
     max_steps::Integer,
     first_tangent_divisor::E,
 )::BifurcationKit.ContinuationPar where {E <: Real}
-    return BifurcationKit.ContinuationPar(;
+    own = (;
         ds = step_length,
         dsmin = settings.min_step,
         dsmax = settings.max_step,
@@ -202,6 +230,7 @@ function continuation_options(
         tol_bisection_eigenvalue = zero(E),
         tol_param_bisection_event = zero(E),
     )
+    return BifurcationKit.ContinuationPar(; merge(own, settings.continuation_options)...)
 end
 
 """

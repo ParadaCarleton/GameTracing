@@ -174,6 +174,24 @@ end
     end
 end
 
+@testset "pass-through keywords and the corrector reach BifurcationKit $element" for element in (Float32, float(Int))
+    default = GameTracing.palc_algorithm(TraceSettings{element}(), WIDTH, TARGET_PRECISION)
+    @test isnothing(default.corrector)
+    free = BifurcationKit.FreeParameterNewton()
+    settings = TraceSettings{element}(
+        palc_corrector = free,
+        palc_options = (; orientation_check = false, θ = one(element) / 4),
+        continuation_options = (; max_steps = 3, p_max = one(element) / 2),
+    )
+    algorithm = GameTracing.palc_algorithm(settings, WIDTH, TARGET_PRECISION; orientation_check = true)
+    @test algorithm.corrector === free
+    @test !algorithm.orientation_check
+    @test algorithm.θ == one(element) / 4
+    options = GameTracing.continuation_options(settings, settings.first_step, 50, settings.first_tangent_divisor)
+    @test (options.max_steps, options.p_max) == (3, one(element) / 2)
+    @test options.p_min == 0
+end
+
 @testset "continuation options carry the settings and the trace's endpoint-only needs" begin
     rng = Random.Xoshiro(7)
     for _ in 1:20
