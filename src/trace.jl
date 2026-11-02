@@ -1,5 +1,6 @@
 using BifurcationKit: BifurcationKit
 using ErrorTypes: Err, Ok
+using LinearAlgebra: LU
 """
     StepControl{E}(; distance_limit, growth_limit, turn_limit)
 
@@ -323,15 +324,15 @@ function opened_state(
 end
 
 """
-    restart_opening(iterator, game, old_tangent)
+    restart_opening(iterator, factorization, old_tangent)
 
-`(; opening, gap_tangent, tangent_precision)` of a restart of `iterator` on `game` after a redraw: the point
-`opening` `ds` along `restart_tangent`, oriented by the trace's `old_tangent`, and that tangent of unit length in the
-trace's norm, split into its gap and precision parts.
+`(; opening, gap_tangent, tangent_precision)` of a restart of `iterator` after a redraw: the point `opening` `ds`
+along `restart_tangent` from the swapped game's `factorization`, oriented by the trace's `old_tangent`, and that
+tangent of unit length in the trace's norm, split into its gap and precision parts.
 """
 function restart_opening(
     iterator::BifurcationKit.ContIterable,
-    game::LogitGame,
+    factorization::LU{E},
     old_tangent::AbstractVector{E},
 )::NamedTuple where {E <: Real}
     algorithm = iterator.alg
@@ -340,14 +341,7 @@ function restart_opening(
         E(BifurcationKit.getθ(algorithm))
     # A Fisher trace's weights are those of the point it restarts from.
     BifurcationKit.reweight!(dot, BifurcationKit.BorderedArray(start, last(start)))
-    tangent = restart_tangent(
-        game,
-        start,
-        old_tangent,
-        dot,
-        palc_state_weight,
-        algorithm.orientation_dot,
-    )
+    tangent = restart_tangent(factorization, old_tangent, palc_state_weight, algorithm.orientation_dot)
     length_in_norm = sqrt(palc_product(dot, palc_state_weight, tangent, tangent))
     return (;
         opening = start .+ (iterator.contparams.ds / length_in_norm) .* tangent,
@@ -370,8 +364,9 @@ refusal); a non-finite start or a broken linear solve fails `NotFinite` or `Sing
 every failure.
 
 `redraw(logits, ρ, shift)` runs at each accepted point short of `ρ = 1` that `keep_going` passes, and returns
-`nothing` or a new game of the same type and target precision. `shift(game)` (`RootShift`) tells whether a candidate
-game's root lies within the corrector's reach, so a caller can refine a draw that does not before it returns. A new game replaces the map for the steps after that point: the
+`nothing`, a new game of the same type and target precision, or the `ShiftedGame` that `shift(game)` (`RootShift`)
+returned for one. That check tells whether a candidate game's root lies within the corrector's reach, so a caller can
+refine a draw that does not before it returns; the restart reuses its factorization of the new game's Jacobian. A new game replaces the map for the steps after that point: the
 trace restarts there along the new map's tangent, oriented by the old one, with the step it held, and its next
 corrector lands on the new map under the same step control. The endpoint, with no step after it, is never redrawn.
 """
@@ -506,7 +501,7 @@ function guarded_trace(
                 finalise.slot.step_length,
                 settings.max_steps - opening.steps,
             ),
-            finalise.slot.game,
+            finalise.slot.factorization,
             old_tangent,
             opening,
         ),
@@ -550,7 +545,7 @@ end
 struct Ended <: GuardedEnd end
 
 """
-    segment_branch(iterator, game, old_tangent, opening)
+    segment_branch(iterator, factorization, old_tangent, opening)
 
 `(; progress, exception)` of BifurcationKit's continuation of `iterator` from the point of `opening`: the progress
 after its branch (`branch_progress`), and the exception it threw or `nothing`. A segment that throws before its
@@ -560,13 +555,13 @@ BifurcationKit's results are not inferable.
 """
 function segment_branch(
     iterator::BifurcationKit.ContIterable,
-    game::LogitGame,
+    factorization::Union{Nothing, LU{E}},
     old_tangent::Union{Nothing, AbstractVector{E}},
     opening::TraceProgress{E},
 )::NamedTuple where {E <: Real}
     return restarted_segment(
         iterator,
-        guarded_restart(iterator, game, old_tangent, opening),
+        guarded_restart(iterator, factorization, old_tangent, opening),
         opening,
     )
 end
@@ -641,12 +636,12 @@ ended_segment(
 """`restart_opening`, or the `Thrown` failure that `expected_failure` names; any other exception propagates."""
 function guarded_restart(
     iterator::BifurcationKit.ContIterable,
-    game::LogitGame,
+    factorization::Union{Nothing, LU{E}},
     old_tangent::Union{Nothing, AbstractVector{E}},
     opening::TraceProgress{E},
 )::Union{NamedTuple, GuardedEnd} where {E <: Real}
     try
-        return restart_opening(iterator, game, old_tangent, opening)
+        return restart_opening(iterator, factorization, old_tangent, opening)
     catch exception
         return thrown_failure(exception)
     end
@@ -691,14 +686,14 @@ expected_failure(exception::Any)::Bool = uncorrected_start(exception) ||
     solver_blowup(exception)
 
 """
-    restart_opening(iterator, game, old_tangent, opening)
+    restart_opening(iterator, factorization, old_tangent, opening)
 
 The flat start (`old_tangent` is `nothing`) opens on BifurcationKit's secant with no point to aim at, and keeps
 `opening`'s tangent until a point is accepted.
 """
 function restart_opening(
     ::BifurcationKit.ContIterable,
-    ::LogitGame,
+    ::Nothing,
     ::Nothing,
     opening::TraceProgress,
 )::NamedTuple
@@ -707,11 +702,21 @@ end
 
 function restart_opening(
     iterator::BifurcationKit.ContIterable,
-    game::LogitGame,
+    factorization::LU{E},
     old_tangent::AbstractVector{E},
     ::TraceProgress{E},
 )::NamedTuple where {E <: Real}
-    return restart_opening(iterator, game, old_tangent)
+    return restart_opening(iterator, factorization, old_tangent)
+end
+
+function restart_opening(
+    ::BifurcationKit.ContIterable,
+    ::Nothing,
+    ::AbstractVector,
+    ::TraceProgress,
+)::NamedTuple
+    # The swapped game was non-finite at the swap point (`ShiftedGame`); LAPACK's own check reports it so.
+    throw(ArgumentError("matrix contains Infs or NaNs"))
 end
 
 """

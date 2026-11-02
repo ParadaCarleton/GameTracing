@@ -98,7 +98,7 @@ end
 
 function (probe::ShiftProbe)(::AbstractVector, relative_precision::Real, shift::GameTracing.RootShift)::Nothing
     if relative_precision >= probe.swap_level
-        throw(ShiftVerdict(shift(probe.game)))
+        throw(ShiftVerdict(shift(probe.game).within))
     end
     return nothing
 end
@@ -123,14 +123,14 @@ end
     @test !shift_passes(FOLD_SWAP)
     @test !shift_passes(PITCHFORK_SWAP)
     off = TraceSettings{Float32}(; corrector = GameTracing.CorrectorSettings{Float32}(; reach = nothing))
-    @test GameTracing.RootShift(Float32[1, 1], Float32[0.1f0, 0.1f0], Float32[0, 1], off.corrector)(LogitGame(FAR_SWAP.after, 1.0f0))
+    @test GameTracing.RootShift(Float32[1, 1], Float32[0.1f0, 0.1f0], Float32[0, 1], off.corrector)(LogitGame(FAR_SWAP.after, 1.0f0)).within
 end
 
 @testset "a root shift is a Newton step onto the new map: it cuts the new map's correction by a factor of ten" begin
     swap = swap_point(NEAR_SWAP)
     point = [swap.logits ./ swap.relative_precision; swap.relative_precision]
     after = LogitGame(NEAR_SWAP.after, NEAR_SWAP.precision)
-    shift = GameTracing.root_shift(after, point, Float32[0, 0, 1])
+    shift = GameTracing.RootShift(point, Float32[0, 0, 1], nothing)(after).shift
     @test last(shift) == 0
     level = swap.relative_precision * NEAR_SWAP.precision
     before_shift = newton_correction(NEAR_SWAP.after, swap.logits, level)
@@ -215,15 +215,20 @@ end
     @test endpoint.logit_accuracy == outcome.logit_accuracy
 end
 
-@testset "a redrawn game must keep the trace's target precision" begin
+@testset "a redrawn game must keep the trace's target precision, and a hook's ShiftedGame must come from this point" begin
     game = LogitGame(GAME, TARGET_PRECISION)
     slot = GameTracing.RedrawSlot(game, false, 0.1f0)
-    @test !GameTracing.swapped!(slot, nothing)
-    @test !GameTracing.swapped!(slot, slot.game)
+    check = GameTracing.RootShift(Float32[0.1f0, 0.2f0, 0.5f0], Float32[0, 0, 1], nothing)
+    @test !GameTracing.swapped!(slot, GameTracing.shifted_game(check, nothing, slot.game))
+    @test !GameTracing.swapped!(slot, GameTracing.shifted_game(check, slot.game, slot.game))
     @test !slot.pending
-    @test_throws ArgumentError GameTracing.swapped!(slot, LogitGame(GAME, 2 * TARGET_PRECISION))
-    @test GameTracing.swapped!(slot, LogitGame(LinearGainPass(GAME.interaction, -GAME.stand_alone), TARGET_PRECISION))
+    @test_throws ArgumentError GameTracing.swapped!(slot, GameTracing.shifted_game(check, LogitGame(GAME, 2 * TARGET_PRECISION), slot.game))
+    flipped = check(LogitGame(LinearGainPass(GAME.interaction, -GAME.stand_alone), TARGET_PRECISION))
+    @test GameTracing.swapped!(slot, GameTracing.shifted_game(check, flipped, slot.game))
     @test slot.pending
+    @test slot.factorization === flipped.factorization
+    elsewhere = GameTracing.RootShift(copy(check.point), check.border, nothing)(game)
+    @test_throws ArgumentError GameTracing.shifted_game(check, elsewhere, slot.game)
 end
 
 @testset "a redraw of random swap 6 at relative precision 0.734 lands on the branch a double-precision reference follows" begin

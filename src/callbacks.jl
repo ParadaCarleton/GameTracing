@@ -482,5 +482,5 @@ function (finalise::TraceFinalise)(point::P, tangent::T, step::S, result::Any;
         palc_border(BifurcationKit.getdot(algorithm), eltype(point.u)(BifurcationKit.getθ(algorithm)), tangent.u),
         finalise.settings,
     )
-    return !swapped!(finalise.slot, finalise.redraw(logits, point.p, shift))
+    return !swapped!(finalise.slot, shifted_game(shift, finalise.redraw(logits, point.p, shift), finalise.slot.game))
 end
