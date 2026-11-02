@@ -1,5 +1,5 @@
 using BifurcationKit: BifurcationKit
-using LinearAlgebra: BlasFloat, BlasInt, LAPACK, LU, SingularException, istril, istriu, logabsdet
+using LinearAlgebra: BlasFloat, BlasInt, LAPACK, LU, SingularException, istril, istriu
 """How PALC solves its bordered linear system: `MatrixSolve` factors the whole bordered matrix, `BorderingSolve` the Jacobian alone."""
 @enum BorderedSolver MatrixSolve BorderingSolve
 
@@ -78,32 +78,34 @@ function bordered_matrix!(
             "a $(size(bordered, 1))-row bordered matrix for a $width-slot Jacobian",
         ))
     end
-    # fatou-ignore call-arity: Base `view` takes any number of indices (jolars/fatou#125)
-    copyto!(view(bordered, 1:width, 1:width), jacobian)
-    # fatou-ignore call-arity: Base `view` takes any number of indices (jolars/fatou#125)
-    copyto!(view(bordered, 1:width, width + 1), dR)
+    copyto!(@view(bordered[1:width, 1:width]), jacobian)
+    copyto!(@view(bordered[1:width, width + 1]), dR)
     for (column, tangent) in pairs(dzu)
         bordered[width + 1, column] = adjoint(tangent * ξu)
     end
     bordered[width + 1, width + 1] = dzp * ξp
     if !isnothing(applyξu!)
-        # fatou-ignore call-arity: Base `view` takes any number of indices (jolars/fatou#125)
-        applyξu!(view(bordered, width + 1, 1:width))
+        applyξu!(@view(bordered[width + 1, 1:width]))
     end
     return bordered
 end
 
 """
-The sign of the bordered tangent matrix's determinant that PALC's `orientation_check` reads, taken
-from the same LU as the solve (`logabsdet`, LAPACK `getrf` without a singularity check).
+The `Bordered` tangent of PALC and the sign of the bordered matrix's determinant that its
+`orientation_check` reads, from one LU: the matrix is built as `MatrixBLS` builds it, factored in
+`bls`'s buffers (LAPACK `getrf`), the tangent solves with that factorization, and the sign is its
+pivots' (`BifurcationKit.determinant_sign`). A zero pivot makes the matrix singular: the sign and the
+tangent are zero, which PALC's NaN checks refuse as a step.
 """
-function BifurcationKit.bordered_determinant_sign(
+function BifurcationKit.bordered_tangent_and_sign(
     bls::InPlaceMatrixBLS,
     iter::BifurcationKit.AbstractContinuationIterable,
     state::BifurcationKit.AbstractContinuationState,
     jacobian::Any,
     dFdl::AbstractVector,
-)::eltype(dFdl)
+    rhsu::AbstractVector,
+    rhsp::Number,
+)::Tuple
     state_weight = BifurcationKit.getθ(iter)
     tangent = state.τ
     bordered = bordered_matrix!(
@@ -117,7 +119,16 @@ function BifurcationKit.bordered_determinant_sign(
         BifurcationKit._get_apply_dot(BifurcationKit.getdot(iter)),
     )
     _, _, info = LAPACK.getrf!(bordered, bls.pivots; check = false)
-    return last(logabsdet(LU(bordered, bls.pivots, info)))
+    solution = vcat(rhsu, rhsp)
+    if info > 0
+        return view(zero(solution), 1:(length(solution) - 1)),
+            zero(eltype(solution)),
+            zero(eltype(solution))
+    end
+    LAPACK.getrs!('N', bordered, bls.pivots, solution)
+    return view(solution, 1:(length(solution) - 1)),
+        solution[end],
+        BifurcationKit.determinant_sign(LU(bordered, bls.pivots, info))
 end
 
 """

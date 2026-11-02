@@ -125,8 +125,7 @@ function restart_tangent(
         last(point),
     ).jacobian
     border = palc_border(dot, state_weight, old_tangent)
-    # fatou-ignore call-arity: Base `view` takes any number of indices (jolars/fatou#125)
-    bordered = [view(jacobian, 1:width, :); transpose(border)]
+    bordered = [@view(jacobian[1:width, :]); transpose(border)]
     tangent = bordered \ setindex!(zeros(E, width + 1), one(E), width + 1)
     return sign(orientation(
         old_tangent,
