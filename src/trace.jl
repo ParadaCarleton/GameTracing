@@ -1,15 +1,19 @@
 using BifurcationKit: BifurcationKit
 using ErrorTypes: Err, Ok
 """
-    StepControl{E}(; distance_limit, growth_limit)
+    StepControl{E}(; distance_limit, growth_limit, turn_limit)
 
 BifurcationKit's `CorrectorQuality` thresholds, which shrink a step whose corrector looks poor. `distance_limit` is the
 Euclidean length of a Newton step's logit part (Gambit's 0.4 in log probabilities); `growth_limit` bounds a step's
-growth (Gambit's `max_accel` 1.1), and the step then shrinks as the distance or contraction nears its limit. The corrector's contraction rate (`CorrectorSettings`) also slows growth. `nothing` switches a threshold off.
+growth (Gambit's `max_accel` 1.1), and the step then shrinks as the distance or contraction nears its limit.
+`turn_limit` refuses a step whose tangent turns this many radians from the last one, Allgower and Georg's
+test (6.1.10) for a step across a fold onto another branch; 1 is under Gambit's quarter turn (`t·newT < 0`, path.cc).
+The corrector's contraction rate (`CorrectorSettings`) also slows growth. `nothing` switches a threshold off.
 """
 Base.@kwdef struct StepControl{E <: Real}
     distance_limit::Union{Nothing, E} = 0.4f0
     growth_limit::Union{Nothing, E} = 1.1f0
+    turn_limit::Union{Nothing, E} = 1.0f0
 end
 
 """
@@ -66,13 +70,16 @@ scaled_limit(limit::Real, scale::Real)::typeof(limit * scale) = limit * scale
 """
 PALC's `step_control` for `control` over `width` gaps in `geometry`: `nothing` when it is off, else BifurcationKit's
 `CorrectorQuality`, its distance limit scaled from the gaps' Euclidean length into the norm. Its contraction rate,
-`corrector`'s limit and offset, slows growth only: `CorrectorReach` refuses on the rate in logits.
+`corrector`'s limit and offset, slows growth only: `CorrectorReach` refuses on the rate in logits. A path that is not
+oriented has no turn test: a redraw crossing, whose tangent flips at a branch point, or a solver without the
+bordered determinant that BifurcationKit's turn of a `Bordered` tangent needs.
 """
 corrector_quality(
     ::Nothing,
     ::CorrectorSettings,
     ::TraceGeometry,
     ::Integer,
+    ::Bool,
 )::Nothing = nothing
 
 function corrector_quality(
@@ -80,13 +87,14 @@ function corrector_quality(
     corrector::CorrectorSettings{E},
     geometry::TraceGeometry{E},
     width::Integer,
+    oriented::Bool,
 )::BifurcationKit.CorrectorQuality{E} where {E <: Real}
     return BifurcationKit.CorrectorQuality{E}(
         scaled_limit(control.distance_limit, sqrt(coordinate_weight(geometry, width))),
         scaled_limit(corrector.contraction_limit, one(E)),
         scaled_limit(control.growth_limit, one(E)),
         corrector.contraction_offset,
-        nothing,
+        scaled_limit(ifelse(oriented, control.turn_limit, nothing), one(E)),
         false,
     )
 end
@@ -119,6 +127,7 @@ function palc_with_geometry(
     geometry::NamedTuple,
     orientation_check::Bool,
 )::BifurcationKit.AbstractContinuationAlgorithm where {E <: Real}
+    oriented = orientation_check && settings.bordered_solver == MatrixSolve
     return BifurcationKit.PALC(;
         tangent = settings.tangent,
         θ = geometry.palc_state_weight,
@@ -129,8 +138,9 @@ function palc_with_geometry(
             settings.corrector,
             settings.geometry,
             width,
+            oriented,
         ),
-        orientation_check = orientation_check && settings.bordered_solver == MatrixSolve,
+        orientation_check = oriented,
         corrector = BifurcationKit.FreeParameterNewton(),
         orientation_dot = PlainOrientation(settings.geometry),
     )

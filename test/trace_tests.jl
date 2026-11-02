@@ -352,3 +352,10 @@ end
         GameTracing.thrown_failure(exception)
     end
 end
+
+@testset "the turn test is on by default, on oriented paths only ($element)" for element in (Float32, widen(Float32))
+    corrector, geometry = GameTracing.CorrectorSettings{element}(), GameTracing.TraceGeometry{element}()
+    @test GameTracing.corrector_quality(StepControl{element}(), corrector, geometry, WIDTH, true).max_turn == one(element)
+    @test isnothing(GameTracing.corrector_quality(StepControl{element}(), corrector, geometry, WIDTH, false).max_turn)
+    @test isnothing(GameTracing.corrector_quality(StepControl{element}(turn_limit = nothing), corrector, geometry, WIDTH, true).max_turn)
+end
