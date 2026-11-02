@@ -204,6 +204,18 @@ end
     @test maximum(abs, inv.(1 .+ exp.(-endpoint)) .- reference.first_choices) < probability_bound(reference_after, reference.logits, swap.precision, residual, 0.25f0)
 end
 
+@testset "a redraw onto a map that shares the point's root crosses at that root, though the gaps never move" begin
+    stopped = trace_endpoint(LogitGame(GAME, TARGET_PRECISION), WIDTH, REDRAW_SETTINGS; keep_going = StopAt(0.3f0))
+    (; logits, relative_precision) = unwrap_error(stopped).context
+    point = [logits ./ relative_precision; relative_precision]
+    # An equal map in a new object: the homotopy's s-slope is zero, so its tangent moves only the blend.
+    twin = LinearGainPass(copy(GAME.interaction), copy(GAME.stand_alone))
+    crossing = GameTracing.redraw_crossing(LogitGame(GAME, TARGET_PRECISION), LogitGame(twin, TARGET_PRECISION), point, REDRAW_SETTINGS)
+    @test crossing.reason == :crossed
+    @test crossing.steps > 0
+    @test settled_logits(twin, GameTracing.logits_at(crossing.point), relative_precision * TARGET_PRECISION, REDRAW_SETTINGS)
+end
+
 @testset "a redraw onto a game that is non-finite at the redraw fails stuck and projected, as a solver blowup" begin
     # The new game is non-finite past precision 1, so its branch has no points at the redraw's precision 2.
     before = PoisonedPass(NEAR_SWAP.before, Inf32)

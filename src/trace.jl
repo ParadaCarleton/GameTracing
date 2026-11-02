@@ -129,30 +129,48 @@ end
 """
 BifurcationKit's PALC for `settings` over a trace of `width` logits to precision `target_precision`, its tangent
 oriented by the bordered determinant where `orientation_check` holds (`settings.orientation_check` by default).
+A `homotopy` crossing's continuation parameter is its blend `s`, not `ρ`, so its tangent keeps the sign of PALC's own
+product, which weighs `s` (`orientation_product`).
 """
 function palc_algorithm(
     settings::TraceSettings{E},
     width::Integer,
     target_precision::Real;
     orientation_check::Bool = settings.orientation_check,
+    homotopy::Bool = false,
 )::BifurcationKit.AbstractContinuationAlgorithm where {E <: Real}
+    geometry = palc_geometry(settings.geometry, width, target_precision)
     return palc_with_geometry(
         settings,
         width,
-        palc_geometry(settings.geometry, width, target_precision),
+        geometry,
         orientation_check,
+        orientation_product(settings, geometry, homotopy),
     )
 end
 
 """
+PALC's `orientation_dot`: on a trace the plain product `PlainOrientation`, which reads `ρ` from the state; on a
+`homotopy` crossing PALC's product `geometry.dot`. A crossing pins `ρ`, so the plain product sees only the gaps, and
+a crossing between maps that share the point's root has no gap motion: the plain product is zero and zeroes the tangent.
+"""
+function orientation_product(settings::TraceSettings, geometry::NamedTuple, homotopy::Bool)::Union{BifurcationKit.DotTheta, PlainOrientation}
+    if homotopy
+        return geometry.dot
+    end
+    return PlainOrientation(settings.geometry)
+end
+
+"""
 BifurcationKit's PALC for `settings` over `width` logits in `geometry` (`palc_geometry`), whose type varies by
-distance, with the bordered determinant's `orientation_check` (with `MatrixSolve` only).
+distance, with the bordered determinant's `orientation_check` (with `MatrixSolve` only) and `orientation_dot`.
 """
 function palc_with_geometry(
     settings::TraceSettings{E},
     width::Integer,
     geometry::NamedTuple,
     orientation_check::Bool,
+    orientation_dot::Any,
 )::BifurcationKit.AbstractContinuationAlgorithm where {E <: Real}
     oriented = orientation_check && settings.bordered_solver == MatrixSolve
     own = (;
@@ -169,7 +187,7 @@ function palc_with_geometry(
         ),
         orientation_check = oriented,
         corrector = settings.palc_corrector,
-        orientation_dot = PlainOrientation(settings.geometry),
+        orientation_dot,
     )
     return BifurcationKit.PALC(; merge(own, settings.palc_options)...)
 end
