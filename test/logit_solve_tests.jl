@@ -67,7 +67,9 @@ end
     stuck_games = branch_games(Xoshiro(STUCK_BRANCH_SEED))
     # The seed's first payoff, as the failing run logged it.
     @test first(first(first(stuck_games))) == -0.4899592f0
-    for payoffs in (stuck_games..., branch_games(fresh_rng())...)
+    # measured: the stalled seed's first payoff is -3.6981018.
+    stalled_games = branch_games(Xoshiro(SATURATED_STALL_SEED))
+    for payoffs in (stuck_games..., stalled_games..., branch_games(fresh_rng())...)
         gains = NormalFormGains(payoffs)
         result = logit_solve_branch(gains)
         @test !is_error(result)
