@@ -290,7 +290,7 @@ struct EveryPointCopy{G}
     game::G
 end
 
-function (hook::EveryPointCopy{G})(::AbstractVector, ::Real)::G where {G}
+function (hook::EveryPointCopy{G})(::AbstractVector, ::Real, ::Any)::G where {G}
     return deepcopy(hook.game)
 end
 
