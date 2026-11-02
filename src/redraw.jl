@@ -84,6 +84,7 @@ function redraw_crossing(
             length(point) - 1,
             before.target_precision;
             orientation_check = false,
+            homotopy = true,
         ),
             continuation_options(
             settings,

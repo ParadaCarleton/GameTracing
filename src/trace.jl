@@ -127,32 +127,61 @@ function corrector_quality(
 end
 
 """
+PALC's `orientation_dot`: the plain product `trace_dot` of two branch vectors `[w; ρ]` in `geometry`, plus
+`parameter_weight` times the product of their continuation parameters. Without the bordered determinant a new tangent
+takes the sign that keeps this product with the old one positive; the trace's Fisher weights, frozen at a saturated
+logit, would let `ρ` alone decide that sign past a fold and turn the trace back. A trace's parameter is `ρ`, already
+in the vectors, so its weight is 0. A redraw crossing pins `ρ` and moves the blend `s`, so its weight is 1: between
+maps that share the point's root its tangent moves only `s`, and an unweighted product, zero, would zero the tangent.
+"""
+struct PlainOrientation{E <: Real}
+    geometry::TraceGeometry{E}
+    parameter_weight::E
+end
+
+function (orientation::PlainOrientation{E})(
+    left::AbstractVector{E},
+    right::AbstractVector{E},
+    left_parameter::Real,
+    right_parameter::Real,
+    # PALC passes its state weight θ too.
+    ::Real,
+)::E where {E <: Real}
+    return trace_dot(left, right, orientation.geometry) + orientation.parameter_weight * left_parameter * right_parameter
+end
+
+"""
 BifurcationKit's PALC for `settings` over a trace of `width` logits to precision `target_precision`, its tangent
 oriented by the bordered determinant where `orientation_check` holds (`settings.orientation_check` by default).
+A `homotopy` crossing's continuation parameter is its blend `s`, which its tangent's orientation weighs
+(`PlainOrientation`).
 """
 function palc_algorithm(
     settings::TraceSettings{E},
     width::Integer,
     target_precision::Real;
     orientation_check::Bool = settings.orientation_check,
+    homotopy::Bool = false,
 )::BifurcationKit.AbstractContinuationAlgorithm where {E <: Real}
     return palc_with_geometry(
         settings,
         width,
         palc_geometry(settings.geometry, width, target_precision),
         orientation_check,
+        PlainOrientation(settings.geometry, ifelse(homotopy, one(E), zero(E))),
     )
 end
 
 """
 BifurcationKit's PALC for `settings` over `width` logits in `geometry` (`palc_geometry`), whose type varies by
-distance, with the bordered determinant's `orientation_check` (with `MatrixSolve` only).
+distance, with the bordered determinant's `orientation_check` (with `MatrixSolve` only) and `orientation`.
 """
 function palc_with_geometry(
     settings::TraceSettings{E},
     width::Integer,
     geometry::NamedTuple,
     orientation_check::Bool,
+    orientation::PlainOrientation{E},
 )::BifurcationKit.AbstractContinuationAlgorithm where {E <: Real}
     oriented = orientation_check && settings.bordered_solver == MatrixSolve
     own = (;
@@ -169,30 +198,11 @@ function palc_with_geometry(
         ),
         orientation_check = oriented,
         corrector = settings.palc_corrector,
-        orientation_dot = PlainOrientation(settings.geometry),
+        orientation_dot = orientation,
     )
     return BifurcationKit.PALC(; merge(own, settings.palc_options)...)
 end
 
-"""
-PALC's `orientation_dot`: the plain product `trace_dot` of two branch vectors `[w; ρ]` in `geometry`. Without the
-bordered determinant a new tangent takes the sign that keeps this product with the old one positive; the trace's
-Fisher weights, frozen at a saturated logit, would let `ρ` alone decide that sign past a fold and turn the trace back.
-"""
-struct PlainOrientation{E <: Real}
-    geometry::TraceGeometry{E}
-end
-
-function (orientation::PlainOrientation{E})(
-    left::AbstractVector{E},
-    right::AbstractVector{E},
-    # PALC passes the continuation parameter twice and θ; `trace_dot` reads `ρ` from the vectors.
-    ::Real,
-    ::Real,
-    ::Real,
-)::E where {E <: Real}
-    return trace_dot(left, right, orientation.geometry)
-end
 
 """
 BifurcationKit's continuation parameters for `settings`, from relative precision zero to one, with first step
