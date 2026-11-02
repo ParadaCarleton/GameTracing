@@ -41,30 +41,6 @@ function RedrawSlot(game::G, pending::Bool, step_length::E)::RedrawSlot{G, E} wh
 end
 
 """
-    swapped!(slot, redrawn)
-
-Whether `redrawn`, a `ShiftedGame` or `nothing`, swaps `slot`'s game: `nothing` and the current game do not. A swap
-sets `pending` and the factorization the restart reads. A game of another type, or with another target precision, is
-a caller error: the trace's relative precision would change meaning.
-"""
-swapped!(::RedrawSlot, ::Nothing)::Bool = false
-
-function swapped!(slot::RedrawSlot{G, E}, redrawn::ShiftedGame{G})::Bool where {G <: LogitGame, E <: Real}
-    if redrawn.game === slot.game
-        return false
-    end
-    if redrawn.game.target_precision != slot.game.target_precision
-        throw(ArgumentError(
-            "a redrawn game has target precision $(redrawn.game.target_precision), not the trace's $(slot.game.target_precision)",
-        ))
-    end
-    slot.game = redrawn.game
-    slot.pending = true
-    slot.factorization = redrawn.factorization
-    return true
-end
-
-"""
     restart_tangent(factorization, old_tangent, state_weight, orientation)
 
 The tangent of the swapped game's branch at the swap point that keeps the trace's direction: the solution of the
@@ -132,23 +108,36 @@ function (check::RootShift{E})(game::LogitGame)::ShiftedGame{typeof(game), E} wh
 end
 
 """
-    shifted_game(check, redrawn, current)
+    swapped!(slot, check, redrawn)
 
-What a `redraw` hook's result `redrawn` installs: `nothing` for `nothing` or the `current` game, the `ShiftedGame`
-`check` builds for a new game, or a `ShiftedGame` the hook returned, which must come from `check`.
+Whether a `redraw` hook's result `redrawn` swaps `slot`'s game: `nothing` and the current game do not; a new game
+swaps as the `ShiftedGame` that `check` (`RootShift`) builds for it, and a `ShiftedGame` the hook returned must come
+from `check`. A swap sets `pending` and the factorization the restart reads. A game of another type, or with another
+target precision, is a caller error: the trace's relative precision would change meaning.
 """
-shifted_game(::RootShift, ::Nothing, ::LogitGame)::Nothing = nothing
+swapped!(::RedrawSlot, ::RootShift, ::Nothing)::Bool = false
 
-function shifted_game(check::RootShift, redrawn::LogitGame, current::LogitGame)::Union{Nothing, ShiftedGame}
-    if redrawn === current
-        return nothing
+function swapped!(slot::RedrawSlot, check::RootShift, redrawn::LogitGame)::Bool
+    if redrawn === slot.game
+        return false
     end
-    return check(redrawn)
+    return swapped!(slot, check, check(redrawn))
 end
 
-function shifted_game(check::RootShift, redrawn::ShiftedGame, ::LogitGame)::ShiftedGame
+function swapped!(slot::RedrawSlot{G, E}, check::RootShift, redrawn::ShiftedGame{G})::Bool where {G <: LogitGame, E <: Real}
     if redrawn.point !== check.point
         throw(ArgumentError("a redraw hook returned a ShiftedGame built at another point than this one"))
     end
-    return redrawn
+    if redrawn.game === slot.game
+        return false
+    end
+    if redrawn.game.target_precision != slot.game.target_precision
+        throw(ArgumentError(
+            "a redrawn game has target precision $(redrawn.game.target_precision), not the trace's $(slot.game.target_precision)",
+        ))
+    end
+    slot.game = redrawn.game
+    slot.pending = true
+    slot.factorization = redrawn.factorization
+    return true
 end
