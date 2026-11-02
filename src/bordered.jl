@@ -78,14 +78,14 @@ function bordered_matrix!(
             "a $(size(bordered, 1))-row bordered matrix for a $width-slot Jacobian",
         ))
     end
-    copyto!(view(bordered, 1:width, 1:width), jacobian)
-    copyto!(view(bordered, 1:width, width + 1), dR)
+    copyto!(@view(bordered[1:width, 1:width]), jacobian)
+    copyto!(@view(bordered[1:width, width + 1]), dR)
     for (column, tangent) in pairs(dzu)
         bordered[width + 1, column] = adjoint(tangent * ξu)
     end
     bordered[width + 1, width + 1] = dzp * ξp
     if !isnothing(applyξu!)
-        applyξu!(view(bordered, width + 1, 1:width))
+        applyξu!(@view(bordered[width + 1, 1:width]))
     end
     return bordered
 end

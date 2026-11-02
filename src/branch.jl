@@ -151,8 +151,8 @@ function branch_system!(
     precision = precision_at(game, relative_precision)
     target = game.target_precision
     gain = view(residual, 1:width)
-    gain_slope = view(jacobian, 1:width, 1:width)
-    precision_column = view(jacobian, 1:width, width + 1)
+    gain_slope = @view jacobian[1:width, 1:width]
+    precision_column = @view jacobian[1:width, width + 1]
     run_pass!(game.pass!, pass_work, gain, gain_slope, precision_column, logits, precision)
     # `∂F/∂ρ` first: it reads `∂G/∂z`, which the next line overwrites.
     mul!(precision_column, gain_slope, gaps, -target, -target^2)
@@ -161,7 +161,7 @@ function branch_system!(
         gain_slope[diagonal, diagonal] += one(E)
     end
     gain .= gaps .- target .* gain
-    fill!(view(jacobian, width + 1, 1:width), zero(E))
+    fill!(@view(jacobian[width + 1, 1:width]), zero(E))
     jacobian[end, end] = one(E)
     residual[end] = relative_precision - pin
     return workspace

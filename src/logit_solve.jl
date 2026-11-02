@@ -175,7 +175,7 @@ function logit_solve_branch(
     )
     result = trace_endpoint(LogitGame(gains, E(maximum_precision)), width, settings; keep_going = recorder, context = (; maxregret))
     recorded = recorded_points(recorder)
-    logits = eachcol(view(recorder.logits, :, recorded))
+    logits = eachcol(@view recorder.logits[:, recorded])
     settled = !isempty(recorded) && max_regret(gains, last(logits)) <= recorder.tolerance
     if !settled && is_error(result)
         return Err(unwrap_error(result))
