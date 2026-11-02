@@ -485,37 +485,39 @@ function guarded_trace(
         similar(start),
         zero(E),
     )
-    ran = segment_branch(
-        trace_iterator(
+    return segment_outcome(
+        segment_branch(
+            trace_iterator(
+                finalise.slot.game,
+                start,
+                settings,
+                finalise,
+                corrector,
+                finalise.slot.step_length,
+                settings.max_steps - opening.steps,
+            ),
             finalise.slot.game,
-            start,
-            settings,
-            finalise,
-            corrector,
-            finalise.slot.step_length,
-            settings.max_steps - opening.steps,
+            old_tangent,
+            opening,
         ),
-        finalise.slot.game,
-        old_tangent,
-        opening,
+        corrector,
+        finalise,
     )
-    # `TraceFinalise` sets the slot's step at each accepted point, so it is read only after the segment ran.
-    return segment_outcome(ran, corrector, finalise.slot.step_length)
 end
 
 """
-`guarded_trace`'s outcome of a segment that `ran` (`segment_branch`) under `corrector`, whose last accepted point
-`TraceFinalise` reached by the step `accepted_step`.
+`guarded_trace`'s outcome of a segment that `ran` (`segment_branch`) under `corrector`, with the step of the last
+accepted point, which `finalise` sets in its slot at each one.
 """
 function segment_outcome(
     ran::NamedTuple,
     corrector::CorrectorReach{C, E},
-    accepted_step::Real,
+    finalise::TraceFinalise,
 )::NamedTuple where {C, E <: Real}
     return (;
         ran.progress,
         step_length = ifelse(isnothing(ran.exception), corrector.step_length, zero(E)),
-        accepted_step = E(accepted_step),
+        accepted_step = E(finalise.slot.step_length),
         exhausted = ifelse(
             isnothing(ran.exception) && noise_confirmed(corrector),
             corrector.noise.suspect,
