@@ -231,3 +231,20 @@ end
     @test first(modes).antisymmetric > 0 > last(modes).antisymmetric
     @test stuck_at_swap(PITCHFORK_SWAP)
 end
+
+"""A `redraw` hook that swaps in a fresh copy of `game` at every accepted point: an equal map, a new game each time."""
+struct EveryPointCopy{G}
+    game::G
+end
+
+function (hook::EveryPointCopy{G})(::AbstractVector, ::Real)::G where {G}
+    return deepcopy(hook.game)
+end
+
+@testset "a redraw at the last step the budget allows fails NoConvergence there, with no segment after it" begin
+    game = LogitGame(GAME, TARGET_PRECISION)
+    result = trace_endpoint(game, WIDTH, TraceSettings{Float32}(; max_steps = 3); redraw = EveryPointCopy(game))
+    @test is_error(result)
+    @test unwrap_error(result).cause == GameTracing.NoConvergence
+    @test unwrap_error(result).context.relative_precision < 1
+end
