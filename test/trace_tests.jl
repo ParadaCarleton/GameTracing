@@ -39,6 +39,9 @@ end
     )
     @test is_error(result)
     @test unwrap_error(result).cause in (GameTracing.NoConvergence, GameTracing.TraceStuck)
+    # The step of the last accepted point lies within the step bounds, or is zero when none was accepted.
+    (; steps, accepted_step) = unwrap_error(result).context
+    @test ifelse(steps > 0, 0 < accepted_step <= 0.01f0, iszero(accepted_step))
 end
 
 @testset "a refusing keep_going callback stops the trace" begin

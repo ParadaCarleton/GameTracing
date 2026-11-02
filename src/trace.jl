@@ -459,9 +459,10 @@ end
 """
     guarded_trace(start, old_tangent, settings, finalise, accept_corrected, opening)
 
-`(; progress, step_length, exhausted, logit_accuracy, exception)` of a PALC segment on `finalise.slot`'s game from
-`start = [w; ρ]`, the point of `opening` (the `TraceProgress` before it), for the steps `settings.max_steps` leaves:
-the progress after it (`branch_progress`), the step length its last corrector tried, the corrector's confirmed stall
+`(; progress, step_length, accepted_step, exhausted, logit_accuracy, exception)` of a PALC segment on `finalise.slot`'s
+game from `start = [w; ρ]`, the point of `opening` (the `TraceProgress` before it), for the steps `settings.max_steps`
+leaves: the progress after it (`branch_progress`), the step length its last corrector tried, the step of the last
+accepted point (the slot's, carried from an earlier segment when this one accepted none), the corrector's confirmed stall
 at rounding noise (or `nothing`), the largest last correction of an accepted point, and `nothing` for a segment that
 ran, else the third-party failure it ended on. From the flat start (`old_tangent` is `nothing`) the first tangent is
 BifurcationKit's secant; a restart after a redraw opens along `restart_tangent`, oriented by `old_tangent`.
@@ -484,33 +485,37 @@ function guarded_trace(
         similar(start),
         zero(E),
     )
-    return segment_outcome(
-        segment_branch(
-            trace_iterator(
-                finalise.slot.game,
-                start,
-                settings,
-                finalise,
-                corrector,
-                finalise.slot.step_length,
-                settings.max_steps - opening.steps,
-            ),
+    ran = segment_branch(
+        trace_iterator(
             finalise.slot.game,
-            old_tangent,
-            opening,
+            start,
+            settings,
+            finalise,
+            corrector,
+            finalise.slot.step_length,
+            settings.max_steps - opening.steps,
         ),
-        corrector,
+        finalise.slot.game,
+        old_tangent,
+        opening,
     )
+    # `TraceFinalise` sets the slot's step at each accepted point, so it is read only after the segment ran.
+    return segment_outcome(ran, corrector, finalise.slot.step_length)
 end
 
-"""`guarded_trace`'s outcome of a segment that `ran` (`segment_branch`) under `corrector`."""
+"""
+`guarded_trace`'s outcome of a segment that `ran` (`segment_branch`) under `corrector`, whose last accepted point
+`TraceFinalise` reached by the step `accepted_step`.
+"""
 function segment_outcome(
     ran::NamedTuple,
     corrector::CorrectorReach{C, E},
+    accepted_step::Real,
 )::NamedTuple where {C, E <: Real}
     return (;
         ran.progress,
         step_length = ifelse(isnothing(ran.exception), corrector.step_length, zero(E)),
+        accepted_step = E(accepted_step),
         exhausted = ifelse(
             isnothing(ran.exception) && noise_confirmed(corrector),
             corrector.noise.suspect,
@@ -761,8 +766,8 @@ const STOP_CAUSES = (;
     stopped_context(progress, outcome, target_precision, context)
 
 The context of a trace that stopped at `progress`'s last accepted point after `outcome`: `context`, the steps, the
-precision and its range, the logits, the step held, the tangent in logits, the `logit_accuracy` of its accepted points
-and the exception.
+precision and its range, the logits, the step held, the arclength step of the last accepted point (`accepted_step`,
+zero when no step was accepted), the tangent in logits, the `logit_accuracy` of its accepted points and the exception.
 """
 function stopped_context(
     progress::TraceProgress{E},
@@ -776,6 +781,7 @@ function stopped_context(
         progress.precision_min, progress.precision_max, progress.unmoved, progress.looped,
         logits = progress.relative_precision .* progress.gaps, progress.relative_precision,
         step_length = E(outcome.step_length),
+        accepted_step = ifelse(progress.steps > 0, E(outcome.accepted_step), zero(E)),
         logit_tangent = progress.relative_precision .* progress.gap_tangent .+
             progress.tangent_precision .* progress.gaps,
         progress.tangent_precision,
