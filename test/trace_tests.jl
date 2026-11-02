@@ -330,6 +330,7 @@ end
         zeros(Float32, WIDTH),
         1.0f0,
         false,
+        false,
     )
     degenerate = zeros(Float32, WIDTH + 1)
     thrown = GameTracing.segment_branch(iterator, game, degenerate, opening)
