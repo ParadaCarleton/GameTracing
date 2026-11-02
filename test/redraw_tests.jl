@@ -280,7 +280,7 @@ pass_calls(before::LogitGame, after::LogitGame)::Int = before.pass!.calls[1] + a
     homotopy = GameTracing.HomotopyMap(crossing_problem(before, point), crossing_problem(after, point), point)
     @test pass_calls(before, after) == 2
     field, jacobian, slope = GameTracing.HomotopyResidual(homotopy), GameTracing.HomotopyJacobian(homotopy), GameTracing.HomotopySlope(homotopy)
-    moved = point .+ Float32[0.1, -0.2, 0]
+    moved = point .+ Float32[0.1f0, -0.2f0, 0.0f0]
     # Each state's first call passes both games unless the passes already hold it; the next calls there pass none.
     for (state, new_passes) in ((point, 0), (moved, 2), (point, 2)), blend in (0.0f0, 0.3f0)
         calls = pass_calls(before, after)
