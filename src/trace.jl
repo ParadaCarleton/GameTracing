@@ -98,8 +98,8 @@ scaled_limit(limit::Real, scale::Real)::typeof(limit * scale) = limit * scale
 PALC's `step_control` for `control` over `width` gaps in `geometry`: `nothing` when it is off, else BifurcationKit's
 `CorrectorQuality`, its distance limit scaled from the gaps' Euclidean length into the norm. Its contraction rate,
 `corrector`'s limit and offset, slows growth only: `CorrectorReach` refuses on the rate in logits. A path that is not
-oriented has no turn test: a redraw crossing, whose tangent flips at a branch point, or a solver without the
-bordered determinant that BifurcationKit's turn of a `Bordered` tangent needs.
+oriented has no turn test: a solver without the bordered determinant that BifurcationKit's turn of a `Bordered`
+tangent needs.
 """
 corrector_quality(
     ::Nothing,
@@ -127,48 +127,42 @@ function corrector_quality(
 end
 
 """
-PALC's `orientation_dot`: the plain product `trace_dot` of two branch vectors `[w; ρ]` in `geometry`, plus
-`parameter_weight` times the product of their continuation parameters. Without the bordered determinant a new tangent
-takes the sign that keeps this product with the old one positive; the trace's Fisher weights, frozen at a saturated
-logit, would let `ρ` alone decide that sign past a fold and turn the trace back. A trace's parameter is `ρ`, already
-in the vectors, so its weight is 0. A redraw crossing pins `ρ` and moves the blend `s`, so its weight is 1: between
-maps that share the point's root its tangent moves only `s`, and an unweighted product, zero, would zero the tangent.
+PALC's `orientation_dot`: the plain product `trace_dot` of two branch vectors `[w; ρ]` in `geometry`; `ρ` is in
+the vectors, so the continuation parameters add nothing. Without the bordered determinant a new tangent takes the
+sign that keeps this product with the old one positive; the trace's Fisher weights, frozen at a saturated logit,
+would let `ρ` alone decide that sign past a fold and turn the trace back.
 """
 struct PlainOrientation{E <: Real}
     geometry::TraceGeometry{E}
-    parameter_weight::E
 end
 
 function (orientation::PlainOrientation{E})(
     left::AbstractVector{E},
     right::AbstractVector{E},
-    left_parameter::Real,
-    right_parameter::Real,
-    # PALC passes its state weight θ too.
+    # PALC passes the continuation parameters and its state weight θ too.
+    ::Real,
+    ::Real,
     ::Real,
 )::E where {E <: Real}
-    return trace_dot(left, right, orientation.geometry) + orientation.parameter_weight * left_parameter * right_parameter
+    return trace_dot(left, right, orientation.geometry)
 end
 
 """
 BifurcationKit's PALC for `settings` over a trace of `width` logits to precision `target_precision`, its tangent
 oriented by the bordered determinant where `orientation_check` holds (`settings.orientation_check` by default).
-A `homotopy` crossing's continuation parameter is its blend `s`, which its tangent's orientation weighs
-(`PlainOrientation`).
 """
 function palc_algorithm(
     settings::TraceSettings{E},
     width::Integer,
     target_precision::Real;
     orientation_check::Bool = settings.orientation_check,
-    homotopy::Bool = false,
 )::BifurcationKit.AbstractContinuationAlgorithm where {E <: Real}
     return palc_with_geometry(
         settings,
         width,
         palc_geometry(settings.geometry, width, target_precision),
         orientation_check,
-        PlainOrientation(settings.geometry, ifelse(homotopy, one(E), zero(E))),
+        PlainOrientation(settings.geometry),
     )
 end
 
@@ -375,11 +369,10 @@ halves the step. A trace that stops short fails with `NoConvergence` when it spe
 refusal); a non-finite start or a broken linear solve fails `NotFinite` or `Singular`. `context` rides on
 every failure.
 
-`redraw(logits, ρ)` runs at each accepted point that `keep_going` passes, and returns `nothing` or a new game of the
-same type and target precision. A new game replaces the map at that point: at fixed `ρ` the point is continued
-along the homotopy from the old game to the new (`redraw_crossing`), and the trace restarts at its end along the new
-branch's tangent, oriented by the old one, with the step it held. A crossing that folds, meets a singular point or
-stops short fails `TraceStuck` with `projected = true` and the crossing's `reason`.
+`redraw(logits, ρ)` runs at each accepted point short of `ρ = 1` that `keep_going` passes, and returns `nothing` or
+a new game of the same type and target precision. A new game replaces the map for the steps after that point: the
+trace restarts there along the new map's tangent, oriented by the old one, with the step it held, and its next
+corrector lands on the new map under the same step control. The endpoint, with no step after it, is never redrawn.
 """
 function trace_endpoint(
     game::LogitGame,
@@ -413,7 +406,7 @@ function trace_endpoint(
     finalise = TraceFinalise(
         keep_going,
         redraw,
-        RedrawSlot(game, game, false, settings.first_step),
+        RedrawSlot(game, false, settings.first_step),
     )
     return redrawn_trace(
         guarded_trace(traced_start, nothing, settings, finalise, accept_corrected, opening),
@@ -427,9 +420,9 @@ end
 """
     redrawn_trace(outcome, finalise, settings, accept_corrected, context)
 
-The `TraceResult` of a trace segment that ended with `outcome`. When `redraw` swapped the game there, the last
-accepted point (`outcome.progress`) crosses onto the new game (`redraw_crossing`) and the trace restarts from it, a new
-segment counted on from its steps; a crossing that fails ends the trace `TraceStuck` with `projected = true`.
+The `TraceResult` of a trace segment that ended with `outcome`. When `redraw` swapped the game there, the trace
+restarts on the new game from the last accepted point (`outcome.progress`), a root of the old game, as a new segment
+counted on from its steps.
 """
 function redrawn_trace(
     outcome::NamedTuple,
@@ -440,56 +433,22 @@ function redrawn_trace(
 )::TraceResult{E} where {E <: Real}
     (; progress) = outcome
     (; slot) = finalise
-    target_precision = slot.game.target_precision
-    # A pending swap is crossed first: the crossing takes no trace step, and skipping it would report a root of the
-    # old game.
     if !isnothing(outcome.exception) || !slot.pending
         return reached_state(progress, outcome, slot.game, settings, context)
     end
     slot.pending = false
-    crossing = redraw_crossing(
-        slot.before,
-        slot.game,
-        [progress.gaps; progress.relative_precision],
-        settings,
-    )
-    @debug "redraw crossed" _group = :trace reason = crossing.reason steps = crossing.steps
-    if crossing.reason != :crossed
-        @debug "trace stopped" _group = :trace reason = crossing.reason steps = crossing.steps
-        # The context's logits are the accepted point, a root of the game before the swap.
-        return Err(TraceFailure(
-            TraceStuck,
-            (; stopped_context(
-                progress,
-                outcome,
-                target_precision,
-                context,
-            )..., projected = true, crossing.reason),
-        ))
-    end
-    crossed = TraceProgress{E}(
-        payoff_gaps(crossing.point)[:],
-        progress.relative_precision,
-        progress.steps,
-        progress.precision_min,
-        progress.precision_max,
-        progress.gap_tangent,
-        progress.tangent_precision,
-        progress.unmoved,
-        progress.looped,
-    )
-    if crossed.relative_precision == one(E) || crossed.steps >= settings.max_steps
-        return reached_state(crossed, outcome, slot.game, settings, context)
+    if progress.steps >= settings.max_steps
+        return reached_state(progress, outcome, slot.game, settings, context)
     end
     return redrawn_trace(
         with_earlier_accuracy(
             guarded_trace(
-                crossing.point,
-                [crossed.gap_tangent; crossed.tangent_precision],
+                [progress.gaps; progress.relative_precision],
+                [progress.gap_tangent; progress.tangent_precision],
                 settings,
                 finalise,
                 accept_corrected,
-                crossed,
+                progress,
             ),
             outcome.logit_accuracy,
         ),

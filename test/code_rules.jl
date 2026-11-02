@@ -31,16 +31,12 @@ using Corset:
     where_return_sites
 
 # Corset classifies `Head{…}` by `Head` alone (`names_concrete_type`): a concrete struct head is concrete, whatever
-# the parameters. `TraceResult{E}` (an ErrorTypes `Result`) and `CrossingResult{E}` are generic in `E`, with no
+# the parameters. `TraceResult{E}` (an ErrorTypes `Result`) is generic in `E`, with no
 # abstract supertype to name instead; a rename would not change the head's kind.
 const GENERIC_RESULTS = (
     "trace.jl trace_endpoint",
     "trace.jl reached_state",
     "trace.jl redrawn_trace",
-    "crossing.jl homotopy_crossing",
-    "crossing.jl crossing_walk",
-    "crossing.jl crossing_steps",
-    "redraw.jl redraw_crossing",
     "logit_solve.jl gambit_settings",
     "logit_solve.jl lambda_profile",
     "logit_solve.jl logit_solve_lambda",
