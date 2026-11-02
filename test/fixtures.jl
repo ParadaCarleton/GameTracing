@@ -38,6 +38,15 @@ const FOLDED_GAMBIT_GAME = (
     [-503395 -5503689; -4888492 2357340;;; -1217139 -3504025; -3129362 207368] .// 10^6,
 )
 
+# Four players, two actions each (seed 0x2c06c04a5d81b3dc of the random-game testset, rounded to 1e-6). At precision
+# about 3.05, Gambit leaves its principal branch, ending at first choices (0.16, 0.36, 0.08, 0.14) (CI run 41370200196).
+const GAMBIT_LEAVES_GAME = (
+    [1951724 1176029; 1415337 2765348;;; 998115 1201523; 2814368 -7103004;;;; -1878885 1184060; 5947423 -6109252;;; 1673502 -1027796; -888519 2955579] .// 10^6,
+    [-2486602 566455; -2904504 -3764541;;; -5818249 30625; 2485436 618336;;;; 2033055 342635; -2769907 -1540549;;; -1633480 -2665809; 125757 659713] .// 10^6,
+    [-2096866 1302905; 999183 2776673;;; -569484 -3032630; -4382120 7834803;;;; 1660815 -9421362; 2953784 3122954;;; -1815115 4488691; 2488710 2540069] .// 10^6,
+    [-207281 1181961; 4483016 2010697;;; 295707 -1804204; 3555830 2867891;;;; 2785242 7372728; 2213823 994217;;; -3226846 3021391; 573187 5247358] .// 10^6,
+)
+
 # The battle of the sexes perturbed by about 1e-4. Near precision 0.808 its principal branch turns steeply (dλ/ds about
 # 0.0024) past the middle arm of the unfolded pitchfork, and ends near the pure equilibrium (1, 1).
 const UNFOLDED_PITCHFORK_GAME = ([30000726 -37; 757 20000821] .// 10^7, [19999477 -283; 919 29999523] .// 10^7)

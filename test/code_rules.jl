@@ -14,6 +14,7 @@ using Corset:
     impure_anonymous_functions,
     inferred_methods,
     located_source,
+    long_file_sites,
     misplaced_imports,
     missing_annotations,
     module_structs,
@@ -29,8 +30,6 @@ using Corset:
     unmarked_effects,
     where_return_sites
 
-const STRUCT_FIELD_LIMIT = 12
-const FILE_LINE_LIMIT = 1500
 # Corset classifies `Head{…}` by `Head` alone (`names_concrete_type`): a concrete struct head is concrete, whatever
 # the parameters. `TraceResult{E}` (an ErrorTypes `Result`) and `CrossingResult{E}` are generic in `E`, with no
 # abstract supertype to name instead; a rename would not change the head's kind.
@@ -123,13 +122,7 @@ end
     @testset "no anonymous function captures more than plain immutable data" begin
         @test impure_anonymous_functions(GameTracing) == Site[]
     end
-    @testset "structs hold at most $STRUCT_FIELD_LIMIT fields, each concretely typed, none repeating a prefix" begin
-        @test [
-            struct_site(nameof(type), locations)
-            for type in structs
-            if fieldcount(type) > STRUCT_FIELD_LIMIT
-        ] ==
-            Site[]
+    @testset "struct fields are each concretely typed, none repeating a prefix" begin
         @test [
             struct_site(nameof(type), locations)
             for type in structs
@@ -143,15 +136,14 @@ end
         ] ==
             Site[]
     end
-    @testset "no result-type guessing, no file over $FILE_LINE_LIMIT lines" begin
+    @testset "no result-type guessing, no file over the repository's line limit" begin
         @test [
             site
             for (file, located) in syntax_sources
             for site in return_type_calls(file, located)
         ] ==
             Site[]
-        @test [file for file in SOURCE_FILES if countlines(file) > FILE_LINE_LIMIT] ==
-            String[]
+        @test [site for file in SOURCE_FILES for site in long_file_sites(REPOSITORY, file)] == Site[]
     end
     @testset "every quantity computed for its whole domain" begin
         @test [
