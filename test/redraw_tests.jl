@@ -240,6 +240,59 @@ end
     @test failure.context.reason == :crossing
 end
 
+"""A game pass that counts its calls in `calls[1]` and otherwise is `pass`."""
+struct CountingPass{P}
+    pass::P
+    calls::Vector{Int}
+end
+
+function (pass::CountingPass)(
+    gain::AbstractVector,
+    gain_slope::AbstractMatrix,
+    gain_precision_slope::AbstractVector,
+    logits::AbstractVector,
+    precision::Real,
+)::Nothing
+    pass.calls[1] += 1
+    pass.pass(gain, gain_slope, gain_precision_slope, logits, precision)
+    return nothing
+end
+
+"""`game`'s branch residual and Jacobian at `state`, from a fresh evaluation."""
+function fresh_parts(game::LogitGame, state::AbstractVector{Float32})::NamedTuple
+    filled = GameTracing.branch_system!(GameTracing.BranchWorkspace(game, state), game, state, last(state))
+    return (; residual = copy(filled.residual), jacobian = copy(filled.jacobian))
+end
+
+"""BifurcationKit's problem for `game`'s branch at `point`, as `redraw_crossing` builds it."""
+function crossing_problem(game::LogitGame, point::AbstractVector{Float32})::GameTracing.BifurcationKit.AbstractBifurcationProblem
+    return GameTracing.branch_problem(game, point, last(point); record_from_solution = GameTracing.trace_record_point)
+end
+
+"""The calls both games' `CountingPass`es have made."""
+pass_calls(before::LogitGame, after::LogitGame)::Int = before.pass!.calls[1] + after.pass!.calls[1]
+
+@testset "a homotopy's residual, Jacobian and s-slope at one state share one pass of each game, and track a moved state" begin
+    swap = swap_point(NEAR_SWAP)
+    point = [swap.logits ./ swap.relative_precision; swap.relative_precision]
+    before = LogitGame(CountingPass(NEAR_SWAP.before, [0]), NEAR_SWAP.precision)
+    after = LogitGame(CountingPass(NEAR_SWAP.after, [0]), NEAR_SWAP.precision)
+    homotopy = GameTracing.HomotopyMap(crossing_problem(before, point), crossing_problem(after, point), point)
+    @test pass_calls(before, after) == 2
+    field, jacobian, slope = GameTracing.HomotopyResidual(homotopy), GameTracing.HomotopyJacobian(homotopy), GameTracing.HomotopySlope(homotopy)
+    moved = point .+ Float32[0.1, -0.2, 0]
+    # Each state's first call passes both games unless the passes already hold it; the next calls there pass none.
+    for (state, new_passes) in ((point, 0), (moved, 2), (point, 2)), blend in (0.0f0, 0.3f0)
+        calls = pass_calls(before, after)
+        start_parts = fresh_parts(LogitGame(NEAR_SWAP.before, NEAR_SWAP.precision), state)
+        end_parts = fresh_parts(LogitGame(NEAR_SWAP.after, NEAR_SWAP.precision), state)
+        @test field(state, blend) == (1 - blend) .* start_parts.residual .+ blend .* end_parts.residual
+        @test jacobian(state, blend) == (1 - blend) .* start_parts.jacobian .+ blend .* end_parts.jacobian
+        @test slope(state, blend) == end_parts.residual .- start_parts.residual
+        @test pass_calls(before, after) - calls == ifelse(iszero(blend), new_passes, 0)
+    end
+end
+
 @testset "a redraw crossing rethrows an exception it does not convert" begin
     swap = swap_point(NEAR_SWAP)
     point = [swap.logits ./ swap.relative_precision; swap.relative_precision]

@@ -3,24 +3,69 @@ using LinearAlgebra: det
 using Logging: @debug
 
 """
-    HomotopyMap(start_problem, end_problem)
+    HomotopyPasses(state, start_residual, end_residual, start_jacobian, end_jacobian)
+
+The vector fields `F₀`, `F₁` and Jacobians `J₀`, `J₁` of a homotopy's two problems at `state`, the last state any
+of them was asked for. Neither field depends on `s`, so the residual, `∂H/∂u` and `∂H/∂s` at one state share one
+fused evaluation of each problem (`homotopy_parts!`).
+"""
+struct HomotopyPasses{E <: Real}
+    state::Vector{E}
+    start_residual::Vector{E}
+    end_residual::Vector{E}
+    start_jacobian::Matrix{E}
+    end_jacobian::Matrix{E}
+end
+
+"""
+    HomotopyMap(start_problem, end_problem, passes)
 
 The convex homotopy `H(u, s) = (1 - s) F₀(u) + s F₁(u)` between two BifurcationKit problems' vector fields, each at
-its own parameters. `s` is the homotopy's continuation parameter; neither problem's own parameter moves.
+its own parameters, with the fields and Jacobians at the last state asked for (`HomotopyPasses`). `s` is the
+homotopy's continuation parameter; neither problem's own parameter moves.
 """
-struct HomotopyMap{A <: BifurcationKit.AbstractBifurcationProblem, B <: BifurcationKit.AbstractBifurcationProblem}
+struct HomotopyMap{A <: BifurcationKit.AbstractBifurcationProblem, B <: BifurcationKit.AbstractBifurcationProblem, P <: HomotopyPasses}
     start_problem::A
     end_problem::B
+    passes::P
 end
 
-"""`problem`'s vector field at `state`, at the problem's own parameters."""
-function own_residual(problem::BifurcationKit.AbstractBifurcationProblem, state::AbstractVector{E})::AbstractVector{E} where {E <: Real}
-    return BifurcationKit.residual(problem, state, BifurcationKit.getparams(problem))
+"""The `HomotopyMap` between `start_problem` and `end_problem`, its passes filled at `point`."""
+function HomotopyMap(
+    start_problem::BifurcationKit.AbstractBifurcationProblem,
+    end_problem::BifurcationKit.AbstractBifurcationProblem,
+    point::AbstractVector{E},
+)::HomotopyMap where {E <: Real}
+    start_residual, start_jacobian = own_parts(start_problem, point)
+    end_residual, end_jacobian = own_parts(end_problem, point)
+    return HomotopyMap(
+        start_problem,
+        end_problem,
+        HomotopyPasses(collect(point), collect(start_residual), collect(end_residual), collect(start_jacobian), collect(end_jacobian)),
+    )
 end
 
-"""`problem`'s Jacobian in the state at `state`, at the problem's own parameters."""
-function own_jacobian(problem::BifurcationKit.AbstractBifurcationProblem, state::AbstractVector{E})::AbstractMatrix{E} where {E <: Real}
-    return BifurcationKit.jacobian(problem, state, BifurcationKit.getparams(problem))
+"""`problem`'s vector field and Jacobian in the state at `state`, at the problem's own parameters, from one fused call."""
+function own_parts(problem::BifurcationKit.AbstractBifurcationProblem, state::AbstractVector{E})::Tuple{AbstractVector{E}, AbstractMatrix{E}} where {E <: Real}
+    return BifurcationKit.residual_and_jacobian(problem, state, BifurcationKit.getparams(problem))
+end
+
+"""
+`homotopy`'s `HomotopyPasses`, evaluated at `state` unless they already hold it. The problems' fused calls return their
+own workspaces, which the next call overwrites, so the passes keep copies.
+"""
+function homotopy_parts!(homotopy::HomotopyMap, state::AbstractVector{E})::HomotopyPasses{E} where {E <: Real}
+    passes = homotopy.passes
+    if passes.state != state
+        start_residual, start_jacobian = own_parts(homotopy.start_problem, state)
+        end_residual, end_jacobian = own_parts(homotopy.end_problem, state)
+        copyto!(passes.state, state)
+        copyto!(passes.start_residual, start_residual)
+        copyto!(passes.end_residual, end_residual)
+        copyto!(passes.start_jacobian, start_jacobian)
+        copyto!(passes.end_jacobian, end_jacobian)
+    end
+    return passes
 end
 
 """`H(u, s)` of a `HomotopyMap`, as BifurcationKit's vector field."""
@@ -29,8 +74,8 @@ struct HomotopyResidual{H <: HomotopyMap}
 end
 
 function (field::HomotopyResidual)(state::AbstractVector{E}, blend::Real)::AbstractVector{E} where {E <: Real}
-    (; start_problem, end_problem) = field.homotopy
-    return (1 - blend) .* own_residual(start_problem, state) .+ blend .* own_residual(end_problem, state)
+    passes = homotopy_parts!(field.homotopy, state)
+    return (1 - blend) .* passes.start_residual .+ blend .* passes.end_residual
 end
 
 """`∂H/∂u` of a `HomotopyMap`, as BifurcationKit's Jacobian."""
@@ -39,8 +84,8 @@ struct HomotopyJacobian{H <: HomotopyMap}
 end
 
 function (jacobian::HomotopyJacobian)(state::AbstractVector{E}, blend::Real)::AbstractMatrix{E} where {E <: Real}
-    (; start_problem, end_problem) = jacobian.homotopy
-    return (1 - blend) .* own_jacobian(start_problem, state) .+ blend .* own_jacobian(end_problem, state)
+    passes = homotopy_parts!(jacobian.homotopy, state)
+    return (1 - blend) .* passes.start_jacobian .+ blend .* passes.end_jacobian
 end
 
 """`∂H/∂s = F₁ - F₀` of a `HomotopyMap`, exactly, as BifurcationKit's jet `R01`."""
@@ -49,8 +94,8 @@ struct HomotopySlope{H <: HomotopyMap}
 end
 
 function (slope::HomotopySlope)(state::AbstractVector{E}, ::Real)::AbstractVector{E} where {E <: Real}
-    (; start_problem, end_problem) = slope.homotopy
-    return own_residual(end_problem, state) .- own_residual(start_problem, state)
+    passes = homotopy_parts!(slope.homotopy, state)
+    return passes.end_residual .- passes.start_residual
 end
 
 """
@@ -86,7 +131,7 @@ function homotopy_crossing(
     options::BifurcationKit.ContinuationPar;
     callback_newton::Any = BifurcationKit.cb_default,
 )::CrossingResult{E} where {E <: Real}
-    homotopy = HomotopyMap(start_problem, end_problem)
+    homotopy = HomotopyMap(start_problem, end_problem, point)
     # BifurcationKit's constructors are not inferable, so each is built in its own function and passed on unnamed.
     return crossing_walk(
         homotopy_iterable(homotopy_problem(homotopy, point), algorithm, options, callback_newton),
