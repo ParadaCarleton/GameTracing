@@ -128,7 +128,7 @@ end
         LogitGame(GAME, TARGET_PRECISION),
         start,
         0.0f0;
-        record_from_solution = GameTracing.trace_record_precision,
+        record_from_solution = GameTracing.trace_record_point,
     )
     iter = kit.ContIterable(
         problem,
