@@ -10,7 +10,7 @@ LogExpFunctions = "2ab3a3ac-af41-5b50-aa03-7779005ae688"
 Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
 
 [sources]
-Corset = {url = "https://github.com/ParadaCarleton/Corset.jl", rev = "e6ab42c93325fadefc401c1e9f79a39a85bdd901"}
+Corset = {url = "https://github.com/ParadaCarleton/Corset.jl", rev = "main"}
 BifurcationKit = {url = "https://github.com/ParadaCarleton/BifurcationKit.jl", rev = "irv"}
 
 [extras]
@@ -30,3 +30,20 @@ test = ["CondaPkg", "Corset", "ErrorTypes", "LogitNash", "Mooncake", "Printf", "
 
 [compat]
 julia = "1.11"
+
+# Rules the code-rules test leaves off have not been adopted yet.
+[preferences.Corset]
+directories = ["src", "test", "benchmark"]
+baseline = "test/code_baseline.toml"
+pedantic = true
+entry_points = "test/entry_points.jl:package_signatures"
+
+[preferences.Corset.levels]
+c-type = "allow"
+float-widening = "allow"
+jscpd = "allow"
+non-public-access = "allow"
+ref = "allow"
+runtime-dispatch = "allow"
+unmarked-mutation = "allow"
+widened-return = "allow"

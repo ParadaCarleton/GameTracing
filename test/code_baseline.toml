@@ -1,0 +1,15 @@
+# `TraceResult{E}` (an ErrorTypes `Result`) and `CrossingResult{E}` are generic in `E` with no abstract supertype to name.
+# Corset classifies `Head{…}` by its concrete head alone, so these results stay allowed.
+[concrete-return]
+"trace.jl trace_endpoint" = "generic Result"
+"trace.jl reached_state" = "generic Result"
+"trace.jl redrawn_trace" = "generic Result"
+"crossing.jl homotopy_crossing" = "generic Result"
+"crossing.jl crossing_walk" = "generic Result"
+"crossing.jl crossing_steps" = "generic Result"
+"redraw.jl redraw_crossing" = "generic Result"
+"logit_solve.jl gambit_settings" = "generic Result"
+"logit_solve.jl lambda_profile" = "generic Result"
+"logit_solve.jl logit_solve_lambda" = "generic Result"
+"logit_solve.jl logit_solve_branch" = "generic Result"
+"logit_solve.jl logit_solve" = "generic Result"
