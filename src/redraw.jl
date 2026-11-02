@@ -1,7 +1,7 @@
 """A `redraw` hook that never swaps the game."""
 struct NoRedraw end
 
-(::NoRedraw)(::AbstractVector, ::Real)::Nothing = nothing
+(::NoRedraw)(::AbstractVector, ::Real, ::Any)::Nothing = nothing
 
 """
     RedrawSlot(game, pending, step_length)
@@ -73,3 +73,59 @@ function restart_tangent(
     )) .*
         tangent
 end
+
+"""
+    root_shift(game, point, border)
+
+The first-order move of the root at `point = [w; ρ]` when the map becomes `game`: the solution `δ` of
+`[∂F/∂x; borderᵀ] δ = [-F(point); 0]` over `game`'s rows, one Newton step of the bordered corrector from `point`.
+The old map's residual at an accepted point is within the corrector's tolerance, so `-F(point)` stands for
+`F_old(point) - F_new(point)` at one map evaluation.
+"""
+function root_shift(
+    game::LogitGame,
+    point::AbstractVector{E},
+    border::AbstractVector{E},
+)::AbstractVector{E} where {E <: Real}
+    width = length(point) - 1
+    system = branch_system!(BranchWorkspace(game, point), game, point, last(point))
+    bordered = [@view(system.jacobian[1:width, :]); transpose(border)]
+    return bordered \ [.-system.residual[1:width]; zero(E)]
+end
+
+"""
+    RootShift(point, step, border, limit)
+
+The check a `redraw` hook receives at the accepted point `point = [w; ρ]`: called on a candidate game, whether that
+game's `root_shift` from `point` (under the corrector's `border`) moves no logit further than `limit`, a share of the
+corrector's reach on the next step, the predictor `step` (`CorrectorSettings`). `limit` is `nothing` when the reach
+is off, and every game passes.
+"""
+struct RootShift{E <: Real, L <: Union{Nothing, E}}
+    point::Vector{E}
+    step::Vector{E}
+    border::Vector{E}
+    limit::L
+end
+
+function RootShift(
+    point::AbstractVector{E},
+    step::AbstractVector{E},
+    border::AbstractVector{E},
+    settings::CorrectorSettings{E},
+)::RootShift{E} where {E <: Real}
+    move = logit_change(point, point .+ step)
+    return RootShift(
+        collect(point),
+        collect(step),
+        collect(border),
+        scaled_limit(scaled_limit(settings.reach, move), settings.shift_share),
+    )
+end
+
+"""The largest logit move of `game`'s `root_shift` from `check`'s point."""
+function shift_move(check::RootShift{E}, game::LogitGame)::E where {E <: Real}
+    return logit_change(check.point, check.point .+ root_shift(game, check.point, check.border))
+end
+
+(check::RootShift)(game::LogitGame)::Bool = within_limit(check.limit, shift_move(check, game))

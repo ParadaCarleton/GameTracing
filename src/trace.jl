@@ -369,8 +369,9 @@ halves the step. A trace that stops short fails with `NoConvergence` when it spe
 refusal); a non-finite start or a broken linear solve fails `NotFinite` or `Singular`. `context` rides on
 every failure.
 
-`redraw(logits, ρ)` runs at each accepted point short of `ρ = 1` that `keep_going` passes, and returns `nothing` or
-a new game of the same type and target precision. A new game replaces the map for the steps after that point: the
+`redraw(logits, ρ, shift)` runs at each accepted point short of `ρ = 1` that `keep_going` passes, and returns
+`nothing` or a new game of the same type and target precision. `shift(game)` (`RootShift`) tells whether a candidate
+game's root lies within the corrector's reach, so a caller can refine a draw that does not before it returns. A new game replaces the map for the steps after that point: the
 trace restarts there along the new map's tangent, oriented by the old one, with the step it held, and its next
 corrector lands on the new map under the same step control. The endpoint, with no step after it, is never redrawn.
 """
@@ -407,6 +408,7 @@ function trace_endpoint(
         keep_going,
         redraw,
         RedrawSlot(game, false, settings.first_step),
+        settings.corrector,
     )
     return redrawn_trace(
         guarded_trace(traced_start, nothing, settings, finalise, accept_corrected, opening),

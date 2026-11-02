@@ -471,7 +471,7 @@ struct SwapAt{G, E <: Real}
     swap_level::E
 end
 
-function (hook::SwapAt{G})(::AbstractVector, relative_precision::Real)::Union{Nothing, G} where {G}
+function (hook::SwapAt{G})(::AbstractVector, relative_precision::Real, ::Any)::Union{Nothing, G} where {G}
     if relative_precision >= hook.swap_level
         return hook.game
     end
