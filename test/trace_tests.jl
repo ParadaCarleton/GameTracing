@@ -39,6 +39,9 @@ end
     )
     @test is_error(result)
     @test unwrap_error(result).cause in (GameTracing.NoConvergence, GameTracing.TraceStuck)
+    # The step of the last accepted point lies within the step bounds, or is zero when none was accepted.
+    (; steps, accepted_step) = unwrap_error(result).context
+    @test ifelse(steps > 0, 0 < accepted_step <= 0.01f0, iszero(accepted_step))
 end
 
 @testset "a refusing keep_going callback stops the trace" begin
@@ -351,4 +354,11 @@ end
     catch exception
         GameTracing.thrown_failure(exception)
     end
+end
+
+@testset "the turn test is on by default, on oriented paths only ($element)" for element in (Float32, widen(Float32))
+    corrector, geometry = GameTracing.CorrectorSettings{element}(), GameTracing.TraceGeometry{element}()
+    @test GameTracing.corrector_quality(StepControl{element}(), corrector, geometry, WIDTH, true).max_turn == one(element)
+    @test isnothing(GameTracing.corrector_quality(StepControl{element}(), corrector, geometry, WIDTH, false).max_turn)
+    @test isnothing(GameTracing.corrector_quality(StepControl{element}(turn_limit = nothing), corrector, geometry, WIDTH, true).max_turn)
 end

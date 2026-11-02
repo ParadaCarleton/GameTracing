@@ -1,15 +1,19 @@
 using BifurcationKit: BifurcationKit
 using ErrorTypes: Err, Ok
 """
-    StepControl{E}(; distance_limit, growth_limit)
+    StepControl{E}(; distance_limit, growth_limit, turn_limit)
 
 BifurcationKit's `CorrectorQuality` thresholds, which shrink a step whose corrector looks poor. `distance_limit` is the
 Euclidean length of a Newton step's logit part (Gambit's 0.4 in log probabilities); `growth_limit` bounds a step's
-growth (Gambit's `max_accel` 1.1), and the step then shrinks as the distance or contraction nears its limit. The corrector's contraction rate (`CorrectorSettings`) also slows growth. `nothing` switches a threshold off.
+growth (Gambit's `max_accel` 1.1), and the step then shrinks as the distance or contraction nears its limit.
+`turn_limit` refuses a step whose tangent turns this many radians from the last one, Allgower and Georg's
+test (6.1.10) for a step across a fold onto another branch; 1 is under Gambit's quarter turn (`t·newT < 0`, path.cc).
+The corrector's contraction rate (`CorrectorSettings`) also slows growth. `nothing` switches a threshold off.
 """
 Base.@kwdef struct StepControl{E <: Real}
     distance_limit::Union{Nothing, E} = 0.4f0
     growth_limit::Union{Nothing, E} = 1.1f0
+    turn_limit::Union{Nothing, E} = 1.0f0
 end
 
 """
@@ -66,13 +70,16 @@ scaled_limit(limit::Real, scale::Real)::typeof(limit * scale) = limit * scale
 """
 PALC's `step_control` for `control` over `width` gaps in `geometry`: `nothing` when it is off, else BifurcationKit's
 `CorrectorQuality`, its distance limit scaled from the gaps' Euclidean length into the norm. Its contraction rate,
-`corrector`'s limit and offset, slows growth only: `CorrectorReach` refuses on the rate in logits.
+`corrector`'s limit and offset, slows growth only: `CorrectorReach` refuses on the rate in logits. A path that is not
+oriented has no turn test: a redraw crossing, whose tangent flips at a branch point, or a solver without the
+bordered determinant that BifurcationKit's turn of a `Bordered` tangent needs.
 """
 corrector_quality(
     ::Nothing,
     ::CorrectorSettings,
     ::TraceGeometry,
     ::Integer,
+    ::Bool,
 )::Nothing = nothing
 
 function corrector_quality(
@@ -80,13 +87,14 @@ function corrector_quality(
     corrector::CorrectorSettings{E},
     geometry::TraceGeometry{E},
     width::Integer,
+    oriented::Bool,
 )::BifurcationKit.CorrectorQuality{E} where {E <: Real}
     return BifurcationKit.CorrectorQuality{E}(
         scaled_limit(control.distance_limit, sqrt(coordinate_weight(geometry, width))),
         scaled_limit(corrector.contraction_limit, one(E)),
         scaled_limit(control.growth_limit, one(E)),
         corrector.contraction_offset,
-        nothing,
+        scaled_limit(ifelse(oriented, control.turn_limit, nothing), one(E)),
         false,
     )
 end
@@ -119,6 +127,7 @@ function palc_with_geometry(
     geometry::NamedTuple,
     orientation_check::Bool,
 )::BifurcationKit.AbstractContinuationAlgorithm where {E <: Real}
+    oriented = orientation_check && settings.bordered_solver == MatrixSolve
     return BifurcationKit.PALC(;
         tangent = settings.tangent,
         θ = geometry.palc_state_weight,
@@ -129,8 +138,9 @@ function palc_with_geometry(
             settings.corrector,
             settings.geometry,
             width,
+            oriented,
         ),
-        orientation_check = orientation_check && settings.bordered_solver == MatrixSolve,
+        orientation_check = oriented,
         corrector = BifurcationKit.FreeParameterNewton(),
         orientation_dot = PlainOrientation(settings.geometry),
     )
@@ -459,9 +469,10 @@ end
 """
     guarded_trace(start, old_tangent, settings, finalise, accept_corrected, opening)
 
-`(; progress, step_length, exhausted, logit_accuracy, exception)` of a PALC segment on `finalise.slot`'s game from
-`start = [w; ρ]`, the point of `opening` (the `TraceProgress` before it), for the steps `settings.max_steps` leaves:
-the progress after it (`branch_progress`), the step length its last corrector tried, the corrector's confirmed stall
+`(; progress, step_length, accepted_step, exhausted, logit_accuracy, exception)` of a PALC segment on `finalise.slot`'s
+game from `start = [w; ρ]`, the point of `opening` (the `TraceProgress` before it), for the steps `settings.max_steps`
+leaves: the progress after it (`branch_progress`), the step length its last corrector tried, the step of the last
+accepted point (the slot's, carried from an earlier segment when this one accepted none), the corrector's confirmed stall
 at rounding noise (or `nothing`), the largest last correction of an accepted point, and `nothing` for a segment that
 ran, else the third-party failure it ended on. From the flat start (`old_tangent` is `nothing`) the first tangent is
 BifurcationKit's secant; a restart after a redraw opens along `restart_tangent`, oriented by `old_tangent`.
@@ -500,17 +511,23 @@ function guarded_trace(
             opening,
         ),
         corrector,
+        finalise,
     )
 end
 
-"""`guarded_trace`'s outcome of a segment that `ran` (`segment_branch`) under `corrector`."""
+"""
+`guarded_trace`'s outcome of a segment that `ran` (`segment_branch`) under `corrector`, with the step of the last
+accepted point, which `finalise` sets in its slot at each one.
+"""
 function segment_outcome(
     ran::NamedTuple,
     corrector::CorrectorReach{C, E},
+    finalise::TraceFinalise,
 )::NamedTuple where {C, E <: Real}
     return (;
         ran.progress,
         step_length = ifelse(isnothing(ran.exception), corrector.step_length, zero(E)),
+        accepted_step = E(finalise.slot.step_length),
         exhausted = ifelse(
             isnothing(ran.exception) && noise_confirmed(corrector),
             corrector.noise.suspect,
@@ -761,8 +778,8 @@ const STOP_CAUSES = (;
     stopped_context(progress, outcome, target_precision, context)
 
 The context of a trace that stopped at `progress`'s last accepted point after `outcome`: `context`, the steps, the
-precision and its range, the logits, the step held, the tangent in logits, the `logit_accuracy` of its accepted points
-and the exception.
+precision and its range, the logits, the step held, the arclength step of the last accepted point (`accepted_step`,
+zero when no step was accepted), the tangent in logits, the `logit_accuracy` of its accepted points and the exception.
 """
 function stopped_context(
     progress::TraceProgress{E},
@@ -776,6 +793,7 @@ function stopped_context(
         progress.precision_min, progress.precision_max, progress.unmoved, progress.looped,
         logits = progress.relative_precision .* progress.gaps, progress.relative_precision,
         step_length = E(outcome.step_length),
+        accepted_step = ifelse(progress.steps > 0, E(outcome.accepted_step), zero(E)),
         logit_tangent = progress.relative_precision .* progress.gap_tangent .+
             progress.tangent_precision .* progress.gaps,
         progress.tangent_precision,

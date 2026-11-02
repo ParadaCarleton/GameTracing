@@ -127,18 +127,17 @@ end
     end
 end
 
-@testset "past an exact pitchfork the trace ends at an equilibrium or fails as Singular or PrecisionExhausted" begin
+@testset "past an exact pitchfork the trace ends at an equilibrium or fails as Singular, PrecisionExhausted or a stall" begin
     for name in PITCHFORK_GAMES, tangent in (BifurcationKit.Bordered(), BifurcationKit.Secant())
         pass = NormalFormPass(map(table -> Float32.(table), LOGITNASH_GAMES[name]))
         result = trace_endpoint(LogitGame(pass, 4.0f0), length(pass.payoffs), TraceSettings{Float32}(; tangent))
         # The cause depends on whether rounding breaks the symmetry: an exact branch point factors singular, while one
-        # that rounding unfolds by about eps (battle_of_the_sexes, rcond ≥ 1e-5) is near-singular and exhausts.
+        # that rounding unfolds by about eps (battle_of_the_sexes, rcond ≥ 1e-5) is near-singular and exhausts. A step
+        # the turn test refuses at the branch point halves to dsmin, and the unmoved point stops the trace (run 41375663203).
         if is_error(result)
             failure = unwrap_error(result)
-            @test failure.cause in (GameTracing.Singular, GameTracing.PrecisionExhausted)
-            if !(failure.cause in (GameTracing.Singular, GameTracing.PrecisionExhausted))
-                @info "PROBE pitchfork stop" name tangent failure.cause failure.context
-            end
+            @test failure.cause in (GameTracing.Singular, GameTracing.PrecisionExhausted) ||
+                (failure.cause == GameTracing.TraceStuck && failure.context.unmoved)
             # A trace that broke at its start never reached the pitchfork.
             @test failure.context.relative_precision > 0
         else
@@ -205,6 +204,15 @@ end
         @test agreeing(first_choices(unwrap(result).logits), gambit_branch(OVERSHOT_GAME, precision).first_choices)
         @test settled_endpoint(OVERSHOT_GAME, unwrap(result).logits, precision, settings)
     end
+end
+
+@testset "where Gambit's default steps leave the branch, the trace meets Gambit at fine steps" begin
+    # The oracle is Gambit at a 1e-3 first step that never grows; its default steps end elsewhere (`GAMBIT_LEAVES_GAME`).
+    oracle = gambit_branch(GAMBIT_LEAVES_GAME, 3.0f0; first_step = 1 // 1000, max_accel = 1)
+    traced = traced_result(GAMBIT_LEAVES_GAME, oracle.precision, TraceSettings{Float32}())
+    @test !is_error(traced)
+    @test agreeing(first_choices(unwrap(traced).logits), oracle.first_choices)
+    @test settled_endpoint(GAMBIT_LEAVES_GAME, unwrap(traced).logits, oracle.precision, TraceSettings{Float32}())
 end
 
 @testset "random games with two actions each: the trace follows the principal branch" begin
