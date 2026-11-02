@@ -128,7 +128,7 @@ end
         LogitGame(GAME, TARGET_PRECISION),
         start,
         0.0f0;
-        record_from_solution = GameTracing.trace_record_point,
+        record_from_solution = GameTracing.trace_record_precision,
     )
     iter = kit.ContIterable(
         problem,
@@ -144,29 +144,55 @@ end
     state, _ = iterate(iter)
     ours = GameTracing.matrix_bls(WIDTH + 1, Float32)
     rng = Xoshiro(rand(RandomDevice(), UInt))
+    rhsu = zeros(Float32, WIDTH + 1)
     for _ in 1:50
         jacobian = randn(rng, Float32, WIDTH + 1, WIDTH + 1)
         slope = randn(rng, Float32, WIDTH + 1)
-        @test kit.bordered_determinant_sign(ours, iter, state, jacobian, slope) ==
-            kit.bordered_determinant_sign(kit.MatrixBLS(), iter, state, jacobian, slope)
-    end
-    dependent_slope = Float32[1, 2, 0]
-    for degenerate in (Float32[1 2 0; 2 4 0; 0 0 1], Float32[NaN32 2 0; 2 4 0; 0 0 1])
-        @test kit.bordered_determinant_sign(
+        tangent, corner, orientation = kit.bordered_tangent_and_sign(
             ours,
             iter,
             state,
-            degenerate,
-            dependent_slope,
-        ) ==
-            kit.bordered_determinant_sign(
-                kit.MatrixBLS(),
-                iter,
-                state,
-                degenerate,
-                dependent_slope,
-            )
+            jacobian,
+            slope,
+            rhsu,
+            1.0f0,
+        )
+        reference_tangent,
+            reference_corner,
+            reference_orientation = kit.bordered_tangent_and_sign(
+            kit.MatrixBLS(),
+            iter,
+            state,
+            jacobian,
+            slope,
+            rhsu,
+            1.0f0,
+        )
+        @test orientation == reference_orientation
+        @test tangent ≈ reference_tangent rtol = 1.0f-3
+        @test corner ≈ reference_corner rtol = 1.0f-3
     end
+    singular = Float32[1 2 0; 2 4 0; 0 0 1]
+    dependent_slope = Float32[1, 2, 0]
+    @test last(kit.bordered_tangent_and_sign(
+        ours,
+        iter,
+        state,
+        singular,
+        dependent_slope,
+        Float32[0, 0, 0],
+        1.0f0,
+    )) ==
+        0
+    @test_throws SingularException kit.bordered_tangent_and_sign(
+        kit.MatrixBLS(),
+        iter,
+        state,
+        singular,
+        dependent_slope,
+        Float32[0, 0, 0],
+        1.0f0,
+    )
 end
 
 @testset "bordered_matrix! lays out the Jacobian, border column, scaled border row and corner" begin
