@@ -120,7 +120,7 @@ end
     end
 end
 
-@testset "the in-place determinant sign agrees with MatrixBLS's, on singular and non-finite matrices too" begin
+@testset "the in-place tangent and determinant sign match MatrixBLS's; a singular matrix gives sign zero where MatrixBLS throws" begin
     kit = GameTracing.BifurcationKit
     settings = TraceSettings{Float32}()
     start = zeros(Float32, WIDTH + 1)
@@ -148,49 +148,20 @@ end
     for _ in 1:50
         jacobian = randn(rng, Float32, WIDTH + 1, WIDTH + 1)
         slope = randn(rng, Float32, WIDTH + 1)
-        tangent, corner, orientation = kit.bordered_tangent_and_sign(
-            ours,
-            iter,
-            state,
-            jacobian,
-            slope,
-            rhsu,
-            1.0f0,
-        )
-        reference_tangent,
-            reference_corner,
-            reference_orientation = kit.bordered_tangent_and_sign(
-            kit.MatrixBLS(),
-            iter,
-            state,
-            jacobian,
-            slope,
-            rhsu,
-            1.0f0,
-        )
-        @test orientation == reference_orientation
-        @test tangent ≈ reference_tangent rtol = 1.0f-3
-        @test corner ≈ reference_corner rtol = 1.0f-3
+        # Both factor the same bordered matrix with LAPACK `getrf` and solve with `getrs`.
+        @test collect.(kit.bordered_tangent_and_sign(ours, iter, state, jacobian, slope, rhsu, 1.0f0)) ==
+            collect.(kit.bordered_tangent_and_sign(kit.MatrixBLS(), iter, state, jacobian, slope, rhsu, 1.0f0))
     end
     singular = Float32[1 2 0; 2 4 0; 0 0 1]
     dependent_slope = Float32[1, 2, 0]
-    @test last(kit.bordered_tangent_and_sign(
-        ours,
-        iter,
-        state,
-        singular,
-        dependent_slope,
-        Float32[0, 0, 0],
-        1.0f0,
-    )) ==
-        0
+    @test iszero(last(kit.bordered_tangent_and_sign(ours, iter, state, singular, dependent_slope, rhsu, 1.0f0)))
     @test_throws SingularException kit.bordered_tangent_and_sign(
         kit.MatrixBLS(),
         iter,
         state,
         singular,
         dependent_slope,
-        Float32[0, 0, 0],
+        rhsu,
         1.0f0,
     )
 end
