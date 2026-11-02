@@ -2,8 +2,9 @@
 
 using GameTracing
 
-include("games.jl")
-include("fixtures.jl")
+# Corset includes this file in a bare `Module`, which binds no `include` of its own.
+Base.include(@__MODULE__, "games.jl")
+Base.include(@__MODULE__, "fixtures.jl")
 
 """The signatures of `GameTracing`'s solver entry points."""
 function package_signatures()::Vector{Type}

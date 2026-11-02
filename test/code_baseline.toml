@@ -1,15 +1,53 @@
-# `TraceResult{E}` (an ErrorTypes `Result`) and `CrossingResult{E}` are generic in `E` with no abstract supertype to name.
-# Corset classifies `Head{…}` by its concrete head alone, so these results stay allowed.
 [concrete-return]
-"trace.jl trace_endpoint" = "generic Result"
-"trace.jl reached_state" = "generic Result"
-"trace.jl redrawn_trace" = "generic Result"
-"crossing.jl homotopy_crossing" = "generic Result"
-"crossing.jl crossing_walk" = "generic Result"
-"crossing.jl crossing_steps" = "generic Result"
-"redraw.jl redraw_crossing" = "generic Result"
-"logit_solve.jl gambit_settings" = "generic Result"
-"logit_solve.jl lambda_profile" = "generic Result"
-"logit_solve.jl logit_solve_lambda" = "generic Result"
-"logit_solve.jl logit_solve_branch" = "generic Result"
-"logit_solve.jl logit_solve" = "generic Result"
+# `CrossingResult{E}` is generic in `E` with no abstract supertype to name; Corset classifies `Head{…}` by its head alone.
+"src/crossing.jl crossing_steps" = "generic Result"
+# Test helpers, checked by the syntax rules since Corset reads one directory list for every rule.
+"test/arms.jl arm_variants" = 1
+"test/games.jl fresh_rng" = 1
+"test/entry_points.jl package_signatures" = 1
+"test/failure_tests.jl first_loop" = 1
+"test/gambit.jl gambit_branch_lambdas" = 1
+"test/games.jl picard_equilibrium" = 1
+"test/games.jl action_sign" = 1
+"test/games.jl reference_tangent" = 1
+"test/games.jl single_precision" = 1
+"test/games.jl table::RandomTable" = 1
+"test/games.jl jitter::PayoffJitter" = 1
+"test/logitnash_tests.jl first_choices" = 1
+"test/opening_tests.jl solve_verdicts" = 1
+"test/redraw_tests.jl swapped_trace" = 1
+"test/redraw_tests.jl trace::LoggedTrace" = 1
+"test/redraw_tests.jl pass_calls" = 1
+
+[mutable-struct]
+"CorrectorReach" = 1
+"RedrawSlot" = 1
+
+[nothing-return]
+"test/bordered_tests.jl solve_exception" = 1
+"test/failure_tests.jl first_loop" = 1
+"test/games.jl hook::SwapAt{G}" = 1
+
+[annotation]
+"test/games.jl residual_norm" = 1
+"test/projection_tests.jl sigmoid" = 1
+"test/trace_tests.jl refuse_all" = 1
+
+[repeated-statement]
+"test/geometry_tests.jl a converged corrector past the KL or reach limit is refused, in the default geometry: @test" = 1
+"test/opening_tests.jl a correction that fails to contract halves the step unless it outgrows the predictor; two such are noise: @test" = 2
+
+# The arm benchmark's run: its module holds the test helpers it includes, so the module rules read them too.
+[repeated-prefix]
+"SwapCase" = 1
+"SwapAt" = 1
+
+[abstract-local]
+"benchmark/arms.jl handle_message" = "the logger's keywords arrive as Base.Pairs{Symbol, Any}"
+"test/games.jl random_swap" = 3
+
+[impure-anonymous-function]
+"test/games.jl NormalFormPass" = 3
+
+[unstable-anonymous-function]
+"test/games.jl NormalFormPass" = 1

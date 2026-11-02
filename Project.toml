@@ -10,7 +10,7 @@ LogExpFunctions = "2ab3a3ac-af41-5b50-aa03-7779005ae688"
 Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
 
 [sources]
-Corset = {url = "https://github.com/ParadaCarleton/Corset.jl", rev = "main"}
+Corset = {url = "https://github.com/ParadaCarleton/Corset.jl", rev = "f88efde1033aedcf6c9bd5624e4cabeb0c58126d"}
 BifurcationKit = {url = "https://github.com/ParadaCarleton/BifurcationKit.jl", rev = "irv"}
 
 [extras]
