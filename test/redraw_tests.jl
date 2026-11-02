@@ -148,7 +148,7 @@ end
 @testset "a corrector at rounding noise fails PrecisionExhausted at its precision, before the target" begin
     game = LogitGame(GAME, TARGET_PRECISION)
     traced = unwrap(trace_endpoint(game, WIDTH, REDRAW_SETTINGS))
-    progress = GameTracing.TraceProgress(copy(traced.logits), 0.5f0, 3, 0.0f0, 0.5f0, zeros(Float32, WIDTH), 0.0f0, false)
+    progress = GameTracing.TraceProgress(copy(traced.logits), 0.5f0, 3, 0.0f0, 0.5f0, zeros(Float32, WIDTH), 0.0f0, false, false)
     exhausted = (; relative_precision = 0.5f0, correction = 2.0f-3)
     outcome = (; step_length = 0.1f0, exhausted, logit_accuracy = 3.0f-5, exception = nothing)
     failure = unwrap_error(GameTracing.reached_state(progress, outcome, game, REDRAW_SETTINGS, (;)))
@@ -156,7 +156,7 @@ end
     @test failure.context.lambda == TARGET_PRECISION * exhausted.relative_precision
     @test failure.context.correction == exhausted.correction
     @test failure.context.logit_accuracy == outcome.logit_accuracy
-    reached = GameTracing.TraceProgress(copy(traced.logits), 1.0f0, 3, 0.0f0, 1.0f0, zeros(Float32, WIDTH), 0.0f0, false)
+    reached = GameTracing.TraceProgress(copy(traced.logits), 1.0f0, 3, 0.0f0, 1.0f0, zeros(Float32, WIDTH), 0.0f0, false, false)
     endpoint = unwrap(GameTracing.reached_state(reached, (; outcome..., exhausted = nothing), game, REDRAW_SETTINGS, (;)))
     @test endpoint.steps == 3
     @test endpoint.logit_accuracy == outcome.logit_accuracy

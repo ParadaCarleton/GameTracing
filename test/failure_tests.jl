@@ -152,6 +152,7 @@ end
         zeros(Float32, 2),
         0.0f0,
         false,
+        false,
     )
     result = GameTracing.reached_state(
         progress,
@@ -218,6 +219,7 @@ end
         zeros(Float32, 2),
         0.0f0,
         false,
+        false,
     )
     @test GameTracing.branch_progress([start], opening) === opening
     progress = GameTracing.branch_progress([start, moved], opening)
@@ -257,4 +259,69 @@ end
         (;),
     )).cause ==
         GameTracing.NoConvergence
+end
+
+"""A branch record at `angle` on the unit circle in the (gap, param) plane, tangent along the circle if `turning`."""
+function circle_record(angle::E, step::Integer, turning::Bool)::NamedTuple where {E <: Real}
+    tangent_scale = turning ? one(E) : zero(E)
+    return (;
+        gaps = [cos(angle)], gap_tangent = [-sin(angle) * tangent_scale], tangent_precision = cos(angle) * tangent_scale,
+        param = sin(angle), step,
+    )
+end
+
+"""The records of `laps` laps of `per_lap` steps round the unit circle, from its first point."""
+function circle_branch(
+    ::Type{E},
+    laps::Integer,
+    per_lap::Integer,
+    turning::Bool,
+)::AbstractVector where {E <: Real}
+    return [circle_record(E(2 * pi * (index - 1) / per_lap), index, turning) for index in 1:(laps * per_lap)]
+end
+
+"""The 1-based index of the first record of `branch` that `looped` flags against the records before it, or `nothing`."""
+function first_loop(branch::AbstractVector)::Union{Nothing, Int}
+    return findfirst([
+        GameTracing.looped(view(branch, firstindex(branch):(index - 1)), branch[index]) for index in eachindex(branch)
+    ])
+end
+
+@testset "a branch that goes round a closed loop is flagged $element" for element in (Float32, widen(Float32))
+    circle = circle_branch(element, 3, 20, true)
+    flagged = first_loop(circle)
+    # Fenchel's gate: no flag before the tangents have turned through 2π, which takes 21 records.
+    @test !isnothing(flagged) && 21 <= flagged <= 52
+    # The gate alone holds back a loop whose tangents never turn; open paths never loop.
+    @test isnothing(first_loop(circle_branch(element, 3, 20, false)))
+    line = [branch_record([element(index) / 10], element(index) / 20, index) for index in 1:60]
+    @test isnothing(first_loop(line))
+    s_curve = [
+        (; branch_record([element(index) / 10], sin(element(index) / 5), index)..., gap_tangent = [one(element)], tangent_precision = cos(element(index) / 5))
+            for index in 1:60
+    ]
+    @test isnothing(first_loop(s_curve))
+
+    game = LogitGame(GAME, TARGET_PRECISION)
+    finalise = GameTracing.TraceFinalise(
+        GameTracing.AcceptAll(),
+        GameTracing.NoRedraw(),
+        GameTracing.RedrawSlot(game, game, false, element(1) / 10),
+    )
+    @test finalised(finalise, circle[10], circle[1:9])
+    @test !finalised(finalise, circle[flagged], circle[1:(flagged - 1)])
+
+    opening = GameTracing.TraceProgress(zeros(element, 1), zero(element), 0, zero(element), zero(element), zeros(element, 1), zero(element), false, false)
+    @test !GameTracing.branch_progress(circle[1:10], opening).looped
+    progress = GameTracing.branch_progress(circle[1:flagged], opening)
+    @test progress.looped && !progress.unmoved
+    failure = unwrap_error(GameTracing.reached_state(
+        progress,
+        (; step_length = zero(element), exhausted = nothing, logit_accuracy = zero(element), exception = nothing),
+        game,
+        TraceSettings{element}(; max_steps = 1000),
+        (;),
+    ))
+    @test failure.cause == GameTracing.TraceStuck
+    @test failure.context.looped
 end

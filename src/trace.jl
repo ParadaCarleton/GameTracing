@@ -5,13 +5,14 @@ using ErrorTypes: Err, Ok
 
 BifurcationKit's `CorrectorQuality` thresholds, which shrink a step whose corrector looks poor. `distance_limit` is the
 Euclidean length of a Newton step's logit part (Gambit's 0.4 in log probabilities); `growth_limit` bounds a step's
-growth. `turn_limit` refuses a step whose tangent turns this many radians from the last one, Allgower and Georg's
+growth (Gambit's `max_accel` 1.1), and the step then shrinks as the distance or contraction nears its limit.
+`turn_limit` refuses a step whose tangent turns this many radians from the last one, Allgower and Georg's
 test (6.1.10) for a step across a fold onto another branch; 1 is under Gambit's quarter turn (`t·newT < 0`, path.cc).
 The corrector's contraction rate (`CorrectorSettings`) also slows growth. `nothing` switches a threshold off.
 """
 Base.@kwdef struct StepControl{E <: Real}
     distance_limit::Union{Nothing, E} = 0.4f0
-    growth_limit::Union{Nothing, E} = nothing
+    growth_limit::Union{Nothing, E} = 1.1f0
     turn_limit::Union{Nothing, E} = 1.0f0
 end
 
@@ -25,8 +26,8 @@ distance (`TraceGeometry`).
 
 - `first_step`, `min_step`, `max_step`: first, smallest and largest arclength step. A step whose corrector fails
   halves; the trace ends as `TraceStuck` once the step reaches `min_step`.
-- `aggressiveness` (BifurcationKit's `a`): a step grows by `1 + a ((N - n) / N)²` after a corrector of `n` of
-  its `N = corrector.newton_iterations` iterations.
+- `aggressiveness` (BifurcationKit's `a`): without a `step_control` growth limit, a step grows by
+  `1 + a ((N - n) / N)²` after a corrector of `n` of its `N = corrector.newton_iterations` iterations.
 - `corrector`: a `CorrectorSettings`.
 - `geometry`: a `TraceGeometry`, the norm a trace steps in and its state weight. `first_tangent_divisor`:
   the first tangent is the secant to a solve at `first_step / first_tangent_divisor`.
@@ -368,6 +369,7 @@ function trace_endpoint(
         zero(flat),
         zero(E),
         false,
+        false,
     )
     finalise = TraceFinalise(
         keep_going,
@@ -435,6 +437,7 @@ function redrawn_trace(
         progress.gap_tangent,
         progress.tangent_precision,
         progress.unmoved,
+        progress.looped,
     )
     if crossed.relative_precision == one(E) || crossed.steps >= settings.max_steps
         return reached_state(crossed, outcome, slot.game, settings, context)
@@ -581,6 +584,7 @@ function restarted_segment(
         restart.gap_tangent,
         restart.tangent_precision,
         opening.unmoved,
+        opening.looped,
     )
     return opened_segment(iterator, guarded_state(iterator, restart.opening), opened)
 end
@@ -735,7 +739,7 @@ function reached_state(
     if isnothing(outcome.exception) && progress.relative_precision == one(E)
         return Ok(Traced(copy(progress.gaps), progress.steps, E(outcome.logit_accuracy)))
     end
-    # Why the trace stopped short: a start that would not correct, a broken linear solve, a point that did not move,
+    # Why the trace stopped short: a start that would not correct, a broken linear solve, a point that did not move, a loop of the branch,
     # spent steps, or else a step below `min_step`, `keep_going` or a refusal (`STOP_CAUSES`).
     reason = if uncorrected_start(outcome.exception)
         :uncorrected_start
@@ -743,6 +747,8 @@ function reached_state(
         :solver_blowup
     elseif progress.unmoved
         :unmoved
+    elseif progress.looped
+        :loop
     elseif progress.steps >= settings.max_steps
         :max_steps
     else
@@ -757,7 +763,7 @@ end
 
 # The cause a trace that stops short for each reason fails with.
 const STOP_CAUSES = (;
-    uncorrected_start = TraceStuck, solver_blowup = Singular, max_steps = NoConvergence, unmoved = TraceStuck,
+    uncorrected_start = TraceStuck, solver_blowup = Singular, max_steps = NoConvergence, unmoved = TraceStuck, loop = TraceStuck,
     stopped_short = TraceStuck,
 )
 
@@ -777,7 +783,7 @@ function stopped_context(
     return (;
         context..., progress.steps,
         precision = target_precision * progress.relative_precision,
-        progress.precision_min, progress.precision_max, progress.unmoved,
+        progress.precision_min, progress.precision_max, progress.unmoved, progress.looped,
         logits = progress.relative_precision .* progress.gaps, progress.relative_precision,
         step_length = E(outcome.step_length),
         logit_tangent = progress.relative_precision .* progress.gap_tangent .+
