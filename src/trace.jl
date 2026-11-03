@@ -18,7 +18,7 @@ Base.@kwdef struct StepControl{E <: Real}
 end
 
 """
-    TraceSettings{E}(; first_step, min_step, max_step, aggressiveness, geometry, first_tangent_divisor,
+    TraceSettings{E}(; first_step, max_step, aggressiveness, geometry, first_tangent_divisor,
                      corrector, max_steps, tangent, bordered_solver, step_control, orientation_check, palc_corrector,
                      palc_options, continuation_options)
 
@@ -26,9 +26,10 @@ BifurcationKit PALC controls for `trace_endpoint`, in `(w, ρ)` with `w = logits
 relative precision. Step sizes are arclength in `geometry`'s norm (`StepDistance`); the default is the Fisher
 distance (`TraceGeometry`).
 
-- `first_step`, `min_step`, `max_step`: first, smallest and largest arclength step. A step whose corrector fails
-  halves; the trace ends as `TraceStuck` once the step reaches `min_step`, at least `floatmin(E)` (a subnormal step
-  gives NaN), or once its predictor no longer moves the point at the float type's resolution (`step_unresolved`).
+- `first_step`, `max_step`: first and largest arclength step. A step whose corrector fails halves; the trace ends as
+  `TraceStuck` once its predictor no longer moves the point at the float type's resolution (`step_unresolved`).
+  BifurcationKit's `dsmin` is `floatmin(E)`, a guard only: a subnormal step gives NaN. After the predictor stops
+  moving, BifurcationKit still halves to that guard, about 100 halvings of one refused residual evaluation each.
 - `aggressiveness` (BifurcationKit's `a`): without a `step_control` growth limit, a step grows by
   `1 + a ((N - n) / N)²` after a corrector of `n` of its `N = corrector.newton_iterations` iterations.
 - `corrector`: a `CorrectorSettings`.
@@ -62,7 +63,6 @@ Base.@kwdef struct TraceSettings{
         O <: NamedTuple,
     }
     first_step::E = 0.05f0
-    min_step::E = floatmin(E)
     max_step::E = 1000.0f0
     aggressiveness::E = 0.5f0
     geometry::TraceGeometry{E} = TraceGeometry{E}()
@@ -212,12 +212,9 @@ function continuation_options(
     max_steps::Integer,
     first_tangent_divisor::E,
 )::BifurcationKit.ContinuationPar where {E <: Real}
-    if !(settings.min_step >= floatmin(E))
-        throw(ArgumentError("min_step $(settings.min_step) is below floatmin($E); a subnormal step gives NaN"))
-    end
     own = (;
         ds = step_length,
-        dsmin = settings.min_step,
+        dsmin = floatmin(E),
         dsmax = settings.max_step,
         a = settings.aggressiveness,
         η = first_tangent_divisor,
@@ -363,7 +360,7 @@ The relative precision `ρ` is the precision in units of the target.
 
 `keep_going(logits, ρ)` runs at each accepted point before the next step's corrector, and `false` stops the trace.
 `accept_corrected(logits, ρ, converged)` runs as each corrector ends, and `false` refuses a converged point, which
-halves the step. A trace that stops short fails with `NoConvergence` when it spends `settings.max_steps` and `TraceStuck` otherwise (a step below `min_step` or below the float type's resolution, an unchanged accepted point, or a
+halves the step. A trace that stops short fails with `NoConvergence` when it spends `settings.max_steps` and `TraceStuck` otherwise (a step below the float type's resolution, an unchanged accepted point, or a
 refusal); a non-finite start or a broken linear solve fails `NotFinite` or `Singular`. `context` rides on
 every failure.
 
@@ -758,7 +755,7 @@ function reached_state(
         return Ok(Traced(copy(progress.gaps), progress.steps, E(outcome.logit_accuracy)))
     end
     # Why the trace stopped short: a start that would not correct, a broken linear solve, a step below resolution, a point that did not move, a loop of the branch,
-    # spent steps, or else a step below `min_step`, `keep_going` or a refusal (`STOP_CAUSES`).
+    # spent steps, or else `keep_going` or a refusal (`STOP_CAUSES`).
     reason = if uncorrected_start(outcome.exception)
         :uncorrected_start
     elseif !isnothing(outcome.exception)
