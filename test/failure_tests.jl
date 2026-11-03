@@ -48,18 +48,18 @@ struct RefuseConverged end
     @test unwrap_error(result).cause == GameTracing.TraceStuck
 end
 
-@testset "halving ends once the predictor cannot move the point" begin
+@testset "halving ends at the step floor" begin
     logs, result = Test.collect_test_logs(min_level = Logging.Debug) do
         trace_endpoint(LogitGame(GAME, TARGET_PRECISION), WIDTH, FAILURE_SETTINGS; accept_corrected = RefuseConverged())
     end
     messages = [(log.message, get(log.kwargs, :reason, nothing)) for log in logs]
     @test unwrap_error(result).cause == GameTracing.TraceStuck
-    @test count(==(("corrector stopped", :unresolved)), messages) == 1
-    # Float32 resolves a step of about 4 eps(1) / 0.01, 2^-15 of the first step; reaching floatmin takes 119 halvings.
-    @test count(message -> first(message) == "corrector closed", messages) < 40
+    @test count(==(("corrector stopped", :step_floor)), messages) == 1
+    # The floor is at least logit_tolerance 1e-4, 7 halvings below the first step 0.01; floatmin takes 119.
+    @test count(message -> first(message) == "corrector closed", messages) <= 16
 end
 
-@testset "a predictor that leaves the point unchanged is refused, even after a settled solve" begin
+@testset "a step that leaves the point unchanged is refused, even after a settled solve" begin
     point = Float32[1, -2, 0.5f0]
     check = GameTracing.CorrectorReach(
         GameTracing.AcceptAll(),
@@ -70,11 +70,13 @@ end
         0.0f0,
     )
     check.settled_here = true
-    @test check((; x = point .+ eps.(point), z0 = (; u = point), step = 0, residual = 0.0f0); fromNewton = false) == false
-    @test check.unresolved
+    unchanged = (; x = point, z0 = (; u = point, p = last(point)), ds = eps(1.0f0), step = 0, residual = 0.0f0)
+    @test check(unchanged; fromNewton = false) == false
+    @test check.below_floor
     @test check((; x = point, residual = 0.0f0, step = 1, p = 1.0f0, closing = true); fromNewton = false) == false
-    @test !GameTracing.step_unresolved(Float32[0, 1], Float32[1.0f-30, 1])
-    @test !GameTracing.step_unresolved(point, point .+ Float32[0, 0, 1.0f-3])
+    settings = CorrectorSettings{Float32}()
+    @test GameTracing.step_floor(settings, point, 1.0f0) == settings.logit_tolerance
+    @test GameTracing.step_floor(settings, 1.0f4 .* point, 1.0f0) > settings.logit_tolerance
 end
 
 @testset "a corrector reach too short to hold any step ends the trace" begin
