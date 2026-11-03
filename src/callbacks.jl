@@ -15,6 +15,7 @@ moves no logit more than `logit_tolerance`, at a relative precision within the r
 A correction that moves the logits more than `contraction_limit` times the one before it (plus `logit_tolerance`
 times `contraction_offset`) fails to contract; BifurcationKit's step growth reads the same rate (`corrector_quality`).
 `newton_iterations`: Newton iterations per corrector (BifurcationKit's default, 25; Gambit's is 100).
+`step_floor_share`: the share `c` of `logit_tolerance` in the trace's step floor (`step_floor`).
 """
 Base.@kwdef struct CorrectorSettings{E <: Real}
     reach::Union{Nothing, E} = 2.0f0
@@ -27,6 +28,7 @@ Base.@kwdef struct CorrectorSettings{E <: Real}
     contraction_limit::Union{Nothing, E} = 0.6f0
     contraction_offset::E = 0.1f0
     newton_iterations::Int = 25
+    step_floor_share::E = 1.0f0
 end
 
 """The largest change of a logit from `from` to `to`, two points `[w; ρ]` (`logits_at`)."""
@@ -68,10 +70,10 @@ Two such corrections in a row, each larger than the predictor's own move in logi
 (`noise`), confirmed at the next halved step; the check then refuses every corrector (`noise_confirmed`).
 A non-finite residual stops the corrector,
 and so does any iterate whose logits are further from the predictor's than `settings.reach` times the predictor's own
-largest logit move (`within_reach`); the step then halves. A predictor that moves no coordinate more than
-`RESOLUTION_ULPS` ulps (`step_unresolved`) refuses that corrector and every later one (`unresolved`): no smaller step can
-add a point, so the trace ends as `TraceStuck`. On a smooth branch that distance is the branch's curvature
-times `ds² / 2`, so halving brings any step under it, while an iterate that lands on another branch is far from it. A converged closing point is refused the same way past `reach`, past a largest probability KL
+largest logit move (`within_reach`); the step then halves. On a smooth branch that distance is the branch's curvature
+times `ds² / 2`, so halving brings any step under it, while an iterate that lands on another branch is far from it.
+A step `ds` below `step_floor` refuses that corrector and every later one (`below_floor`): no smaller step can
+add a point, so the trace ends as `TraceStuck`. A converged closing point is refused the same way past `reach`, past a largest probability KL
 `KL(corrected ‖ predicted)` of `settings.max_kl` (`largest_kl`). A predictor that did not move has no reach to compare.
 `accept_corrected(logits, ρ, converged)` then sees every other closing point. `previous`, `predicted` and
 `step_length` hold the current step's start and predictor, `predictor_move` the predictor's largest logit change.
@@ -93,15 +95,16 @@ mutable struct CorrectorReach{C, E <: Real}
     stalls::Int
     settled_here::Bool
     noise::NoiseRecord{E}
-    unresolved::Bool
+    below_floor::Bool
 end
 
-# A predictor within this many ulps of its start in every coordinate leaves the point unchanged at the float type's resolution.
-const RESOLUTION_ULPS = 4
-
-"""Whether the predictor `predicted` moves no coordinate of `start` more than `RESOLUTION_ULPS` ulps of that coordinate."""
-function step_unresolved(start::AbstractVector{E}, predicted::AbstractVector{E})::Bool where {E <: Real}
-    return all(((from, to),) -> abs(to - from) <= RESOLUTION_ULPS * eps(from), zip(start, predicted))
+"""
+The smallest step `settings` lets a trace take from `start = [w; ρ]` at pin `pin`: `max(c tol, eps(E) ‖z‖)`, with
+`c = step_floor_share`, `tol = logit_tolerance` and `z = (w, ρ, pin)`. Below `c tol` the corrector's tolerance exceeds
+the step; below `eps(E) ‖z‖` the predictor cannot move the point.
+"""
+function step_floor(settings::CorrectorSettings{E}, start::AbstractVector{E}, pin::Real)::E where {E <: Real}
+    return max(settings.step_floor_share * settings.logit_tolerance, eps(E) * hypot(norm(start), E(pin)))
 end
 
 """Whether `check`'s corrector met rounding noise, confirmed at a halved step (`corrected!`)."""
@@ -168,7 +171,7 @@ function (check::CorrectorReach{C, E})(iterate::I;
     # fatou-ignore unused-argument: BifurcationKit passes keyword arguments this callback ignores
     keywords...,
 )::Union{Bool, BifurcationKit.NewtonConverged} where {C, E <: Real, I <: NamedTuple}
-    if check.unresolved
+    if check.below_floor
         return false
     end
     if fromNewton
@@ -191,9 +194,9 @@ function (check::CorrectorReach{C, E})(iterate::I;
             copyto!(check.previous, iterate.z0.u)
             check.step_length = arclength_distance(iterate.z0.u, iterate.x, check.geometry)
             check.predictor_move = logit_change(iterate.z0.u, iterate.x)
-            if step_unresolved(iterate.z0.u, iterate.x)
-                @debug "corrector stopped" _group = :trace reason = :unresolved step_length = check.step_length
-                check.unresolved = true
+            if abs(iterate.ds) < step_floor(check.settings, iterate.z0.u, iterate.z0.p)
+                @debug "corrector stopped" _group = :trace reason = :step_floor ds = iterate.ds
+                check.below_floor = true
                 return false
             end
         end
