@@ -70,7 +70,8 @@ A non-finite residual stops the corrector,
 and so does any iterate whose logits are further from the predictor's than `settings.reach` times the predictor's own
 largest logit move (`within_reach`); the step then halves. A predictor within `RESOLUTION_ULPS` ulps of each of the
 point's coordinates (`step_unresolved`) refuses that corrector and every later one (`unresolved`): no smaller step can
-add a point, so the trace ends as `TraceStuck`. On a smooth branch that distance is the branch's curvature
+add a point, so the trace ends as `TraceStuck`, or as `PrecisionExhausted` when the corrector before it stopped past its
+reach with a correction above `logit_tolerance` (`unresolved_noise`). On a smooth branch that distance is the branch's curvature
 times `ds² / 2`, so halving brings any step under it, while an iterate that lands on another branch is far from it. A converged closing point is refused the same way past `reach`, past a largest probability KL
 `KL(corrected ‖ predicted)` of `settings.max_kl` (`largest_kl`). A predictor that did not move has no reach to compare.
 `accept_corrected(logits, ρ, converged)` then sees every other closing point. `previous`, `predicted` and
@@ -94,6 +95,7 @@ mutable struct CorrectorReach{C, E <: Real}
     settled_here::Bool
     noise::NoiseRecord{E}
     unresolved::Bool
+    reach_failure::Union{Nothing, @NamedTuple{relative_precision::E, correction::E}}
 end
 
 # A predictor within this many ulps of a coordinate leaves it unchanged at the float type's resolution.
@@ -106,6 +108,32 @@ of different scales (payoff gaps near 1e6, ρ near 1e-5) each count, and any mov
 """
 function step_unresolved(start::AbstractVector{E}, predicted::AbstractVector{E})::Bool where {E <: Real}
     return all(abs.(predicted .- start) .<= RESOLUTION_ULPS * eps(E) .* abs.(start))
+end
+
+"""
+The record of a corrector that `check` stopped past its reach at relative precision `relative_precision`, when its
+correction exceeded `logit_tolerance`, else `nothing`. The step's first iterate has no correction (NaN) and records nothing.
+"""
+function reach_record(
+    check::CorrectorReach{C, E},
+    relative_precision::E,
+)::Union{Nothing, @NamedTuple{relative_precision::E, correction::E}} where {C, E <: Real}
+    if check.correction > check.settings.logit_tolerance
+        return (; relative_precision, correction = check.correction)
+    end
+    return nothing
+end
+
+"""
+`check`'s noise record once its step is unresolved. When the last corrector stopped past its reach with a correction
+above `logit_tolerance`, halving reached the float type's resolution without closing a point: the corrections are
+rounding noise, and the record confirms the precision exhausted there (`PrecisionExhausted`).
+"""
+function unresolved_noise(check::CorrectorReach{C, E})::NoiseRecord{E} where {C, E <: Real}
+    if isnothing(check.reach_failure)
+        return check.noise
+    end
+    return NoiseRecord(check.noise.accuracy, (; check.reach_failure..., confirmed = true))
 end
 
 """Whether `check`'s corrector met rounding noise, confirmed at a halved step (`corrected!`)."""
@@ -136,6 +164,7 @@ function CorrectorReach(
         false,
         NoiseRecord(zero(E), nothing),
         false,
+        nothing,
     )
 end
 
@@ -198,18 +227,22 @@ function (check::CorrectorReach{C, E})(iterate::I;
             if step_unresolved(iterate.z0.u, iterate.x)
                 @debug "corrector stopped" _group = :trace reason = :unresolved step_length = check.step_length
                 check.unresolved = true
+                check.noise = unresolved_noise(check)
                 return false
             end
+            check.reach_failure = nothing
         end
         if !isfinite(iterate.residual)
             @debug "corrector stopped" _group = :trace reason = :nonfinite
             return corrected!(check, iterate, false)
         end
         reached = within_reach(check, iterate.x)
+        verdict = corrected!(check, iterate, reached)
         if !reached
-            @debug "corrector stopped" _group = :trace reason = :reach
+            @debug "corrector stopped" _group = :trace reason = :reach correction = check.correction
+            check.reach_failure = reach_record(check, last(iterate.x))
         end
-        return corrected!(check, iterate, reached)
+        return verdict
     end
     # An exact root converges unsettled on BifurcationKit's own test (`residual <= tol`, tol 0), so it meets the same tests.
     converged = isfinite(iterate.residual) &&
