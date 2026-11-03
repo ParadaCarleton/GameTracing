@@ -68,8 +68,8 @@ Two such corrections in a row, each larger than the predictor's own move in logi
 (`noise`), confirmed at the next halved step; the check then refuses every corrector (`noise_confirmed`).
 A non-finite residual stops the corrector,
 and so does any iterate whose logits are further from the predictor's than `settings.reach` times the predictor's own
-largest logit move (`within_reach`); the step then halves. A predictor within `RESOLUTION_ULPS` ulps of the point's
-largest coordinate in ∞-norm (`step_unresolved`) refuses that corrector and every later one (`unresolved`): no smaller step can
+largest logit move (`within_reach`); the step then halves. A predictor within `RESOLUTION_ULPS` ulps of each of the
+point's coordinates (`step_unresolved`) refuses that corrector and every later one (`unresolved`): no smaller step can
 add a point, so the trace ends as `TraceStuck`. On a smooth branch that distance is the branch's curvature
 times `ds² / 2`, so halving brings any step under it, while an iterate that lands on another branch is far from it. A converged closing point is refused the same way past `reach`, past a largest probability KL
 `KL(corrected ‖ predicted)` of `settings.max_kl` (`largest_kl`). A predictor that did not move has no reach to compare.
@@ -96,15 +96,16 @@ mutable struct CorrectorReach{C, E <: Real}
     unresolved::Bool
 end
 
-# A predictor within this many ulps of the point's size leaves it unchanged at the float type's resolution.
+# A predictor within this many ulps of a coordinate leaves it unchanged at the float type's resolution.
 const RESOLUTION_ULPS = 4
 
 """
-Whether the predictor `predicted` lies within `RESOLUTION_ULPS · eps(E) · ‖start‖∞` of `start` in the ∞-norm. The norm
-scale needs no case for a zero coordinate, such as ρ at the flat start.
+Whether the predictor `predicted` moves no coordinate of `start` by more than `RESOLUTION_ULPS · eps(E)` of its own
+size: the ODE solvers' per-coordinate error test, `|Δz_i| ≤ abstol + reltol |z_i|`, with abstol zero. Coordinates
+of different scales (payoff gaps near 1e6, ρ near 1e-5) each count, and any move of a zero coordinate resolves.
 """
 function step_unresolved(start::AbstractVector{E}, predicted::AbstractVector{E})::Bool where {E <: Real}
-    return maximum(abs, predicted .- start) <= RESOLUTION_ULPS * eps(E) * maximum(abs, start)
+    return all(abs.(predicted .- start) .<= RESOLUTION_ULPS * eps(E) .* abs.(start))
 end
 
 """Whether `check`'s corrector met rounding noise, confirmed at a halved step (`corrected!`)."""
