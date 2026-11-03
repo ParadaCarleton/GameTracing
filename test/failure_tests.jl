@@ -1,4 +1,5 @@
 using ErrorTypes: is_error, unwrap_error
+using Logging: Logging
 using LinearAlgebra: LAPACKException, SingularException
 
 const FAILURE_SETTINGS = TraceSettings{Float32}(first_step = 0.01f0, max_step = 0.05f0)
@@ -45,6 +46,35 @@ struct RefuseConverged end
     )
     @test is_error(result)
     @test unwrap_error(result).cause == GameTracing.TraceStuck
+end
+
+@testset "halving ends once the predictor cannot move the point" begin
+    logs, result = Test.collect_test_logs(min_level = Logging.Debug) do
+        trace_endpoint(LogitGame(GAME, TARGET_PRECISION), WIDTH, FAILURE_SETTINGS; accept_corrected = RefuseConverged())
+    end
+    messages = [(log.message, get(log.kwargs, :reason, nothing)) for log in logs]
+    @test unwrap_error(result).cause == GameTracing.TraceStuck
+    @test count(==(("corrector stopped", :unresolved)), messages) == 1
+    # Float32 resolves a step of about 4 eps(1) / 0.01, 2^-15 of the first step; reaching floatmin takes 119 halvings.
+    @test count(message -> first(message) == "corrector closed", messages) < 40
+end
+
+@testset "a predictor that leaves the point unchanged is refused, even after a settled solve" begin
+    point = Float32[1, -2, 0.5f0]
+    check = GameTracing.CorrectorReach(
+        GameTracing.AcceptAll(),
+        CorrectorSettings{Float32}(),
+        TraceGeometry{Float32}(),
+        copy(point),
+        copy(point),
+        0.0f0,
+    )
+    check.settled_here = true
+    @test check((; x = point .+ eps.(point), z0 = (; u = point), step = 0, residual = 0.0f0); fromNewton = false) == false
+    @test check.unresolved
+    @test check((; x = point, residual = 0.0f0, step = 1, p = 1.0f0, closing = true); fromNewton = false) == false
+    @test !GameTracing.step_unresolved(Float32[0, 1], Float32[1.0f-30, 1])
+    @test !GameTracing.step_unresolved(point, point .+ Float32[0, 0, 1.0f-3])
 end
 
 @testset "a corrector reach too short to hold any step ends the trace" begin

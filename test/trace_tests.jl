@@ -153,10 +153,15 @@ end
     @test GameTracing.matrix_bls(WIDTH, Float32) isa GameTracing.InPlaceMatrixBLS
 end
 
-@testset "the default smallest step is the smallest positive number of the settings' element type" begin
+@testset "the default smallest step is the smallest normal number of the settings' element type" begin
     for element in (Float16, Float32, float(Int))
-        @test TraceSettings{element}().min_step == nextfloat(zero(element))
+        @test TraceSettings{element}().min_step == floatmin(element)
     end
+end
+
+@testset "a subnormal smallest step is refused" begin
+    settings = TraceSettings{Float32}(min_step = nextfloat(0.0f0))
+    @test_throws ArgumentError trace_endpoint(LogitGame(GAME, TARGET_PRECISION), WIDTH, settings)
 end
 
 @testset "PALC orients by determinant only where the solver has one" begin

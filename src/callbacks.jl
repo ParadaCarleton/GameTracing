@@ -68,7 +68,9 @@ Two such corrections in a row, each larger than the predictor's own move in logi
 (`noise`), confirmed at the next halved step; the check then refuses every corrector (`noise_confirmed`).
 A non-finite residual stops the corrector,
 and so does any iterate whose logits are further from the predictor's than `settings.reach` times the predictor's own
-largest logit move (`within_reach`); the step then halves. On a smooth branch that distance is the branch's curvature
+largest logit move (`within_reach`); the step then halves. A predictor that moves no coordinate more than
+`RESOLUTION_ULPS` ulps (`step_unresolved`) refuses that corrector and every later one (`unresolved`): no smaller step can
+add a point, so the trace ends as `TraceStuck`. On a smooth branch that distance is the branch's curvature
 times `ds² / 2`, so halving brings any step under it, while an iterate that lands on another branch is far from it. A converged closing point is refused the same way past `reach`, past a largest probability KL
 `KL(corrected ‖ predicted)` of `settings.max_kl` (`largest_kl`). A predictor that did not move has no reach to compare.
 `accept_corrected(logits, ρ, converged)` then sees every other closing point. `previous`, `predicted` and
@@ -91,6 +93,15 @@ mutable struct CorrectorReach{C, E <: Real}
     stalls::Int
     settled_here::Bool
     noise::NoiseRecord{E}
+    unresolved::Bool
+end
+
+# A predictor within this many ulps of its start in every coordinate leaves the point unchanged at the float type's resolution.
+const RESOLUTION_ULPS = 4
+
+"""Whether the predictor `predicted` moves no coordinate of `start` more than `RESOLUTION_ULPS` ulps of that coordinate."""
+function step_unresolved(start::AbstractVector{E}, predicted::AbstractVector{E})::Bool where {E <: Real}
+    return all(((from, to),) -> abs(to - from) <= RESOLUTION_ULPS * eps(from), zip(start, predicted))
 end
 
 """Whether `check`'s corrector met rounding noise, confirmed at a halved step (`corrected!`)."""
@@ -120,6 +131,7 @@ function CorrectorReach(
         0,
         false,
         NoiseRecord(zero(E), nothing),
+        false,
     )
 end
 
@@ -156,6 +168,9 @@ function (check::CorrectorReach{C, E})(iterate::I;
     # fatou-ignore unused-argument: BifurcationKit passes keyword arguments this callback ignores
     keywords...,
 )::Union{Bool, BifurcationKit.NewtonConverged} where {C, E <: Real, I <: NamedTuple}
+    if check.unresolved
+        return false
+    end
     if fromNewton
         # Newton's closing call is its only one without `J`; an exact root converges on BifurcationKit's own test.
         if !haskey(iterate, :J)
@@ -176,6 +191,11 @@ function (check::CorrectorReach{C, E})(iterate::I;
             copyto!(check.previous, iterate.z0.u)
             check.step_length = arclength_distance(iterate.z0.u, iterate.x, check.geometry)
             check.predictor_move = logit_change(iterate.z0.u, iterate.x)
+            if step_unresolved(iterate.z0.u, iterate.x)
+                @debug "corrector stopped" _group = :trace reason = :unresolved step_length = check.step_length
+                check.unresolved = true
+                return false
+            end
         end
         if !isfinite(iterate.residual)
             @debug "corrector stopped" _group = :trace reason = :nonfinite
