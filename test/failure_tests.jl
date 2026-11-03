@@ -48,15 +48,25 @@ struct RefuseConverged end
     @test unwrap_error(result).cause == GameTracing.TraceStuck
 end
 
+"""An `accept_corrected` that refuses every corrector past relative precision `level`."""
+struct RefusePast{E <: Real}
+    level::E
+end
+
+(refuse::RefusePast)(::AbstractVector, relative_precision::Real, ::Bool)::Bool = relative_precision <= refuse.level
+
+# Refused from the flat start (ρ = 0, whose ulp is subnormal) a step halves to floatmin instead; mid-branch every
+# coordinate is far from zero.
 @testset "halving ends once the predictor cannot move the point" begin
     logs, result = Test.collect_test_logs(min_level = Logging.Debug) do
-        trace_endpoint(LogitGame(GAME, TARGET_PRECISION), WIDTH, FAILURE_SETTINGS; accept_corrected = RefuseConverged())
+        trace_endpoint(LogitGame(GAME, TARGET_PRECISION), WIDTH, FAILURE_SETTINGS; accept_corrected = RefusePast(0.25f0))
     end
     messages = [(log.message, get(log.kwargs, :reason, nothing)) for log in logs]
     @test unwrap_error(result).cause == GameTracing.TraceStuck
     @test count(==(("corrector stopped", :unresolved)), messages) == 1
-    # Float32 resolves a step of about 4 eps(1) / 0.01, 2^-15 of the first step; reaching floatmin takes 119 halvings.
-    @test count(message -> first(message) == "corrector closed", messages) < 40
+    # Float32 resolves a step of about 4 eps(1), 2^-17 of the largest step 0.05: about 17 refused halvings, with the
+    # accepted steps to ρ = 1/4 before them; reaching floatmin takes over 120.
+    @test count(message -> first(message) == "corrector closed", messages) < 80
 end
 
 @testset "a predictor that leaves the point unchanged is refused, even after a settled solve" begin
@@ -70,9 +80,9 @@ end
         0.0f0,
     )
     check.settled_here = true
-    @test check((; x = point .+ eps.(point), z0 = (; u = point), step = 0, residual = 0.0f0); fromNewton = false) == false
+    @test !check((; x = point .+ eps.(point), z0 = (; u = point), step = 0, residual = 0.0f0); fromNewton = false)
     @test check.unresolved
-    @test check((; x = point, residual = 0.0f0, step = 1, p = 1.0f0, closing = true); fromNewton = false) == false
+    @test !check((; x = point, residual = 0.0f0, step = 1, p = 1.0f0, closing = true); fromNewton = false)
     @test !GameTracing.step_unresolved(Float32[0, 1], Float32[1.0f-30, 1])
     @test !GameTracing.step_unresolved(point, point .+ Float32[0, 0, 1.0f-3])
 end
@@ -258,7 +268,7 @@ end
     @test !progress.unmoved
     @test (progress.steps, progress.precision_max) == (1, moved.param)
     @test progress.gaps == moved.gaps && progress.relative_precision == moved.param
-    outcome = (; step_length = 0.0f0, accepted_step = 0.0f0, exhausted = nothing, logit_accuracy = 0.0f0, exception = nothing)
+    outcome = (; step_length = 0.0f0, accepted_step = 0.0f0, exhausted = nothing, logit_accuracy = 0.0f0, unresolved = false, exception = nothing)
     settings = TraceSettings{Float32}(; max_steps = 2)
     @test unwrap_error(GameTracing.reached_state(
         progress,
@@ -350,7 +360,7 @@ end
     @test progress.looped && !progress.unmoved
     failure = unwrap_error(GameTracing.reached_state(
         progress,
-        (; step_length = zero(element), accepted_step = zero(element), exhausted = nothing, logit_accuracy = zero(element), exception = nothing),
+        (; step_length = zero(element), accepted_step = zero(element), exhausted = nothing, logit_accuracy = zero(element), unresolved = false, exception = nothing),
         game,
         TraceSettings{element}(; max_steps = 1000),
         (;),

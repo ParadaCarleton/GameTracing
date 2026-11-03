@@ -788,7 +788,7 @@ const STOP_CAUSES = (;
     stopped_context(progress, outcome, target_precision, context)
 
 The context of a trace that stopped at `progress`'s last accepted point after `outcome`: `context`, the steps, the
-precision and its range, the logits, the step held, the arclength step of the last accepted point (`accepted_step`,
+precision and its range, the `unmoved`, `unresolved` and `looped` flags, the logits, the step held, the arclength step of the last accepted point (`accepted_step`,
 zero when no step was accepted), the tangent in logits, the `logit_accuracy` of its accepted points and the exception.
 """
 function stopped_context(
@@ -800,7 +800,7 @@ function stopped_context(
     return (;
         context..., progress.steps,
         precision = target_precision * progress.relative_precision,
-        progress.precision_min, progress.precision_max, progress.unmoved, progress.looped,
+        progress.precision_min, progress.precision_max, progress.unmoved, outcome.unresolved, progress.looped,
         logits = progress.relative_precision .* progress.gaps, progress.relative_precision,
         step_length = E(outcome.step_length),
         accepted_step = ifelse(progress.steps > 0, E(outcome.accepted_step), zero(E)),
