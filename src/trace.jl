@@ -27,7 +27,8 @@ relative precision. Step sizes are arclength in `geometry`'s norm (`StepDistance
 distance (`TraceGeometry`).
 
 - `first_step`, `min_step`, `max_step`: first, smallest and largest arclength step. A step whose corrector fails
-  halves; the trace ends as `TraceStuck` once the step reaches `min_step`.
+  halves; the trace ends as `TraceStuck` once the step reaches `min_step`, at least `floatmin(E)` (a subnormal step
+  gives NaN), or once its predictor no longer moves the point at the float type's resolution (`step_unresolved`).
 - `aggressiveness` (BifurcationKit's `a`): without a `step_control` growth limit, a step grows by
   `1 + a ((N - n) / N)²` after a corrector of `n` of its `N = corrector.newton_iterations` iterations.
 - `corrector`: a `CorrectorSettings`.
@@ -61,7 +62,7 @@ Base.@kwdef struct TraceSettings{
         O <: NamedTuple,
     }
     first_step::E = 0.05f0
-    min_step::E = nextfloat(zero(E))
+    min_step::E = floatmin(E)
     max_step::E = 1000.0f0
     aggressiveness::E = 0.5f0
     geometry::TraceGeometry{E} = TraceGeometry{E}()
@@ -211,6 +212,9 @@ function continuation_options(
     max_steps::Integer,
     first_tangent_divisor::E,
 )::BifurcationKit.ContinuationPar where {E <: Real}
+    if !(settings.min_step >= floatmin(E))
+        throw(ArgumentError("min_step $(settings.min_step) is below floatmin($E); a subnormal step gives NaN"))
+    end
     own = (;
         ds = step_length,
         dsmin = settings.min_step,
@@ -359,7 +363,7 @@ The relative precision `ρ` is the precision in units of the target.
 
 `keep_going(logits, ρ)` runs at each accepted point before the next step's corrector, and `false` stops the trace.
 `accept_corrected(logits, ρ, converged)` runs as each corrector ends, and `false` refuses a converged point, which
-halves the step. A trace that stops short fails with `NoConvergence` when it spends `settings.max_steps` and `TraceStuck` otherwise (a step below `min_step`, an unchanged accepted point, or a
+halves the step. A trace that stops short fails with `NoConvergence` when it spends `settings.max_steps` and `TraceStuck` otherwise (a step below `min_step` or below the float type's resolution, an unchanged accepted point, or a
 refusal); a non-finite start or a broken linear solve fails `NotFinite` or `Singular`. `context` rides on
 every failure.
 
@@ -464,11 +468,12 @@ end
 """
     guarded_trace(start, old_tangent, settings, finalise, accept_corrected, opening)
 
-`(; progress, step_length, accepted_step, exhausted, logit_accuracy, exception)` of a PALC segment on `finalise.slot`'s
+`(; progress, step_length, accepted_step, exhausted, logit_accuracy, unresolved, exception)` of a PALC segment on `finalise.slot`'s
 game from `start = [w; ρ]`, the point of `opening` (the `TraceProgress` before it), for the steps `settings.max_steps`
 leaves: the progress after it (`branch_progress`), the step length its last corrector tried, the step of the last
 accepted point (the slot's, carried from an earlier segment when this one accepted none), the corrector's confirmed stall
-at rounding noise (or `nothing`), the largest last correction of an accepted point, and `nothing` for a segment that
+at rounding noise (or `nothing`), the largest last correction of an accepted point, whether its predictor fell below
+the float type's resolution (`step_unresolved`), and `nothing` for a segment that
 ran, else the third-party failure it ended on. From the flat start (`old_tangent` is `nothing`) the first tangent is
 BifurcationKit's secant; a restart after a redraw opens along `restart_tangent`, oriented by `old_tangent`.
 BifurcationKit throws a `String` when Newton misses its first point and an `ErrorException` at its second; a
@@ -529,6 +534,7 @@ function segment_outcome(
             nothing,
         ),
         logit_accuracy = corrector.noise.accuracy,
+        unresolved = isnothing(ran.exception) && corrector.unresolved,
         ran.exception,
     )
 end
@@ -751,12 +757,14 @@ function reached_state(
     if isnothing(outcome.exception) && progress.relative_precision == one(E)
         return Ok(Traced(copy(progress.gaps), progress.steps, E(outcome.logit_accuracy)))
     end
-    # Why the trace stopped short: a start that would not correct, a broken linear solve, a point that did not move, a loop of the branch,
+    # Why the trace stopped short: a start that would not correct, a broken linear solve, a step below resolution, a point that did not move, a loop of the branch,
     # spent steps, or else a step below `min_step`, `keep_going` or a refusal (`STOP_CAUSES`).
     reason = if uncorrected_start(outcome.exception)
         :uncorrected_start
     elseif !isnothing(outcome.exception)
         :solver_blowup
+    elseif outcome.unresolved
+        :unresolved_step
     elseif progress.unmoved
         :unmoved
     elseif progress.looped
@@ -775,7 +783,7 @@ end
 
 # The cause a trace that stops short for each reason fails with.
 const STOP_CAUSES = (;
-    uncorrected_start = TraceStuck, solver_blowup = Singular, max_steps = NoConvergence, unmoved = TraceStuck, loop = TraceStuck,
+    uncorrected_start = TraceStuck, solver_blowup = Singular, max_steps = NoConvergence, unmoved = TraceStuck, unresolved_step = TraceStuck, loop = TraceStuck,
     stopped_short = TraceStuck,
 )
 
