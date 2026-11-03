@@ -62,10 +62,11 @@ end
     end
     messages = [(log.message, get(log.kwargs, :reason, nothing)) for log in logs]
     @test unwrap_error(result).cause == GameTracing.TraceStuck
-    @test count(==(("corrector stopped", :unresolved)), messages) == 1
-    # Float32 resolves a step of about 4 eps(1) ‖z‖∞, 2^-17 of the largest step 0.05: about 17 refused halvings, with
-    # any accepted steps before them; halving to a zero step takes over 120.
-    @test count(message -> first(message) == "corrector closed", messages) < 80
+    # At ρ = 0 any move of ρ resolves: halving ends at BifurcationKit's zero step, never at an unresolved predictor.
+    @test count(==(("corrector stopped", :unresolved)), messages) == ifelse(refusal isa RefuseConverged, 0, 1)
+    # Halving 0.05 to Float32's smallest subnormal 2^-149 takes log2(0.05) + 149 ≈ 145 steps (measured: 143 from
+    # the flat start, 41 mid-branch); 15 more allow accepted steps before the refusals.
+    @test count(message -> first(message) == "corrector closed", messages) < 160
 end
 
 @testset "a predictor that leaves the point unchanged is refused, even after a settled solve" begin
@@ -82,9 +83,11 @@ end
     @test !check((; x = point .+ eps.(point), z0 = (; u = point), step = 0, residual = 0.0f0); fromNewton = false)
     @test check.unresolved
     @test !check((; x = point, residual = 0.0f0, step = 1, p = 1.0f0, closing = true); fromNewton = false)
-    # A zero coordinate's move is measured against the point's size.
-    @test GameTracing.step_unresolved(Float32[0, 1], Float32[1.0f-30, 1])
-    @test !GameTracing.step_unresolved(Float32[0, 1], Float32[1.0f-3, 1])
+    # Each coordinate's move is measured against its own size: any move of a zero coordinate resolves.
+    @test !GameTracing.step_unresolved(Float32[0, 1], Float32[1.0f-30, 1])
+    @test GameTracing.step_unresolved(Float32[0, 1], Float32[0, 1 + eps(1.0f0)])
+    # A large coordinate does not hide a small one's move.
+    @test !GameTracing.step_unresolved(Float32[-5.0f6, 1.3f-5], Float32[-5.0f6, 1.4f-5])
     @test !GameTracing.step_unresolved(point, point .+ Float32[0, 0, 1.0f-3])
 end
 
