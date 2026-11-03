@@ -85,6 +85,59 @@ end
     @test stuck_at_swap(FOLD_SWAP)
 end
 
+"""The `RootShift` verdict on a candidate game at the first accepted point a `ShiftProbe` sees from its swap level."""
+struct ShiftVerdict <: Exception
+    passes::Bool
+end
+
+"""A `redraw` hook that throws the `ShiftVerdict` on `game` at the first accepted point from `swap_level` on."""
+struct ShiftProbe{G, E <: Real}
+    game::G
+    swap_level::E
+end
+
+function (probe::ShiftProbe)(::AbstractVector, relative_precision::Real, shift::GameTracing.RootShift)::Nothing
+    if relative_precision >= probe.swap_level
+        throw(ShiftVerdict(shift(probe.game).within))
+    end
+    return nothing
+end
+
+"""Whether `swap`'s redraw passes the `RootShift` check at its swap point."""
+function shift_passes(swap::MapSwap)::Bool
+    try
+        trace_endpoint(LogitGame(swap.before, swap.precision), swap.width, REDRAW_SETTINGS;
+            redraw = ShiftProbe(LogitGame(swap.after, swap.precision), swap.swap_level))
+    catch verdict
+        if verdict isa ShiftVerdict
+            return verdict.passes
+        end
+        rethrow()
+    end
+    error("the trace never reached the swap level")
+end
+
+@testset "the root-shift check passes the near swap and refuses the far, fold and pitchfork swaps" begin
+    @test shift_passes(NEAR_SWAP)
+    @test !shift_passes(FAR_SWAP)
+    @test !shift_passes(FOLD_SWAP)
+    @test !shift_passes(PITCHFORK_SWAP)
+    off = TraceSettings{Float32}(; corrector = GameTracing.CorrectorSettings{Float32}(; reach = nothing))
+    @test GameTracing.RootShift(Float32[1, 1], Float32[0.1f0, 0.1f0], Float32[0, 1], off.corrector)(LogitGame(FAR_SWAP.after, 1.0f0)).within
+end
+
+@testset "a root shift is a Newton step onto the new map: it cuts the new map's correction by a factor of ten" begin
+    swap = swap_point(NEAR_SWAP)
+    point = [swap.logits ./ swap.relative_precision; swap.relative_precision]
+    after = LogitGame(NEAR_SWAP.after, NEAR_SWAP.precision)
+    shift = GameTracing.RootShift(point, Float32[0, 0, 1], nothing)(after).shift
+    @test last(shift) == 0
+    level = swap.relative_precision * NEAR_SWAP.precision
+    before_shift = newton_correction(NEAR_SWAP.after, swap.logits, level)
+    @test before_shift > 10 * REDRAW_SETTINGS.corrector.logit_tolerance
+    @test newton_correction(NEAR_SWAP.after, GameTracing.logits_at(point .+ shift), level) < before_shift / 10
+end
+
 """`game` traced over `width` logits with `redraw`, a `Function` as `collect_test_logs` takes."""
 struct LoggedTrace{G, R} <: Function
     game::G
@@ -162,15 +215,21 @@ end
     @test endpoint.logit_accuracy == outcome.logit_accuracy
 end
 
-@testset "a redrawn game must keep the trace's target precision" begin
+@testset "a redrawn game must keep the trace's target precision, and a hook's ShiftedGame must come from this point" begin
     game = LogitGame(GAME, TARGET_PRECISION)
     slot = GameTracing.RedrawSlot(game, false, 0.1f0)
-    @test !GameTracing.swapped!(slot, nothing)
-    @test !GameTracing.swapped!(slot, slot.game)
+    check = GameTracing.RootShift(Float32[0.1f0, 0.2f0, 0.5f0], Float32[0, 0, 1], nothing)
+    @test !GameTracing.swapped!(slot, check, nothing)
+    @test !GameTracing.swapped!(slot, check, slot.game)
+    @test !GameTracing.swapped!(slot, check, check(slot.game))
     @test !slot.pending
-    @test_throws ArgumentError GameTracing.swapped!(slot, LogitGame(GAME, 2 * TARGET_PRECISION))
-    @test GameTracing.swapped!(slot, LogitGame(LinearGainPass(GAME.interaction, -GAME.stand_alone), TARGET_PRECISION))
+    @test_throws ArgumentError GameTracing.swapped!(slot, check, LogitGame(GAME, 2 * TARGET_PRECISION))
+    flipped = check(LogitGame(LinearGainPass(GAME.interaction, -GAME.stand_alone), TARGET_PRECISION))
+    @test GameTracing.swapped!(slot, check, flipped)
     @test slot.pending
+    @test slot.factorization === flipped.factorization
+    elsewhere = GameTracing.RootShift(copy(check.point), check.border, nothing)(game)
+    @test_throws ArgumentError GameTracing.swapped!(slot, check, elsewhere)
 end
 
 @testset "a redraw of random swap 6 at relative precision 0.734 lands on the branch a double-precision reference follows" begin
@@ -237,7 +296,7 @@ struct EveryPointCopy{G}
     game::G
 end
 
-function (hook::EveryPointCopy{G})(::AbstractVector, ::Real)::G where {G}
+function (hook::EveryPointCopy{G})(::AbstractVector, ::Real, ::Any)::G where {G}
     return deepcopy(hook.game)
 end
 

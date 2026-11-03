@@ -1,6 +1,6 @@
 using BifurcationKit: BifurcationKit
 using ErrorTypes: is_error, unwrap, unwrap_error
-using LinearAlgebra: SingularException
+using LinearAlgebra: I, SingularException, lu
 using Random: Random
 
 @testset "trace reaches a fixed point of the logit map" begin
@@ -354,12 +354,13 @@ end
         false,
     )
     degenerate = zeros(Float32, WIDTH + 1)
-    thrown = GameTracing.segment_branch(iterator, game, degenerate, opening)
+    # A swapped game that was non-finite at the swap point has no factorization (`ShiftedGame`).
+    thrown = GameTracing.segment_branch(iterator, nothing, degenerate, opening)
     @test thrown.progress == opening
     @test GameTracing.solver_blowup(thrown.exception)
     @test_throws DimensionMismatch GameTracing.guarded_restart(
         iterator,
-        game,
+        lu(Matrix{Float32}(I, WIDTH + 1, WIDTH + 1)),
         zeros(Float32, WIDTH + 3),
         opening,
     )
