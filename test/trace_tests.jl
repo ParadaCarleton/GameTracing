@@ -153,11 +153,11 @@ end
     @test GameTracing.matrix_bls(WIDTH, Float32) isa GameTracing.InPlaceMatrixBLS
 end
 
-@testset "BifurcationKit's smallest step is the smallest normal number of the settings' element type" begin
+@testset "BifurcationKit's smallest step is zero, so its halving ends only at a zero step" begin
     for element in (Float16, Float32, float(Int))
         settings = TraceSettings{element}()
         @test GameTracing.continuation_options(settings, settings.first_step, 1, settings.first_tangent_divisor).dsmin ==
-            floatmin(element)
+            zero(element)
     end
 end
 
@@ -217,7 +217,7 @@ end
         @test (options.ds, options.dsmin, options.dsmax, options.a, options.η) ==
             (
                 settings.first_step,
-                floatmin(Float32),
+                zero(Float32),
                 settings.max_step,
                 settings.aggressiveness,
                 settings.first_tangent_divisor,

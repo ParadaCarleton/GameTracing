@@ -64,7 +64,7 @@ end
     @test unwrap_error(result).cause == GameTracing.TraceStuck
     @test count(==(("corrector stopped", :unresolved)), messages) == 1
     # Float32 resolves a step of about 4 eps(1) ‖z‖∞, 2^-17 of the largest step 0.05: about 17 refused halvings, with
-    # any accepted steps before them; reaching floatmin takes over 120.
+    # any accepted steps before them; halving to a zero step takes over 120.
     @test count(message -> first(message) == "corrector closed", messages) < 80
 end
 
@@ -197,7 +197,7 @@ end
     )
     result = GameTracing.reached_state(
         progress,
-        (; step_length = 0.0f0, accepted_step = 0.0f0, exhausted = nothing, logit_accuracy = 0.0f0, exception = "Stopping continuation."),
+        (; step_length = 0.0f0, accepted_step = 0.0f0, exhausted = nothing, logit_accuracy = 0.0f0, unresolved = false, exception = "Stopping continuation."),
         LogitGame(GAME, TARGET_PRECISION),
         TraceSettings{Float32}(; max_steps = 10),
         (;),

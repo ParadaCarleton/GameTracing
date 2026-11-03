@@ -28,8 +28,8 @@ distance (`TraceGeometry`).
 
 - `first_step`, `max_step`: first and largest arclength step. A step whose corrector fails halves; the trace ends as
   `TraceStuck` once its predictor moves the point no more than a few ulps of its size (`step_unresolved`).
-  BifurcationKit's `dsmin` is `floatmin(E)`, a guard only: a subnormal step gives NaN. After the predictor stops
-  moving, BifurcationKit still halves to that guard, about 100 halvings of one refused residual evaluation each.
+  BifurcationKit's `dsmin` is zero: its halving stops at a zero step. After the predictor stops moving, BifurcationKit
+  still halves to zero through the subnormals, about 150 halvings of one refused residual evaluation each.
 - `aggressiveness` (BifurcationKit's `a`): without a `step_control` growth limit, a step grows by
   `1 + a ((N - n) / N)²` after a corrector of `n` of its `N = corrector.newton_iterations` iterations.
 - `corrector`: a `CorrectorSettings`.
@@ -214,7 +214,7 @@ function continuation_options(
 )::BifurcationKit.ContinuationPar where {E <: Real}
     own = (;
         ds = step_length,
-        dsmin = floatmin(E),
+        dsmin = zero(E),
         dsmax = settings.max_step,
         a = settings.aggressiveness,
         η = first_tangent_divisor,
