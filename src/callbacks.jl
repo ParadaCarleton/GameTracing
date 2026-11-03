@@ -95,7 +95,7 @@ mutable struct CorrectorReach{C, E <: Real}
     settled_here::Bool
     noise::NoiseRecord{E}
     unresolved::Bool
-    reach_failure::Union{Nothing, @NamedTuple{relative_precision::E, correction::E}}
+    reach_failure::@NamedTuple{relative_precision::E, correction::E}
 end
 
 # A predictor within this many ulps of a coordinate leaves it unchanged at the float type's resolution.
@@ -110,27 +110,19 @@ function step_unresolved(start::AbstractVector{E}, predicted::AbstractVector{E})
     return all(abs.(predicted .- start) .<= RESOLUTION_ULPS * eps(E) .* abs.(start))
 end
 
-"""
-The record of a corrector that `check` stopped past its reach at relative precision `relative_precision`, when its
-correction exceeded `logit_tolerance`, else `nothing`. The step's first iterate has no correction (NaN) and records nothing.
-"""
-function reach_record(
-    check::CorrectorReach{C, E},
-    relative_precision::E,
-)::Union{Nothing, @NamedTuple{relative_precision::E, correction::E}} where {C, E <: Real}
-    if check.correction > check.settings.logit_tolerance
-        return (; relative_precision, correction = check.correction)
-    end
-    return nothing
+"""A step's reach-failure record before any corrector failed its reach: the correction is NaN, as at a solve's start."""
+function no_reach_failure(::Type{E})::@NamedTuple{relative_precision::E, correction::E} where {E <: Real}
+    return (; relative_precision = zero(E), correction = E(NaN32))
 end
 
 """
 `check`'s noise record once its step is unresolved. When the last corrector stopped past its reach with a correction
 above `logit_tolerance`, halving reached the float type's resolution without closing a point: the corrections are
-rounding noise, and the record confirms the precision exhausted there (`PrecisionExhausted`).
+rounding noise, and the record confirms the precision exhausted there (`PrecisionExhausted`). `reach_failure` holds
+the last reach failure of the current step, with a NaN correction when there was none.
 """
 function unresolved_noise(check::CorrectorReach{C, E})::NoiseRecord{E} where {C, E <: Real}
-    if isnothing(check.reach_failure)
+    if !(check.reach_failure.correction > check.settings.logit_tolerance)
         return check.noise
     end
     return NoiseRecord(check.noise.accuracy, (; check.reach_failure..., confirmed = true))
@@ -164,7 +156,7 @@ function CorrectorReach(
         false,
         NoiseRecord(zero(E), nothing),
         false,
-        nothing,
+        no_reach_failure(E),
     )
 end
 
@@ -230,7 +222,7 @@ function (check::CorrectorReach{C, E})(iterate::I;
                 check.noise = unresolved_noise(check)
                 return false
             end
-            check.reach_failure = nothing
+            check.reach_failure = no_reach_failure(E)
         end
         if !isfinite(iterate.residual)
             @debug "corrector stopped" _group = :trace reason = :nonfinite
@@ -240,7 +232,7 @@ function (check::CorrectorReach{C, E})(iterate::I;
         verdict = corrected!(check, iterate, reached)
         if !reached
             @debug "corrector stopped" _group = :trace reason = :reach correction = check.correction
-            check.reach_failure = reach_record(check, last(iterate.x))
+            check.reach_failure = (; relative_precision = last(iterate.x), check.correction)
         end
         return verdict
     end
