@@ -27,7 +27,7 @@ relative precision. Step sizes are arclength in `geometry`'s norm (`StepDistance
 distance (`TraceGeometry`).
 
 - `first_step`, `max_step`: first and largest arclength step. A step whose corrector fails halves; the trace ends as
-  `TraceStuck` once its predictor no longer moves the point at the float type's resolution (`step_unresolved`).
+  `TraceStuck` once its predictor moves the point no more than a few ulps of its size (`step_unresolved`).
   BifurcationKit's `dsmin` is `floatmin(E)`, a guard only: a subnormal step gives NaN. After the predictor stops
   moving, BifurcationKit still halves to that guard, about 100 halvings of one refused residual evaluation each.
 - `aggressiveness` (BifurcationKit's `a`): without a `step_control` growth limit, a step grows by
