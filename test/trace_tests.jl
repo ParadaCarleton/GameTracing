@@ -153,15 +153,12 @@ end
     @test GameTracing.matrix_bls(WIDTH, Float32) isa GameTracing.InPlaceMatrixBLS
 end
 
-@testset "the default smallest step is the smallest normal number of the settings' element type" begin
+@testset "BifurcationKit's smallest step is the smallest normal number of the settings' element type" begin
     for element in (Float16, Float32, float(Int))
-        @test TraceSettings{element}().min_step == floatmin(element)
+        settings = TraceSettings{element}()
+        @test GameTracing.continuation_options(settings, settings.first_step, 1, settings.first_tangent_divisor).dsmin ==
+            floatmin(element)
     end
-end
-
-@testset "a subnormal smallest step is refused" begin
-    settings = TraceSettings{Float32}(min_step = nextfloat(0.0f0))
-    @test_throws ArgumentError trace_endpoint(LogitGame(GAME, TARGET_PRECISION), WIDTH, settings)
 end
 
 @testset "PALC orients by determinant only where the solver has one" begin
@@ -202,7 +199,6 @@ end
     for _ in 1:20
         settings = TraceSettings{Float32}(
             first_step = rand(rng, Float32),
-            min_step = 1.0f-6 * rand(rng, Float32),
             max_step = 1 + rand(rng, Float32),
             aggressiveness = rand(rng, Float32),
             first_tangent_divisor = 1 + 100 * rand(rng, Float32),
@@ -221,7 +217,7 @@ end
         @test (options.ds, options.dsmin, options.dsmax, options.a, options.η) ==
             (
                 settings.first_step,
-                settings.min_step,
+                floatmin(Float32),
                 settings.max_step,
                 settings.aggressiveness,
                 settings.first_tangent_divisor,
