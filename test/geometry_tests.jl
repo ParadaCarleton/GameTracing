@@ -4,7 +4,9 @@ using ErrorTypes: is_error, unwrap, unwrap_error
     rng = fresh_rng()
     for _ in 1:20
         from, to = 4 .* randn(rng, Float32, 2)
-        probability, other = inv(1 + exp(-from)), inv(1 + exp(-to))
+        # In double precision: in Float32 this direct form loses 1 - p to rounding once both logits are large, which
+        # failed rtol 1e-3 in about 1 of 1200 draws; bernoulli_kl's log1pexp form does not.
+        probability, other = inv(1 + exp(-from * float(1))), inv(1 + exp(-to * float(1)))
         direct = probability * log(probability / other) + (1 - probability) * log((1 - probability) / (1 - other))
         @test GameTracing.bernoulli_kl(from, to) ≈ direct rtol = 1.0f-3 atol = 1.0f-6
         @test GameTracing.bernoulli_kl(from, to) >= 0
