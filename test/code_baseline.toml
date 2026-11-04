@@ -1,6 +1,4 @@
 [concrete-return]
-# `CrossingResult{E}` is generic in `E` with no abstract supertype to name; Corset classifies `Head{…}` by its head alone.
-"src/crossing.jl crossing_steps" = "generic Result"
 # Test helpers, checked by the syntax rules since Corset reads one directory list for every rule.
 "test/arms.jl arm_variants" = 1
 "test/games.jl fresh_rng" = 1

@@ -6,7 +6,8 @@ using Logging: @debug
                          contraction_offset, newton_iterations)
 
 The corrector's controls (`CorrectorReach`); `nothing` switches a limit off. `reach`: a corrector that moves a logit
-further from the predictor than this times the predictor's own largest logit move is refused. `max_kl`: a corrected point whose largest per-logit probability KL from
+further from the predictor than this times the predictor's own largest logit move is refused. `shift_share`: the share
+of that reach a redraw's predicted root shift may use (`RootShift`). `max_kl`: a corrected point whose largest per-logit probability KL from
 the predictor passes this is refused. A step's turn is limited by `StepControl`'s `turn_limit`.
 
 Convergence is scale-free, as in Gambit's tracer (path.cc:372, `c_tol` in log probabilities): a Newton correction that
@@ -17,6 +18,9 @@ times `contraction_offset`) fails to contract; BifurcationKit's step growth read
 """
 Base.@kwdef struct CorrectorSettings{E <: Real}
     reach::Union{Nothing, E} = 2.0f0
+    # Measured shares at the swap fixtures (test/games.jl): NEAR 0.075; PITCHFORK 4.0, FAR 77, FOLD 1057.
+    # Half the reach leaves the corrector the other half for the branch's curvature, and splits 0.075 and 4 evenly.
+    shift_share::E = 0.5f0
     max_kl::Union{Nothing, E} = nothing
     logit_tolerance::E = 1.0f-4
     pin_tolerance::E = 1.0f-5
@@ -423,22 +427,25 @@ function branch_progress(branch::AbstractVector, opening::TraceProgress{E})::Tra
 end
 
 """
-    TraceFinalise(keep_going, redraw, slot)
+    TraceFinalise(keep_going, redraw, slot, settings)
 
 BifurcationKit's `finalise_solution` of one trace segment. An accepted point bitwise equal to the branch's last one (a
 step below the point's rounding) stops the trace, a stall, as does a point that closes a loop of the branch (`looped`). The trace goes on while `keep_going(logits,
-relative_precision)` holds. Then `redraw(logits, relative_precision)` may return a new game: `slot` takes it and the
+relative_precision)` holds. Then `redraw(logits, relative_precision, shift)` may return a new game, where `shift` is
+the point's `RootShift` check under `settings`: `slot` takes it and the
 segment stops, for `trace_endpoint` to correct the point onto it and restart. A `redraw` that returns `nothing` or the
 current game swaps nothing. `JULIA_DEBUG=trace` lists every point.
 """
-struct TraceFinalise{A, D, S}
+struct TraceFinalise{A, D, S, C <: CorrectorSettings}
     keep_going::A
     redraw::D
     slot::S
+    settings::C
 end
 
 function (finalise::TraceFinalise)(point::P, tangent::T, step::S, result::Any;
     state::Any,
+    iter::Any,
     # fatou-ignore unused-argument: BifurcationKit passes keyword arguments this callback ignores
     keywords...,
 )::Bool where {P, T, S <: Integer}
@@ -464,5 +471,16 @@ function (finalise::TraceFinalise)(point::P, tangent::T, step::S, result::Any;
         return false
     end
     finalise.slot.step_length = abs(state.ds)
-    return !swapped!(finalise.slot, finalise.redraw(logits, point.p))
+    # A redraw swaps the map for the steps after this point, and the endpoint has none.
+    if point.p == 1
+        return true
+    end
+    algorithm = iter.alg
+    shift = RootShift(
+        point.u,
+        state.ds .* tangent.u,
+        palc_border(BifurcationKit.getdot(algorithm), eltype(point.u)(BifurcationKit.getθ(algorithm)), tangent.u),
+        finalise.settings,
+    )
+    return !swapped!(finalise.slot, shift, finalise.redraw(logits, point.p, shift))
 end

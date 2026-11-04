@@ -1,5 +1,4 @@
 using ErrorTypes: is_error, unwrap, unwrap_error
-using LinearAlgebra: norm
 using Logging: Debug
 using Test: collect_test_logs
 
@@ -57,27 +56,86 @@ function on_map(result::TraceResult{Float32}, pass::Any, precision::Real)::Bool
     return settled_logits(pass, unwrap(result).logits, precision, REDRAW_SETTINGS)
 end
 
-@testset "a redraw whose homotopy rises to the new map's only root crosses there, 3.5 logits on" begin
-    swap = swap_point(FAR_SWAP)
-    @test rising_homotopy(FAR_SWAP.before, FAR_SWAP.after, swap.relative_precision * FAR_SWAP.precision, only(swap.logits))
-    result = swapped_trace(FAR_SWAP)
-    @test !is_error(result)
-    @test on_map(result, FAR_SWAP.after, FAR_SWAP.precision)
+"""
+Whether `swap`'s redrawn trace failed `TraceStuck` at its swap point, on a root of the old map: the step after a
+redraw that moves the root past the corrector's reach halves until no step is left, and no point of the new map is
+accepted.
+"""
+function stuck_at_swap(swap::MapSwap)::Bool
+    point = swap_point(swap)
+    result = swapped_trace(swap)
+    if !is_error(result)
+        return false
+    end
+    failure = unwrap_error(result)
+    return failure.cause == GameTracing.TraceStuck && failure.context.relative_precision == point.relative_precision &&
+        residual_norm(swap.before, failure.context.logits, failure.context.precision) < 1.0f-3
 end
 
-@testset "a redraw whose homotopy folds before the new map fails stuck and projected, at the fold" begin
+@testset "a redraw that moves the root 3.5 logits fails stuck at the swap, on the old map" begin
+    swap = swap_point(FAR_SWAP)
+    # The homotopy reaches the new map's only root, but no corrector from the swap point does.
+    @test rising_homotopy(FAR_SWAP.before, FAR_SWAP.after, swap.relative_precision * FAR_SWAP.precision, only(swap.logits))
+    @test stuck_at_swap(FAR_SWAP)
+end
+
+@testset "a redraw past a fold of the homotopy fails stuck at the swap, on the old map" begin
     swap = swap_point(FOLD_SWAP)
     @test !rising_homotopy(FOLD_SWAP.before, FOLD_SWAP.after, swap.relative_precision * FOLD_SWAP.precision, only(swap.logits))
-    result = swapped_trace(FOLD_SWAP)
-    @test is_error(result)
-    failure = unwrap_error(result)
-    @test failure.cause == GameTracing.TraceStuck
-    @test failure.context.projected
-    @test failure.context.reason == :fold
-    @test failure.context.relative_precision == swap.relative_precision
-    @test failure.context.step_length > 0
-    # The failure keeps the accepted point on the old map, not a root of the new one.
-    @test residual_norm(FOLD_SWAP.before, failure.context.logits, failure.context.precision) < 1.0f-3
+    @test stuck_at_swap(FOLD_SWAP)
+end
+
+"""The `RootShift` verdict on a candidate game at the first accepted point a `ShiftProbe` sees from its swap level."""
+struct ShiftVerdict <: Exception
+    passes::Bool
+end
+
+"""A `redraw` hook that throws the `ShiftVerdict` on `game` at the first accepted point from `swap_level` on."""
+struct ShiftProbe{G, E <: Real}
+    game::G
+    swap_level::E
+end
+
+function (probe::ShiftProbe)(::AbstractVector, relative_precision::Real, shift::GameTracing.RootShift)::Nothing
+    if relative_precision >= probe.swap_level
+        throw(ShiftVerdict(shift(probe.game).within))
+    end
+    return nothing
+end
+
+"""Whether `swap`'s redraw passes the `RootShift` check at its swap point."""
+function shift_passes(swap::MapSwap)::Bool
+    try
+        trace_endpoint(LogitGame(swap.before, swap.precision), swap.width, REDRAW_SETTINGS;
+            redraw = ShiftProbe(LogitGame(swap.after, swap.precision), swap.swap_level))
+    catch verdict
+        if verdict isa ShiftVerdict
+            return verdict.passes
+        end
+        rethrow()
+    end
+    error("the trace never reached the swap level")
+end
+
+@testset "the root-shift check passes the near swap and refuses the far, fold and pitchfork swaps" begin
+    @test shift_passes(NEAR_SWAP)
+    @test !shift_passes(FAR_SWAP)
+    @test !shift_passes(FOLD_SWAP)
+    @test !shift_passes(PITCHFORK_SWAP)
+    off = TraceSettings{Float32}(; corrector = GameTracing.CorrectorSettings{Float32}(; reach = nothing))
+    @test GameTracing.RootShift(Float32[1, 1], Float32[0.1f0, 0.1f0], Float32[0, 1], off.corrector)(LogitGame(FAR_SWAP.after, 1.0f0)).within
+end
+
+@testset "a root shift is a Newton step onto the new map: it cuts the new map's correction by a factor of ten" begin
+    swap = swap_point(NEAR_SWAP)
+    point = [swap.logits ./ swap.relative_precision; swap.relative_precision]
+    after = LogitGame(NEAR_SWAP.after, NEAR_SWAP.precision)
+    shift = GameTracing.RootShift(point, Float32[0, 0, 1], nothing)(after).shift
+    @test last(shift) == 0
+    level = swap.relative_precision * NEAR_SWAP.precision
+    before_shift = newton_correction(NEAR_SWAP.after, swap.logits, level)
+    @test before_shift > 10 * REDRAW_SETTINGS.corrector.logit_tolerance
+    @test newton_correction(NEAR_SWAP.after, GameTracing.logits_at(point .+ shift), level) < before_shift / 10
 end
 
 """`game` traced over `width` logits with `redraw`, a `Function` as `collect_test_logs` takes."""
@@ -101,10 +159,10 @@ function stop_reasons(trace::LoggedTrace)::NamedTuple
     return (; reasons = [record.kwargs[:reason] for record in logs if record.message == "trace stopped"], result)
 end
 
-@testset "a trace that stops short logs why, once: a redraw that folds, a non-finite game; a reached trace logs no stop" begin
-    folded = stop_reasons(logged_swap(FOLD_SWAP))
-    @test unwrap_error(folded.result).context.projected
-    @test folded.reasons == [:fold]
+@testset "a trace that stops short logs why, once: a redraw past the reach, a non-finite game; a reached trace logs no stop" begin
+    far = stop_reasons(logged_swap(FAR_SWAP))
+    @test unwrap_error(far.result).cause == GameTracing.TraceStuck
+    @test length(far.reasons) == 1
     poisoned = stop_reasons(LoggedTrace(LogitGame(PoisonedPass(GAME, 1.0f0), TARGET_PRECISION), WIDTH, GameTracing.NoRedraw()))
     @test unwrap_error(poisoned.result).cause == GameTracing.TraceStuck
     @test length(poisoned.reasons) == 1
@@ -114,35 +172,27 @@ end
     @test isempty(near.reasons)
 end
 
-@testset "a redraw at the target precision ends on a root of the new map" begin
+@testset "a redraw requested at the target is not installed: the endpoint solves the map it was traced on" begin
     swap = MapSwap(NEAR_SWAP.before, NEAR_SWAP.after, NEAR_SWAP.precision, 1.0f0, NEAR_SWAP.width)
     result = swapped_trace(swap)
     @test !is_error(result)
     logits = unwrap(result).logits
-    @test settled_logits(swap.after, logits, swap.precision, REDRAW_SETTINGS)
-    @test newton_correction(swap.before, logits, swap.precision) > 10 * REDRAW_SETTINGS.corrector.logit_tolerance
+    @test settled_logits(swap.before, logits, swap.precision, REDRAW_SETTINGS)
+    @test newton_correction(swap.after, logits, swap.precision) > 10 * REDRAW_SETTINGS.corrector.logit_tolerance
 end
 
 @testset "every endpoint solves the map in effect at the target, whatever the swap level" begin
     rng = fresh_rng()
-    levels = [rand(rng, Float32, 8); 1.0f0]
-    for level in levels
+    for level in [rand(rng, Float32, 8); 1.0f0]
         swap = MapSwap(NEAR_SWAP.before, NEAR_SWAP.after, NEAR_SWAP.precision, level, NEAR_SWAP.width)
         result = swapped_trace(swap)
         @test !is_error(result)
-        @test on_map(result, swap.after, swap.precision)
+        # The swap lands on the first accepted point at or past `level`; on the endpoint it is not installed.
+        stopped = trace_endpoint(LogitGame(swap.before, swap.precision), swap.width, REDRAW_SETTINGS; keep_going = StopAt(level))
+        installed = is_error(stopped) && unwrap_error(stopped).context.relative_precision < 1
+        in_effect = ifelse(installed, swap.after, swap.before)
+        @test on_map(result, in_effect, swap.precision)
     end
-    # A swap on the target point when that point spends the step budget: the budget the unswapped trace took.
-    budget = unwrap(trace_endpoint(LogitGame(NEAR_SWAP.before, NEAR_SWAP.precision), NEAR_SWAP.width, REDRAW_SETTINGS)).steps
-    @test budget > 0
-    last_step = trace_endpoint(
-        LogitGame(NEAR_SWAP.before, NEAR_SWAP.precision),
-        NEAR_SWAP.width,
-        TraceSettings{Float32}(; max_steps = budget);
-        redraw = SwapAt(LogitGame(NEAR_SWAP.after, NEAR_SWAP.precision), 1.0f0),
-    )
-    @test !is_error(last_step)
-    @test on_map(last_step, NEAR_SWAP.after, NEAR_SWAP.precision)
 end
 
 @testset "a corrector at rounding noise fails PrecisionExhausted at its precision, before the target" begin
@@ -165,33 +215,30 @@ end
     @test endpoint.logit_accuracy == outcome.logit_accuracy
 end
 
-@testset "a redrawn game must keep the trace's target precision" begin
+@testset "a redrawn game must keep the trace's target precision, and a hook's ShiftedGame must come from this point" begin
     game = LogitGame(GAME, TARGET_PRECISION)
-    slot = GameTracing.RedrawSlot(game, game, false, 0.1f0)
-    @test !GameTracing.swapped!(slot, nothing)
-    @test !GameTracing.swapped!(slot, slot.game)
+    slot = GameTracing.RedrawSlot(game, false, 0.1f0)
+    check = GameTracing.RootShift(Float32[0.1f0, 0.2f0, 0.5f0], Float32[0, 0, 1], nothing)
+    @test !GameTracing.swapped!(slot, check, nothing)
+    @test !GameTracing.swapped!(slot, check, slot.game)
+    @test !GameTracing.swapped!(slot, check, check(slot.game))
     @test !slot.pending
-    @test_throws ArgumentError GameTracing.swapped!(slot, LogitGame(GAME, 2 * TARGET_PRECISION))
-    @test GameTracing.swapped!(slot, LogitGame(LinearGainPass(GAME.interaction, -GAME.stand_alone), TARGET_PRECISION))
+    @test_throws ArgumentError GameTracing.swapped!(slot, check, LogitGame(GAME, 2 * TARGET_PRECISION))
+    flipped = check(LogitGame(LinearGainPass(GAME.interaction, -GAME.stand_alone), TARGET_PRECISION))
+    @test GameTracing.swapped!(slot, check, flipped)
     @test slot.pending
-    @test slot.before === game
+    @test slot.factorization === flipped.factorization
+    elsewhere = GameTracing.RootShift(copy(check.point), check.border, nothing)(game)
+    @test_throws ArgumentError GameTracing.swapped!(slot, check, elsewhere)
 end
 
-@testset "a redraw of random swap 6 at relative precision 0.734 crosses to the branch a double-precision reference follows" begin
+@testset "a redraw of random swap 6 at relative precision 0.734 lands on the branch a double-precision reference follows" begin
     (; swap, reference_after) = random_swap(6)
-    # A Newton correction moved this swap's logits 0.439 from the old root, past a fixed bound of 0.4.
+    # A Newton correction moves this swap's logits 0.439 from the old root.
     level = 0.734f0
     stopped = trace_endpoint(LogitGame(swap.before, swap.precision), swap.width, REDRAW_SETTINGS; keep_going = StopAt(level))
     (; logits, relative_precision) = unwrap_error(stopped).context
     @test relative_precision >= level
-    point = [logits ./ relative_precision; relative_precision]
-    crossing = GameTracing.redraw_crossing(LogitGame(swap.before, swap.precision), LogitGame(swap.after, swap.precision), point, REDRAW_SETTINGS)
-    @test crossing.reason == :crossed
-    @test crossing.steps > 0
-    crossed = GameTracing.logits_at(crossing.point)
-    @test residual_norm(swap.after, crossed, relative_precision * swap.precision) < 1.0f-3
-    @test norm(crossed .- logits) > 0.4f0
-    @info "crossing steps" swap = "swap 6" crossing.steps
     result = trace_endpoint(LogitGame(swap.before, swap.precision), swap.width, REDRAW_SETTINGS; redraw = SwapAt(LogitGame(swap.after, swap.precision), level))
     @test !is_error(result)
     endpoint = unwrap(result).logits
@@ -204,19 +251,17 @@ end
     @test maximum(abs, inv.(1 .+ exp.(-endpoint)) .- reference.first_choices) < probability_bound(reference_after, reference.logits, swap.precision, residual, 0.25f0)
 end
 
-@testset "a redraw onto a map that shares the point's root crosses at that root, though the gaps never move" begin
-    stopped = trace_endpoint(LogitGame(GAME, TARGET_PRECISION), WIDTH, REDRAW_SETTINGS; keep_going = StopAt(0.3f0))
-    (; logits, relative_precision) = unwrap_error(stopped).context
-    point = [logits ./ relative_precision; relative_precision]
-    # An equal map in a new object: the homotopy's s-slope is zero, so its tangent moves only the blend.
+@testset "a redraw onto an equal map ends where the trace without it ends" begin
+    plain = unwrap(trace_endpoint(LogitGame(GAME, TARGET_PRECISION), WIDTH, REDRAW_SETTINGS)).logits
+    # An equal map in a new object: the swap restarts the trace from the same root, on the same branch.
     twin = LinearGainPass(copy(GAME.interaction), copy(GAME.stand_alone))
-    crossing = GameTracing.redraw_crossing(LogitGame(GAME, TARGET_PRECISION), LogitGame(twin, TARGET_PRECISION), point, REDRAW_SETTINGS)
-    @test crossing.reason == :crossed
-    @test crossing.steps > 0
-    @test settled_logits(twin, GameTracing.logits_at(crossing.point), relative_precision * TARGET_PRECISION, REDRAW_SETTINGS)
+    result = trace_endpoint(LogitGame(GAME, TARGET_PRECISION), WIDTH, REDRAW_SETTINGS; redraw = SwapAt(LogitGame(twin, TARGET_PRECISION), 0.3f0))
+    @test !is_error(result)
+    @test settled_logits(GAME, unwrap(result).logits, TARGET_PRECISION, REDRAW_SETTINGS)
+    @test maximum(abs, unwrap(result).logits .- plain) < 1.0f-3
 end
 
-@testset "a redraw onto a game that is non-finite at the redraw fails stuck and projected, as a solver blowup" begin
+@testset "a redraw onto a game that is non-finite at the redraw fails as a broken solve, at the swap" begin
     # The new game is non-finite past precision 1, so its branch has no points at the redraw's precision 2.
     before = PoisonedPass(NEAR_SWAP.before, Inf32)
     after = PoisonedPass(NEAR_SWAP.after, 1.0f0)
@@ -228,88 +273,37 @@ end
     )
     @test is_error(result)
     failure = unwrap_error(result)
-    @test failure.cause == GameTracing.TraceStuck
-    @test failure.context.projected
-    @test failure.context.reason == :solver_blowup
+    @test failure.cause in (GameTracing.TraceStuck, GameTracing.Singular)
+    @test failure.context.relative_precision == swap_point(NEAR_SWAP).relative_precision
 end
 
-@testset "a redraw whose homotopy passes a pitchfork with no fold fails stuck and projected, at the crossing" begin
+@testset "a redraw whose new map's branch meets a pitchfork at the swap fails stuck there, on the old map" begin
     swap = swap_point(PITCHFORK_SWAP)
     level = swap.relative_precision * PITCHFORK_SWAP.precision
     (; before, after) = PITCHFORK_SWAP
-    # The blend's interaction runs from the old map's to the new one's; sampled in `s`, only the antisymmetric mode changes sign.
+    # Between the maps' interactions only the antisymmetric mode changes sign: the new map's root is past a pitchfork.
     modes = [
         symmetric_modes((1 - blend) * before.interaction[1, 2] + blend * after.interaction[1, 2], level)
         for blend in range(0, 1; length = 101)
     ]
     @test all(mode.symmetric > 0 for mode in modes)
     @test first(modes).antisymmetric > 0 > last(modes).antisymmetric
-    result = swapped_trace(PITCHFORK_SWAP)
+    @test stuck_at_swap(PITCHFORK_SWAP)
+end
+
+"""A `redraw` hook that swaps in a fresh copy of `game` at every accepted point: an equal map, a new game each time."""
+struct EveryPointCopy{G}
+    game::G
+end
+
+function (hook::EveryPointCopy{G})(::AbstractVector, ::Real, ::Any)::G where {G}
+    return deepcopy(hook.game)
+end
+
+@testset "a redraw at the last step the budget allows fails NoConvergence there, with no segment after it" begin
+    game = LogitGame(GAME, TARGET_PRECISION)
+    result = trace_endpoint(game, WIDTH, TraceSettings{Float32}(; max_steps = 3); redraw = EveryPointCopy(game))
     @test is_error(result)
-    failure = unwrap_error(result)
-    @test failure.cause == GameTracing.TraceStuck
-    @test failure.context.projected
-    @test failure.context.reason == :crossing
-end
-
-"""A game pass that counts its calls in `calls[1]` and otherwise is `pass`."""
-struct CountingPass{P}
-    pass::P
-    calls::Vector{Int}
-end
-
-function (pass::CountingPass)(
-    gain::AbstractVector,
-    gain_slope::AbstractMatrix,
-    gain_precision_slope::AbstractVector,
-    logits::AbstractVector,
-    precision::Real,
-)::Nothing
-    pass.calls[1] += 1
-    pass.pass(gain, gain_slope, gain_precision_slope, logits, precision)
-    return nothing
-end
-
-"""`game`'s branch residual and Jacobian at `state`, from a fresh evaluation."""
-function fresh_parts(game::LogitGame, state::AbstractVector{Float32})::NamedTuple
-    filled = GameTracing.branch_system!(GameTracing.BranchWorkspace(game, state), game, state, last(state))
-    return (; residual = copy(filled.residual), jacobian = copy(filled.jacobian))
-end
-
-"""BifurcationKit's problem for `game`'s branch at `point`, as `redraw_crossing` builds it."""
-function crossing_problem(game::LogitGame, point::AbstractVector{Float32})::GameTracing.BifurcationKit.AbstractBifurcationProblem
-    return GameTracing.branch_problem(game, point, last(point); record_from_solution = GameTracing.trace_record_point)
-end
-
-"""The calls both games' `CountingPass`es have made."""
-pass_calls(before::LogitGame, after::LogitGame)::Int = before.pass!.calls[1] + after.pass!.calls[1]
-
-@testset "a homotopy's residual, Jacobian and s-slope at one state share one pass of each game, and track a moved state" begin
-    swap = swap_point(NEAR_SWAP)
-    point = [swap.logits ./ swap.relative_precision; swap.relative_precision]
-    before = LogitGame(CountingPass(NEAR_SWAP.before, [0]), NEAR_SWAP.precision)
-    after = LogitGame(CountingPass(NEAR_SWAP.after, [0]), NEAR_SWAP.precision)
-    homotopy = GameTracing.HomotopyMap(crossing_problem(before, point), crossing_problem(after, point), point)
-    @test pass_calls(before, after) == 2
-    field, jacobian, slope = GameTracing.HomotopyResidual(homotopy), GameTracing.HomotopyJacobian(homotopy), GameTracing.HomotopySlope(homotopy)
-    moved = point .+ Float32[0.1f0, -0.2f0, 0.0f0]
-    # Each state's first call passes both games unless the passes already hold it; the next calls there pass none.
-    for (state, new_passes) in ((point, 0), (moved, 2), (point, 2)), blend in (0.0f0, 0.3f0)
-        calls = pass_calls(before, after)
-        start_parts = fresh_parts(LogitGame(NEAR_SWAP.before, NEAR_SWAP.precision), state)
-        end_parts = fresh_parts(LogitGame(NEAR_SWAP.after, NEAR_SWAP.precision), state)
-        @test field(state, blend) == (1 - blend) .* start_parts.residual .+ blend .* end_parts.residual
-        @test jacobian(state, blend) == (1 - blend) .* start_parts.jacobian .+ blend .* end_parts.jacobian
-        @test slope(state, blend) == end_parts.residual .- start_parts.residual
-        @test pass_calls(before, after) - calls == ifelse(iszero(blend), new_passes, 0)
-    end
-end
-
-@testset "a redraw crossing rethrows an exception it does not convert" begin
-    swap = swap_point(NEAR_SWAP)
-    point = [swap.logits ./ swap.relative_precision; swap.relative_precision]
-    before = LogitGame(NEAR_SWAP.before, NEAR_SWAP.precision)
-    # A bare `ArgumentError` is a caller's contract violation, which no trace converts.
-    after = LogitGame(ThrowingPass(NEAR_SWAP.after), NEAR_SWAP.precision)
-    @test_throws ArgumentError GameTracing.redraw_crossing(before, after, point, REDRAW_SETTINGS)
+    @test unwrap_error(result).cause == GameTracing.NoConvergence
+    @test unwrap_error(result).context.relative_precision < 1
 end

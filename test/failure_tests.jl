@@ -187,7 +187,8 @@ function finalised(
         tangent,
         point.step,
         (; branch);
-        state = (; ds = 0.1f0),
+        state = (; ds = one(point.param) / 10),
+        iter = (; alg = GameTracing.palc_algorithm(TraceSettings{typeof(point.param)}(), length(point.gaps), TARGET_PRECISION)),
     )
 end
 
@@ -196,7 +197,8 @@ end
     finalise = GameTracing.TraceFinalise(
         GameTracing.AcceptAll(),
         GameTracing.NoRedraw(),
-        GameTracing.RedrawSlot(game, game, false, 0.1f0),
+        GameTracing.RedrawSlot(game, false, 0.1f0),
+        GameTracing.CorrectorSettings{Float32}(),
     )
     start, moved = branch_record(Float32[0, 0], 0.0f0, 0),
         branch_record(Float32[0.1f0, 0.2f0], 0.5f0, 1)
@@ -306,7 +308,8 @@ end
     finalise = GameTracing.TraceFinalise(
         GameTracing.AcceptAll(),
         GameTracing.NoRedraw(),
-        GameTracing.RedrawSlot(game, game, false, element(1) / 10),
+        GameTracing.RedrawSlot(game, false, element(1) / 10),
+        GameTracing.CorrectorSettings{typeof(element(1))}(),
     )
     @test finalised(finalise, circle[10], circle[1:9])
     @test !finalised(finalise, circle[flagged], circle[1:(flagged - 1)])
