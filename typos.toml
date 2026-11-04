@@ -1,0 +1,10 @@
+[default]
+locale = "en-us"
+[default.extend-words]
+# BifurcationKit's spelling: its `finalise_solution` callback, which `TraceFinalise` implements.
+finalise = "finalise"
+Finalise = "Finalise"
+finalised = "finalised"
+[files]
+# Benchmark results are named by the commit they ran at, whose hex can spell a word.
+extend-exclude = ["benchmark/results/"]
