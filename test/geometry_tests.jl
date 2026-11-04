@@ -62,7 +62,7 @@ end
     predicted = Float32[1, 0, 0.5f0]
     # The predictor moves the first logit by 0.5; this moves it 0.5 more, twice the reach of 0.5 times that move.
     beyond_reach = predicted .+ Float32[1, 0, 0]
-    @test GameTracing.logit_change(predicted, beyond_reach) ≈ 2 * 0.5f0 *GameTracing.logit_change(Float32[0, 0, 0.5f0], predicted)
+    @test GameTracing.logit_change(predicted, beyond_reach) ≈ 2 * 0.5f0 * GameTracing.logit_change(Float32[0, 0, 0.5f0], predicted)
     for (corrector, corrected) in (
             (CorrectorSettings{Float32}(reach = nothing, max_kl = 1.0f-3), Float32[3, 0, 0.5f0]),
             (CorrectorSettings{Float32}(reach = 0.5f0), beyond_reach),

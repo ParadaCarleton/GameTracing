@@ -2,8 +2,10 @@ using LinearAlgebra: SingularException, tril, triu
 using Random: RandomDevice, Xoshiro
 
 """A random bordered system of `width` unknowns: its Jacobian, border column, border row, corner, and the two right-hand sides."""
-function bordered_system(rng::Xoshiro, width::Integer, ::Type{E})::NamedTuple where {E <:
-    Real}
+function bordered_system(rng::Xoshiro, width::Integer, ::Type{E})::NamedTuple where {
+        E <:
+        Real,
+    }
     return (;
         jacobian = randn(rng, E, width, width) +
             E[row == column ? 4 : 0 for row in 1:width, column in 1:width],
@@ -17,10 +19,10 @@ end
 
 """The bordered solver `BifurcationKit.MatrixBLS` and ours return on `system`, as `(; reference, ours)` of `(x, scalar)`."""
 function bordered_solutions(
-    system::NamedTuple,
-    row_scale::Real,
-    corner_scale::Real,
-)::NamedTuple
+        system::NamedTuple,
+        row_scale::Real,
+        corner_scale::Real,
+    )::NamedTuple
     width = length(system.residual)
     ours = GameTracing.matrix_bls(width, eltype(system.jacobian))(
         system.jacobian,
@@ -64,14 +66,18 @@ end
     rng = Xoshiro(rand(RandomDevice(), UInt))
     for width in 1:5, _ in 1:20
         system = bordered_system(rng, width, Float32)
-        lower = (; system..., jacobian = tril(system.jacobian), border_column = zeros(
-            Float32,
-            width,
-        ))
-        upper = (; system..., jacobian = triu(system.jacobian), border_row = zeros(
-            Float32,
-            width,
-        ))
+        lower = (;
+            system..., jacobian = tril(system.jacobian), border_column = zeros(
+                Float32,
+                width,
+            ),
+        )
+        upper = (;
+            system..., jacobian = triu(system.jacobian), border_row = zeros(
+                Float32,
+                width,
+            ),
+        )
         @test bit_identical(lower, 0.3f0, 2.0f0)
         @test bit_identical(upper, 0.3f0, 2.0f0)
     end
@@ -105,10 +111,12 @@ end
     )
     non_finite = (; singular..., jacobian = Float32[NaN32 2; 2 4])
     # A zero first column makes the first pivot the zero one (LAPACK `info == 1`).
-    zero_first_column = (; singular..., jacobian = Float32[0 2; 0 4], border_row = Float32[
-        0,
-        1,
-    ])
+    zero_first_column = (;
+        singular..., jacobian = Float32[0 2; 0 4], border_row = Float32[
+            0,
+            1,
+        ],
+    )
     cases = (
         (singular, SingularException),
         (zero_first_column, SingularException),

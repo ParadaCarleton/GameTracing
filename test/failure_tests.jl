@@ -48,11 +48,12 @@ struct RefuseConverged end
 end
 
 @testset "a corrector reach too short to hold any step ends the trace" begin
-    result = trace_endpoint(LogitGame(FOLD_GAME, 2.0f0), 1, TraceSettings{Float32}(
-        corrector = CorrectorSettings{Float32}(reach = 1.0f-6),
-        first_step = 0.05f0,
-        max_step = 0.1f0,
-    );
+    result = trace_endpoint(
+        LogitGame(FOLD_GAME, 2.0f0), 1, TraceSettings{Float32}(
+            corrector = CorrectorSettings{Float32}(reach = 1.0f-6),
+            first_step = 0.05f0,
+            max_step = 0.1f0,
+        )
     )
     @test is_error(result)
     @test unwrap_error(result).cause in (GameTracing.TraceStuck, GameTracing.NoConvergence)
@@ -60,9 +61,11 @@ end
 
 @testset "exceptions BifurcationKit and LAPACK throw are told apart from a caller's" begin
     @test GameTracing.uncorrected_start("Stopping continuation.")
-    @test GameTracing.uncorrected_start(ErrorException(
-        "Newton failed to converge at the start",
-    ))
+    @test GameTracing.uncorrected_start(
+        ErrorException(
+            "Newton failed to converge at the start",
+        )
+    )
     @test !GameTracing.uncorrected_start(ErrorException("another"))
     @test !GameTracing.uncorrected_start("another")
     @test !GameTracing.uncorrected_start(ArgumentError("bad game"))
@@ -167,19 +170,19 @@ end
 
 """A `trace_record_point` record of BifurcationKit's branch at `step`: the point `(gaps, param)` and a unit tangent."""
 function branch_record(
-    gaps::AbstractVector{E},
-    param::E,
-    step::Integer,
-)::NamedTuple where {E <: Real}
+        gaps::AbstractVector{E},
+        param::E,
+        step::Integer,
+    )::NamedTuple where {E <: Real}
     return (; gaps, gap_tangent = zero(gaps), tangent_precision = one(E), param, step)
 end
 
 """`finalise`'s verdict on the accepted `point` (a `branch_record`) of a branch that so far holds `branch`."""
 function finalised(
-    finalise::GameTracing.TraceFinalise,
-    point::NamedTuple,
-    branch::AbstractVector,
-)::Bool
+        finalise::GameTracing.TraceFinalise,
+        point::NamedTuple,
+        branch::AbstractVector,
+    )::Bool
     # BifurcationKit calls `finalise` before it saves the point to the branch.
     tangent = (; u = zero([point.gaps; point.param]), p = one(point.param))
     return finalise(
@@ -230,13 +233,15 @@ end
     @test progress.gaps == moved.gaps && progress.relative_precision == moved.param
     outcome = (; step_length = 0.0f0, accepted_step = 0.0f0, exhausted = nothing, logit_accuracy = 0.0f0, exception = nothing)
     settings = TraceSettings{Float32}(; max_steps = 2)
-    @test unwrap_error(GameTracing.reached_state(
-        progress,
-        outcome,
-        game,
-        settings,
-        (;),
-    )).cause ==
+    @test unwrap_error(
+        GameTracing.reached_state(
+            progress,
+            outcome,
+            game,
+            settings,
+            (;),
+        )
+    ).cause ==
         GameTracing.TraceStuck
     stuck = GameTracing.branch_progress(
         [start, moved, branch_record(moved.gaps, moved.param, 2)],
@@ -253,13 +258,15 @@ end
         opening,
     )
     @test !spent.unmoved
-    @test unwrap_error(GameTracing.reached_state(
-        spent,
-        outcome,
-        game,
-        settings,
-        (;),
-    )).cause ==
+    @test unwrap_error(
+        GameTracing.reached_state(
+            spent,
+            outcome,
+            game,
+            settings,
+            (;),
+        )
+    ).cause ==
         GameTracing.NoConvergence
 end
 
@@ -274,19 +281,21 @@ end
 
 """The records of `laps` laps of `per_lap` steps round the unit circle, from its first point."""
 function circle_branch(
-    ::Type{E},
-    laps::Integer,
-    per_lap::Integer,
-    turning::Bool,
-)::AbstractVector where {E <: Real}
+        ::Type{E},
+        laps::Integer,
+        per_lap::Integer,
+        turning::Bool,
+    )::AbstractVector where {E <: Real}
     return [circle_record(E(2 * pi * (index - 1) / per_lap), index, turning) for index in 1:(laps * per_lap)]
 end
 
 """The 1-based index of the first record of `branch` that `looped` flags against the records before it, or `nothing`."""
 function first_loop(branch::AbstractVector)::Union{Nothing, Int}
-    return findfirst([
-        GameTracing.looped(view(branch, firstindex(branch):(index - 1)), branch[index]) for index in eachindex(branch)
-    ])
+    return findfirst(
+        [
+            GameTracing.looped(view(branch, firstindex(branch):(index - 1)), branch[index]) for index in eachindex(branch)
+        ]
+    )
 end
 
 @testset "a branch that goes round a closed loop is flagged $element" for element in (Float32, widen(Float32))
@@ -318,13 +327,15 @@ end
     @test !GameTracing.branch_progress(circle[1:10], opening).looped
     progress = GameTracing.branch_progress(circle[1:flagged], opening)
     @test progress.looped && !progress.unmoved
-    failure = unwrap_error(GameTracing.reached_state(
-        progress,
-        (; step_length = zero(element), accepted_step = zero(element), exhausted = nothing, logit_accuracy = zero(element), exception = nothing),
-        game,
-        TraceSettings{element}(; max_steps = 1000),
-        (;),
-    ))
+    failure = unwrap_error(
+        GameTracing.reached_state(
+            progress,
+            (; step_length = zero(element), accepted_step = zero(element), exhausted = nothing, logit_accuracy = zero(element), exception = nothing),
+            game,
+            TraceSettings{element}(; max_steps = 1000),
+            (;),
+        )
+    )
     @test failure.cause == GameTracing.TraceStuck
     @test failure.context.looped
 end

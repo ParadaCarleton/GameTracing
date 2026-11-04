@@ -4,8 +4,8 @@ using Random: RandomDevice, Xoshiro
 
 """A random game of `width` logits whose map contracts at `precision`: the equilibrium is unique."""
 function contracting_game(rng::Xoshiro, width::Integer, precision::E)::LinearGainPass{
-    E,
-} where {E <: Real}
+        E,
+    } where {E <: Real}
     interaction = E.(2 .* rand(rng, width, width) .- 1)
     # The logistic slope is at most 1/4, so a row sum of |A| below 4 / precision makes the map contract.
     scale = 3 / (precision * maximum(sum(abs, interaction; dims = 2)))
