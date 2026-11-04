@@ -310,7 +310,7 @@ function corrected!(check::CorrectorReach{C, E}, iterate::NamedTuple, proceed::B
         return true
     end
     if rounding_settles(check) &&
-            settled(check, iterate, correction, NOISE_MARGIN * rounding_correction(check.noise_game, iterate.x, step_tangent(check)))
+            settled(check, iterate, correction, NOISE_MARGIN * rounding_correction(check.noise_game, iterate.x, bordering_row(check)))
         @debug "corrector settled at rounding" _group = :trace correction
         check.settled_here, check.noise = true, NoiseRecord(check.noise.accuracy, nothing)
         return BifurcationKit.NewtonConverged()
@@ -370,23 +370,24 @@ function rounding_settles(check::CorrectorReach)::Bool
 end
 
 """
-The direction of `check`'s current predictor step, `predicted - previous` in `[w; ρ]`, which borders PALC's Newton
-system; `nothing` for a plain Newton solve, which has no predictor and solves at fixed `ρ`.
+The last row of the Newton system `check`'s corrector solves: PALC's arclength row along the predictor step,
+`predicted - previous` in `[w; ρ]`, or the pin row `[0 … 0 1]` (fixed `ρ`) for a plain Newton solve, which has no
+predictor.
 """
-function step_tangent(check::CorrectorReach{C, E})::Union{Nothing, Vector{E}} where {C, E <: Real}
+function bordering_row(check::CorrectorReach{C, E})::AbstractVector{E} where {C, E <: Real}
     if !(check.predictor_move > 0)
-        return nothing
+        return [zeros(E, length(check.iterate) - 1); one(E)]
     end
     return check.predicted .- check.previous
 end
 
 """
-    rounding_correction(game, point, tangent)
+    rounding_correction(game, point, row)
 
 A bound on the logit move a Newton step at `point = [w; ρ]` takes from rounding in `game`'s residual alone:
-`d = |J⁻¹| [ε (|w| + |λ G|); 0]`, `ε = eps(E)`, read in logits `z = ρ w` as `|ρ| d_w + |w| d_ρ`. `J`'s last row is the one the corrector
-solves with: PALC's arclength row along the predictor's `tangent`, or the pin row (fixed `ρ`) when `tangent` is
-`nothing`. The arclength row keeps `J` regular at a fold in `ρ`, where the fixed-`ρ` Jacobian is singular and its
+`d = |J⁻¹| [ε (|w| + |λ G|); 0]`, `ε = eps(E)`, read in logits `z = ρ w` as `|ρ| d_w + |w| d_ρ`. `J`'s last row is
+`row`, the one the corrector solves with (`bordering_row`): PALC's arclength row along the predictor, or the pin row
+`[0 … 0 1]` at fixed `ρ`. The arclength row keeps `J` regular at a fold in `ρ`, where the fixed-`ρ` Jacobian is singular and its
 bound has no ceiling. An ill-conditioned `J` near a crossing still amplifies the rounding past `logit_tolerance`,
 where no correction can settle. Zero when `J` is singular or there is no game, so the floor is then
 `logit_tolerance` alone.
@@ -394,14 +395,12 @@ where no correction can settle. Zero when `J` is singular or there is no game, s
 function rounding_correction(
     game::LogitGame,
     point::AbstractVector{E},
-    tangent::Union{Nothing, AbstractVector{E}},
+    row::AbstractVector{E},
 )::E where {E <: Real}
     width = length(point) - 1
     system = branch_system!(BranchWorkspace(game, point), game, point, last(point))
-    if !isnothing(tangent)
-        # The row's scale is immaterial: the rounding has no arclength entry, so it reads only J⁻¹'s gap columns.
-        system.jacobian[end, :] .= tangent
-    end
+    # The row's scale is immaterial: the rounding has no entry in it, so it reads only J⁻¹'s gap columns.
+    system.jacobian[end, :] .= row
     gaps = view(point, 1:width)
     rounding = [eps(E) .* (abs.(gaps) .+ abs.(gaps .- view(system.residual, 1:width))); zero(E)]
     factored = lu(system.jacobian; check = false)
@@ -415,7 +414,7 @@ function rounding_correction(
     return ifelse(isfinite(correction), correction, zero(E))
 end
 
-function rounding_correction(::Nothing, ::AbstractVector{E}, ::Union{Nothing, AbstractVector{E}})::E where {E <: Real}
+function rounding_correction(::Nothing, ::AbstractVector{E}, ::AbstractVector{E})::E where {E <: Real}
     return zero(E)
 end
 
