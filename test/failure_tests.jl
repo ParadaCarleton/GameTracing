@@ -72,7 +72,7 @@ end
 @testset "a predictor that leaves the point unchanged is refused, even after a settled solve" begin
     point = Float32[1, -2, 0.5f0]
     check = GameTracing.CorrectorReach(
-        GameTracing.AcceptAll(),
+        GameTracing.AcceptAll(), nothing,
         CorrectorSettings{Float32}(),
         TraceGeometry{Float32}(),
         copy(point),
@@ -149,7 +149,7 @@ end
 
 @testset "a predictor that did not move has no reach to exceed" begin
     check = GameTracing.CorrectorReach(
-        GameTracing.AcceptAll(),
+        GameTracing.AcceptAll(), nothing,
         CorrectorSettings{Float32}(),
         TraceGeometry{Float32}(),
         zeros(Float32, 3),
@@ -163,7 +163,7 @@ end
     # At ρ = 1e-5 a gap move of 1e-2, a far target's rounding of w = P G, moves the logit 1e-7.
     previous, predicted = Float32[0, 1.0f-5], Float32[1, 1.0f-5]
     check = GameTracing.CorrectorReach(
-        GameTracing.AcceptAll(),
+        GameTracing.AcceptAll(), nothing,
         CorrectorSettings{Float32}(),
         TraceGeometry{Float32}(),
         previous,
@@ -173,6 +173,28 @@ end
     check.predictor_move = GameTracing.logit_change(previous, predicted)
     @test GameTracing.within_reach(check, predicted .+ Float32[1.0f-2, 0])
     @test !GameTracing.within_reach(check, predicted .+ Float32[3, 0])
+end
+
+@testset "a stalled correction within the rounding bound settles, and one past it does not" begin
+    game = LogitGame(GAME, TARGET_PRECISION)
+    point = Float32[0, 0, 1.5f0]
+    floor = GameTracing.rounding_correction(game, point)
+    # The bound is rounding of an O(1) residual through an O(1) inverse: a few ulps.
+    @test 0 < floor <= 1.0f3 * eps(1.0f0)
+    @test GameTracing.rounding_correction(nothing, point) == 0
+    settings = CorrectorSettings{Float32}(logit_tolerance = floor / 1.0f3)
+    # Two corrections of one floor each in logits: the second fails to contract.
+    iterates = [point .+ Float32[step * floor / last(point), 0, 0] for step in 0:2]
+    for (noise_game, settles) in ((game, true), (nothing, false))
+        check = GameTracing.CorrectorReach(
+            GameTracing.AcceptAll(), noise_game, settings, TraceGeometry{Float32}(), point, point, 0.0f0,
+        )
+        @test GameTracing.corrected!(check, (; x = iterates[1], fx = zeros(Float32, 3), step = 0), true)
+        @test GameTracing.corrected!(check, (; x = iterates[2], fx = zeros(Float32, 3), step = 1), true) === true
+        stalled = GameTracing.corrected!(check, (; x = iterates[3], fx = zeros(Float32, 3), step = 2), true)
+        @test (stalled isa GameTracing.BifurcationKit.NewtonConverged) == settles
+        @test check.settled_here == settles
+    end
 end
 
 @testset "a game that is non-finite at every positive precision fails at the first step" begin

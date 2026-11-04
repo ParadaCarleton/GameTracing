@@ -486,6 +486,7 @@ function guarded_trace(
 )::NamedTuple where {E <: Real}
     corrector = CorrectorReach(
         accept_corrected,
+        finalise.slot.game,
         settings.corrector,
         settings.geometry,
         similar(start),

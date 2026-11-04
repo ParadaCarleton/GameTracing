@@ -1,5 +1,5 @@
 using BifurcationKit: BifurcationKit
-using LinearAlgebra: dot, norm
+using LinearAlgebra: dot, inv, issuccess, lu, norm
 using Logging: @debug
 """
     CorrectorSettings{E}(; reach, max_kl, logit_tolerance, pin_tolerance, contraction_limit,
@@ -60,7 +60,7 @@ struct NoiseRecord{E <: Real}
 end
 
 """
-    CorrectorReach(accept_corrected, settings, geometry, previous, predicted, step_length)
+    CorrectorReach(accept_corrected, noise_game, settings, geometry, previous, predicted, step_length)
 
 The trace's BifurcationKit `callback_newton`, which also decides the corrector's convergence: a `settled` iterate
 ends Newton's method converged (`NewtonConverged`), and a correction that fails to contract stops it (`corrected!`).
@@ -78,11 +78,14 @@ times `ds² / 2`, so halving brings any step under it, while an iterate that lan
 `step_length` hold the current step's start and predictor, `predictor_move` the predictor's largest logit change.
 `iterate`, `correction`, `stalls` and `settled_here` follow the current solve: its last iterate, its last correction
 in logits, its non-contracting corrections in a row, and whether it settled. `noise` (`NoiseRecord`) spans the trace.
+`noise_game`, the game the corrector solves, sets the settle floor of a correction that fails to contract
+(`rounding_correction`); `nothing` keeps `logit_tolerance` as the only floor, for checks run without a game.
 """
-mutable struct CorrectorReach{C, E <: Real}
+mutable struct CorrectorReach{C, E <: Real, G <: Union{Nothing, LogitGame}}
     # Mutable because BifurcationKit shows the predictor only to a corrector's first callback and the
     # accept_corrected point only to its last, and returns neither.
     accept_corrected::C
+    noise_game::G
     settings::CorrectorSettings{E}
     geometry::TraceGeometry{E}
     previous::Vector{E}
@@ -135,15 +138,17 @@ end
 
 function CorrectorReach(
     accept_corrected::C,
+    noise_game::G,
     settings::CorrectorSettings{E},
     geometry::TraceGeometry{E},
     previous::AbstractVector{E},
     predicted::AbstractVector{E},
     step_length::E,
-)::CorrectorReach{C, E} where {C, E <: Real}
+)::CorrectorReach{C, E, G} where {C, E <: Real, G <: Union{Nothing, LogitGame}}
     # A plain Newton solve has no predictor move: NaN fails the noise test, so its stalls refuse.
-    return CorrectorReach{C, E}(
+    return CorrectorReach{C, E, G}(
         accept_corrected,
+        noise_game,
         settings,
         geometry,
         collect(previous),
@@ -286,7 +291,7 @@ function corrected!(check::CorrectorReach{C, E}, iterate::NamedTuple, proceed::B
     if !proceed
         return false
     end
-    if settled(check, iterate, correction)
+    if settled(check, iterate, correction, check.settings.logit_tolerance)
         check.settled_here, check.noise = true, NoiseRecord(check.noise.accuracy, nothing)
         return BifurcationKit.NewtonConverged()
     end
@@ -302,6 +307,11 @@ function corrected!(check::CorrectorReach{C, E}, iterate::NamedTuple, proceed::B
             )
         check.stalls = 0
         return true
+    end
+    if settled(check, iterate, correction, NOISE_MARGIN * rounding_correction(check.noise_game, iterate.x))
+        @debug "corrector settled at rounding" _group = :trace correction
+        check.settled_here, check.noise = true, NoiseRecord(check.noise.accuracy, nothing)
+        return BifurcationKit.NewtonConverged()
     end
     if !(check.predictor_move <= correction)
         @debug "corrector stopped" _group = :trace reason = :contraction correction before
@@ -335,13 +345,43 @@ Whether `check`'s corrector has settled `iterate`, reached by a Newton `correcti
 logit more than `logit_tolerance`, and the relative precision `ρ` is at its pin to the relative `pin_tolerance`. The pin
 needs its own test: a far target's logits barely move with `ρ`, so they would pass a `ρ` that never left its start.
 """
-function settled(check::CorrectorReach, iterate::I, correction::Real)::Bool where {I <:
+function settled(check::CorrectorReach, iterate::I, correction::Real, tolerance::Real)::Bool where {I <:
     NamedTuple}
     relative_precision = last(iterate.x)
     offset = pin_residual(iterate)
     pin_scale = max(abs(relative_precision), abs(relative_precision - offset))
-    return correction <= check.settings.logit_tolerance &&
+    return correction <= tolerance &&
         abs(offset) <= check.settings.pin_tolerance * pin_scale
+end
+
+# Two noisy iterates plus Newton's own error: four one-evaluation bounds.
+const NOISE_MARGIN = 4
+
+"""
+    rounding_correction(game, point)
+
+A bound on the logit move a Newton step at `point = [w; ρ]` takes from rounding in `game`'s residual alone:
+`d = |J⁻¹| [ε (|w| + |λ G|); 0]` at fixed `ρ`, `ε = eps(E)`, read in logits `ρ d_w`. An ill-conditioned `J` near a fold
+or crossing amplifies the rounding past `logit_tolerance`, where no correction can settle. Zero when `J` is singular
+or there is no game, so the floor is then `logit_tolerance` alone.
+"""
+function rounding_correction(game::LogitGame, point::AbstractVector{E})::E where {E <: Real}
+    width = length(point) - 1
+    system = branch_system!(BranchWorkspace(game, point), game, point, last(point))
+    gaps = view(point, 1:width)
+    rounding = [eps(E) .* (abs.(gaps) .+ abs.(gaps .- view(system.residual, 1:width))); zero(E)]
+    factored = lu(system.jacobian; check = false)
+    if !issuccess(factored)
+        return zero(E)
+    end
+    # Skeel's componentwise bound |J⁻¹| r: no sign in the rounding can cancel.
+    shift = abs.(inv(factored)) * rounding
+    correction = maximum(abs, last(point) .* view(shift, 1:width))
+    return ifelse(isfinite(correction), correction, zero(E))
+end
+
+function rounding_correction(::Nothing, ::AbstractVector{E})::E where {E <: Real}
+    return zero(E)
 end
 
 """
