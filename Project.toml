@@ -29,4 +29,9 @@ Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 test = ["CondaPkg", "Corset", "ErrorTypes", "LogitNash", "Mooncake", "Printf", "PythonCall", "Random", "Statistics", "Test"]
 
 [compat]
+BifurcationKit = "0.8.8"
+ErrorTypes = "0.5"
+LinearAlgebra = "1"
+LogExpFunctions = "1"
+Logging = "1"
 julia = "1.11"
