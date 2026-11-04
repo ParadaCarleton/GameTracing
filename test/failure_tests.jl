@@ -189,10 +189,10 @@ end
 @testset "a stalled correction within the rounding bound settles, and one past it does not" begin
     game = LogitGame(GAME, TARGET_PRECISION)
     point = Float32[0, 0, 1.5f0]
-    floor = GameTracing.rounding_correction(game, point)
+    floor = GameTracing.rounding_correction(game, point, nothing)
     # The bound is rounding of an O(1) residual through an O(1) inverse: a few ulps.
     @test 0 < floor <= 1.0f3 * eps(1.0f0)
-    @test GameTracing.rounding_correction(nothing, point) == 0
+    @test GameTracing.rounding_correction(nothing, point, nothing) == 0
     settings = CorrectorSettings{Float32}(logit_tolerance = floor / 1.0f3)
     # Two corrections of one floor each in logits: the second fails to contract.
     iterates = [point .+ Float32[step * floor / last(point), 0, 0] for step in 0:2]
@@ -205,6 +205,56 @@ end
         stalled = GameTracing.corrected!(check, (; x = iterates[3], fx = zeros(Float32, 3), step = 2), true)
         @test (stalled isa GameTracing.BifurcationKit.NewtonConverged) == settles
         @test check.settled_here == settles
+    end
+end
+
+@testset "a PALC corrector settles at rounding only once its step has stalled at noise" begin
+    game = LogitGame(GAME, TARGET_PRECISION)
+    point = Float32[0, 0, 1.5f0]
+    floor = GameTracing.rounding_correction(game, point, nothing)
+    # A predictor along ρ alone: its arclength row is the pin row, so the bound is the fixed-ρ one.
+    predicted = point .+ Float32[0, 0, 1.0f-3]
+    @test GameTracing.rounding_correction(game, point, predicted .- point) ≈ floor
+    settings = CorrectorSettings{Float32}(logit_tolerance = floor / 1.0f3)
+    iterates = [point .+ Float32[step * floor / last(point), 0, 0] for step in 0:2]
+    # A first stall halves the step; the stall at its halved step settles.
+    earlier_stall = (; relative_precision = last(point), correction = floor, confirmed = false)
+    for (suspect, settles) in ((nothing, false), (earlier_stall, true))
+        check = GameTracing.CorrectorReach(
+            GameTracing.AcceptAll(), game, settings, TraceGeometry{Float32}(), point, predicted, 0.0f0,
+        )
+        check.predictor_move = floor
+        check.noise = GameTracing.NoiseRecord(0.0f0, suspect)
+        @test GameTracing.corrected!(check, (; x = iterates[1], fx = zeros(Float32, 3), step = 0), true)
+        @test GameTracing.corrected!(check, (; x = iterates[2], fx = zeros(Float32, 3), step = 1), true) === true
+        stalled = GameTracing.corrected!(check, (; x = iterates[3], fx = zeros(Float32, 3), step = 2), true)
+        @test (stalled isa GameTracing.BifurcationKit.NewtonConverged) == settles
+        @test check.settled_here == settles
+    end
+end
+
+@testset "near a fold the arclength row bounds the rounding, where the fixed-ρ bound grows without limit" begin
+    # FOLD_GAME's logit solves z = λ 6 σ(z - 3), so λ(z) = z (1 + exp(3 - z)) / 6 folds where λ'(z) = 0.
+    target = 2.0f0
+    game = LogitGame(FOLD_GAME, target)
+    precision_at(z) = z * (1 + exp(3 - z)) / 6
+    slope(z) = (1 + exp(3 - z) - z * exp(3 - z)) / 6
+    low, high = 1.0, 3.0
+    for _ in 1:200
+        middle = (low + high) / 2
+        (low, high) = slope(low) * slope(middle) <= 0 ? (low, middle) : (middle, high)
+    end
+    fold = (low + high) / 2
+    branch_point(z) = [z / (precision_at(z) / target), precision_at(z) / target]
+    for distance in (1.0e-3, 1.0e-4, 1.0e-5)
+        z = fold + distance
+        point = Float32.(branch_point(z))
+        tangent = Float32.(branch_point(z + 1.0e-3) .- branch_point(z - 1.0e-3))
+        fixed = GameTracing.rounding_correction(game, point, nothing)
+        bordered = GameTracing.rounding_correction(game, point, tangent)
+        # Measured: the fixed-ρ bound is about 4e-8 / distance (0.04 at 1e-5); the bordered one stays near 3e-7.
+        @test fixed >= 1.0e-8 / distance
+        @test 0 < bordered <= 1.0f-6
     end
 end
 
