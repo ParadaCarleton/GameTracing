@@ -27,10 +27,21 @@ end
 
 @testset "a caller's exception propagates" begin
     @test_throws ArgumentError trace_endpoint(
-        LogitGame(ThrowingPass(GAME), TARGET_PRECISION),
+        LogitGame(ThrowingPass(GAME, ArgumentError("bad game"), 0.0f0), TARGET_PRECISION),
         WIDTH,
         FAILURE_SETTINGS,
     )
+end
+
+@testset "a LAPACK failure mid-trace is a failure value at the precision it reached" begin
+    result = trace_endpoint(
+        LogitGame(ThrowingPass(GAME, SingularException(1), 1.0f0), TARGET_PRECISION),
+        WIDTH,
+        FAILURE_SETTINGS,
+    )
+    @test is_error(result)
+    @test unwrap_error(result).cause == GameTracing.Singular
+    @test 0 < TARGET_PRECISION * unwrap_error(result).context.relative_precision <= 1.0f0
 end
 
 struct RefuseConverged end
