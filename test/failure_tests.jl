@@ -196,6 +196,8 @@ const PIN_ROW = Float32[0, 0, 1]
     # The bound is rounding of an O(1) residual through an O(1) inverse: a few ulps.
     @test 0 < floor <= 1.0f3 * eps(1.0f0)
     @test GameTracing.rounding_correction(nothing, point, PIN_ROW) == 0
+    # A row that makes J singular has no bound: the floor is then `logit_tolerance` alone.
+    @test GameTracing.rounding_correction(game, point, zeros(Float32, 3)) == 0
     settings = CorrectorSettings{Float32}(logit_tolerance = floor / 1.0f3)
     # Two corrections of one floor each in logits: the second fails to contract.
     iterates = [point .+ Float32[step * floor / last(point), 0, 0] for step in 0:2]
