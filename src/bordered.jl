@@ -20,17 +20,17 @@ struct InPlaceMatrixBLS{E <: BlasFloat, S <: BifurcationKit.AbstractLinearSolver
 end
 
 function (bls::InPlaceMatrixBLS)(
-    jacobian::Any,
-    dR::AbstractVector,
-    dzu::AbstractVector,
-    dzp::T,
-    residual::AbstractVector,
-    border_value::T,
-    ξu::T = one(T),
-    ξp::T = one(T);
-    dotp::Any = nothing,
-    applyξu!::Any = nothing,
-)::Tuple where {T <: Number}
+        jacobian::Any,
+        dR::AbstractVector,
+        dzu::AbstractVector,
+        dzp::T,
+        residual::AbstractVector,
+        border_value::T,
+        ξu::T = one(T),
+        ξp::T = one(T);
+        dotp::Any = nothing,
+        applyξu!::Any = nothing,
+    )::Tuple where {T <: Number}
     bordered = bordered_matrix!(
         bls.matrix,
         BifurcationKit.getmatrix(jacobian),
@@ -63,20 +63,22 @@ end
 row passed through `applyξu!` unless that is nothing.
 """
 function bordered_matrix!(
-    bordered::AbstractMatrix,
-    jacobian::AbstractMatrix,
-    dR::AbstractVector,
-    dzu::AbstractVector,
-    dzp::T,
-    ξu::T,
-    ξp::T,
-    applyξu!::Any,
-)::typeof(bordered) where {T <: Number}
+        bordered::AbstractMatrix,
+        jacobian::AbstractMatrix,
+        dR::AbstractVector,
+        dzu::AbstractVector,
+        dzp::T,
+        ξu::T,
+        ξp::T,
+        applyξu!::Any,
+    )::typeof(bordered) where {T <: Number}
     width = size(jacobian, 1)
     if size(bordered, 1) != width + 1
-        throw(DimensionMismatch(
-            "a $(size(bordered, 1))-row bordered matrix for a $width-slot Jacobian",
-        ))
+        throw(
+            DimensionMismatch(
+                "a $(size(bordered, 1))-row bordered matrix for a $width-slot Jacobian",
+            )
+        )
     end
     copyto!(@view(bordered[1:width, 1:width]), jacobian)
     copyto!(@view(bordered[1:width, width + 1]), dR)
@@ -98,14 +100,14 @@ pivots' (`BifurcationKit.determinant_sign`). A zero pivot makes the matrix singu
 tangent are zero, which PALC's NaN checks refuse as a step.
 """
 function BifurcationKit.bordered_tangent_and_sign(
-    bls::InPlaceMatrixBLS,
-    iter::BifurcationKit.AbstractContinuationIterable,
-    state::BifurcationKit.AbstractContinuationState,
-    jacobian::Any,
-    dFdl::AbstractVector,
-    rhsu::AbstractVector,
-    rhsp::Number,
-)::Tuple
+        bls::InPlaceMatrixBLS,
+        iter::BifurcationKit.AbstractContinuationIterable,
+        state::BifurcationKit.AbstractContinuationState,
+        jacobian::Any,
+        dFdl::AbstractVector,
+        rhsu::AbstractVector,
+        rhsp::Number,
+    )::Tuple
     state_weight = BifurcationKit.getθ(iter)
     tangent = state.τ
     bordered = bordered_matrix!(
@@ -139,10 +141,10 @@ factors the whole bordered matrix (`InPlaceMatrixBLS`, or BifurcationKit's `Matr
 LAPACK does not factor).
 """
 function bordered_linear_solver(
-    solver::BorderedSolver,
-    width::Integer,
-    ::Type{E},
-)::BifurcationKit.AbstractBorderedLinearSolver where {E <: Real}
+        solver::BorderedSolver,
+        width::Integer,
+        ::Type{E},
+    )::BifurcationKit.AbstractBorderedLinearSolver where {E <: Real}
     if solver == BorderingSolve
         return BifurcationKit.BorderingBLS(BifurcationKit.DefaultLS())
     end
@@ -150,9 +152,9 @@ function bordered_linear_solver(
 end
 
 function matrix_bls(
-    width::Integer,
-    ::Type{E},
-)::BifurcationKit.AbstractBorderedLinearSolver where {E <: BlasFloat}
+        width::Integer,
+        ::Type{E},
+    )::BifurcationKit.AbstractBorderedLinearSolver where {E <: BlasFloat}
     return InPlaceMatrixBLS(
         Matrix{E}(undef, width + 1, width + 1),
         Vector{BlasInt}(undef, width + 1),

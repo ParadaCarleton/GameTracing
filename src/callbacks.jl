@@ -99,13 +99,13 @@ function noise_confirmed(check::CorrectorReach)::Bool
 end
 
 function CorrectorReach(
-    accept_corrected::C,
-    settings::CorrectorSettings{E},
-    geometry::TraceGeometry{E},
-    previous::AbstractVector{E},
-    predicted::AbstractVector{E},
-    step_length::E,
-)::CorrectorReach{C, E} where {C, E <: Real}
+        accept_corrected::C,
+        settings::CorrectorSettings{E},
+        geometry::TraceGeometry{E},
+        previous::AbstractVector{E},
+        predicted::AbstractVector{E},
+        step_length::E,
+    )::CorrectorReach{C, E} where {C, E <: Real}
     # A plain Newton solve has no predictor move: NaN fails the noise test, so its stalls refuse.
     return CorrectorReach{C, E}(
         accept_corrected,
@@ -125,9 +125,9 @@ end
 
 """Whether `check` accepts its corrector's converged closing point `corrected` (reach and KL)."""
 function closing_accepted(
-    check::CorrectorReach{C, E},
-    corrected::AbstractVector{E},
-)::Bool where {C, E <: Real}
+        check::CorrectorReach{C, E},
+        corrected::AbstractVector{E},
+    )::Bool where {C, E <: Real}
     (; settings) = check
     if !within_reach(check, corrected)
         @debug "corrector refused" _group = :trace reason = :reach predictor_move = check.predictor_move
@@ -142,20 +142,21 @@ end
 
 """The verdict that ends a solve: converged (`NewtonConverged`) when it `settled_here`, else `proceed`."""
 function closing_verdict(check::CorrectorReach, proceed::Bool)::Union{
-    Bool,
-    BifurcationKit.NewtonConverged,
-}
+        Bool,
+        BifurcationKit.NewtonConverged,
+    }
     if check.settled_here
         return BifurcationKit.NewtonConverged()
     end
     return proceed
 end
 
-function (check::CorrectorReach{C, E})(iterate::I;
-    fromNewton::Bool = true,
-    # fatou-ignore unused-argument: BifurcationKit passes keyword arguments this callback ignores
-    keywords...,
-)::Union{Bool, BifurcationKit.NewtonConverged} where {C, E <: Real, I <: NamedTuple}
+function (check::CorrectorReach{C, E})(
+        iterate::I;
+        fromNewton::Bool = true,
+        # fatou-ignore unused-argument: BifurcationKit passes keyword arguments this callback ignores
+        keywords...,
+    )::Union{Bool, BifurcationKit.NewtonConverged} where {C, E <: Real, I <: NamedTuple}
     if fromNewton
         # Newton's closing call is its only one without `J`; an exact root converges on BifurcationKit's own test.
         if !haskey(iterate, :J)
@@ -220,9 +221,9 @@ step still halves. A second such solve before any settles, its correction at lea
 (`noise_confirmed`): halving shrinks the corrections of a predictor past a fold, not noise. Every later solve refuses.
 """
 function corrected!(check::CorrectorReach{C, E}, iterate::NamedTuple, proceed::Bool)::Union{
-    Bool,
-    BifurcationKit.NewtonConverged,
-} where {C, E <: Real}
+        Bool,
+        BifurcationKit.NewtonConverged,
+    } where {C, E <: Real}
     if noise_confirmed(check)
         return false
     end
@@ -245,12 +246,12 @@ function corrected!(check::CorrectorReach{C, E}, iterate::NamedTuple, proceed::B
     # The first correction has no rate (`before` is NaN), so it contracts.
     if isnan(before) ||
             within_limit(
-                scaled_limit(
-                    contraction_limit,
-                    before + logit_tolerance * contraction_offset,
-                ),
-                correction,
-            )
+            scaled_limit(
+                contraction_limit,
+                before + logit_tolerance * contraction_offset,
+            ),
+            correction,
+        )
         check.stalls = 0
         return true
     end
@@ -286,8 +287,10 @@ Whether `check`'s corrector has settled `iterate`, reached by a Newton `correcti
 logit more than `logit_tolerance`, and the relative precision `ρ` is at its pin to the relative `pin_tolerance`. The pin
 needs its own test: a far target's logits barely move with `ρ`, so they would pass a `ρ` that never left its start.
 """
-function settled(check::CorrectorReach, iterate::I, correction::Real)::Bool where {I <:
-    NamedTuple}
+function settled(check::CorrectorReach, iterate::I, correction::Real)::Bool where {
+        I <:
+        NamedTuple,
+    }
     relative_precision = last(iterate.x)
     offset = pin_residual(iterate)
     pin_scale = max(abs(relative_precision), abs(relative_precision - offset))
@@ -334,14 +337,17 @@ end
 BifurcationKit's branch record of the trace's `point = [w; ρ]` and the state's tangent: the gaps `w`, their tangent
 and the tangent's precision part. `branch_progress` reads the trace's progress back from these records.
 """
-function trace_record_point(point::AbstractVector{E}, ::Real;
-    state::Any,
-    # fatou-ignore unused-argument: BifurcationKit passes keyword arguments this record ignores
-    keywords...,
-)::NamedTuple where {E <: Real}
-    return (; gaps = point[begin:(end - 1)], gap_tangent = state.τ.u[
-        begin:(end - 1),
-    ], tangent_precision = state.τ.p)
+function trace_record_point(
+        point::AbstractVector{E}, ::Real;
+        state::Any,
+        # fatou-ignore unused-argument: BifurcationKit passes keyword arguments this record ignores
+        keywords...,
+    )::NamedTuple where {E <: Real}
+    return (;
+        gaps = point[begin:(end - 1)], gap_tangent = state.τ.u[
+            begin:(end - 1),
+        ], tangent_precision = state.τ.p,
+    )
 end
 
 """A branch record's relative precision."""
@@ -405,8 +411,8 @@ range of both, `unmoved` when its last two records hold the same point and `loop
 point and leaves `opening` as it was, tangent included.
 """
 function branch_progress(branch::AbstractVector, opening::TraceProgress{E})::TraceProgress{
-    E,
-} where {E <: Real}
+        E,
+    } where {E <: Real}
     if length(branch) == 1
         return opening
     end
@@ -443,21 +449,24 @@ struct TraceFinalise{A, D, S, C <: CorrectorSettings}
     settings::C
 end
 
-function (finalise::TraceFinalise)(point::P, tangent::T, step::S, result::Any;
-    state::Any,
-    iter::Any,
-    # fatou-ignore unused-argument: BifurcationKit passes keyword arguments this callback ignores
-    keywords...,
-)::Bool where {P, T, S <: Integer}
+function (finalise::TraceFinalise)(
+        point::P, tangent::T, step::S, result::Any;
+        state::Any,
+        iter::Any,
+        # fatou-ignore unused-argument: BifurcationKit passes keyword arguments this callback ignores
+        keywords...,
+    )::Bool where {P, T, S <: Integer}
     @debug "trace point" _group = :trace step relative_precision = point.p state = copy(
         point.u,
     ) tangent = copy(tangent.u)
     # BifurcationKit saves the point after this call, so the branch's last record is the point before it.
     if same_point(
-            (; param = point.p, gaps = view(
-                point.u,
-                firstindex(point.u):(lastindex(point.u) - 1),
-            )),
+            (;
+                param = point.p, gaps = view(
+                    point.u,
+                    firstindex(point.u):(lastindex(point.u) - 1),
+                ),
+            ),
             last(result.branch),
         )
         return false

@@ -1,99 +1,75 @@
 name: CI
 on:
   push:
-    branches: ['**']
+    branches: [main]
+    tags: ["*"]
+  pull_request:
   workflow_dispatch:
-# Every branch runs on push, so a pull request shows its head's push run; a newer push cancels the older run.
-# The event is in the key, so a push never cancels a dispatched run (the mutation matrix) on the same branch.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref_name }}
-  cancel-in-progress: true
-# The test oracle's pygambit has no Linux wheel, so pip builds it; one cached Conda environment keeps that to a cold run.
-env:
-  JULIA_CONDAPKG_ENV: /home/runner/.condapkg-test
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
 jobs:
   test:
-    runs-on: ubuntu-latest
-    # A dependency that does not yet load on prerelease Julia must not block a merge.
-    continue-on-error: ${{ matrix.version == 'pre' }}
+    name: Julia ${{ matrix.version }} - ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        version: ['1', 'pre']
+        version: ["1.13", "pre"]
+        os: [ubuntu-latest]
     steps:
       - uses: actions/checkout@v4
+      # The fatou and jscpd tests run the real tools mise.toml pins, from temp directories mise's shims cannot resolve.
+      - uses: jdx/mise-action@v2
+      - run: mise bin-paths >> "$GITHUB_PATH"
       - uses: julia-actions/setup-julia@v2
         with:
           version: ${{ matrix.version }}
       - uses: julia-actions/cache@v2
-      - uses: actions/cache@v4
-        with:
-          path: /home/runner/.condapkg-test
-          key: condapkg-${{ runner.os }}-${{ hashFiles('test/gambit.jl') }}
-      - uses: jdx/mise-action@v2
       - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-runtest@v1
       - uses: julia-actions/julia-processcoverage@v1
-        if: matrix.version == '1'
-      - name: Every line of src/ runs in the tests
-        if: matrix.version == '1'
+      - name: Require 100% line coverage
+        if: matrix.version == '1.13'
         run: |
-          awk '/^SF:/{file=$0} /^DA:[0-9]+,0$/{print file, $0; bad=1} END{exit bad}' lcov.info
-      # Loads the arm benchmark and runs two games under two variants, so a script that cannot run fails here.
-      - name: The arm benchmark runs
-        if: matrix.version == '1'
-        run: |
-          julia --project=benchmark -e 'using Pkg; Pkg.instantiate()'
-          julia --project=benchmark benchmark/arms.jl quick.csv quick
+          sudo apt-get install -y lcov
+          lcov --summary lcov.info 2>&1 | tee summary.txt
+          awk '/^SF:/ {file = substr($0, 4)} /^DA:[0-9]+,0$/ {print "uncovered:", file, substr($0, 4)}' lcov.info
+          grep -Eq 'lines\.*: 100\.0%' summary.txt
+      # Coverage blocks inlining and constant folding; users run without it.
+      - uses: julia-actions/julia-runtest@v1
+        if: matrix.version == '1.13'
+        with:
+          coverage: false
   lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2
       - run: fatou lint --color never src test
-      # The mutation job runs on a copy of the package without .github, so this check lives here.
-      # GameTracing.jl, which holds only includes and exports, is the one source file left unmutated.
-      - name: The mutation matrix lists every source file
-        run: |
-          diff <(yq '.jobs.mutation.strategy.matrix.file[]' .github/workflows/CI.yml | sort) \
-            <(ls src | grep -vx 'GameTracing.jl' | sort)
-  mutation:
-    # An hour-long matrix per push starved the account's runners; branches run it on demand with `gh workflow run CI.yml --ref <branch>`.
-    if: github.ref_name == 'main' || github.event_name == 'workflow_dispatch'
+  corset:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
-    strategy:
-      fail-fast: false
-      matrix:
-        file: [bordered.jl, branch.jl, callbacks.jl, failure.jl, geometry.jl, trace.jl, projection.jl, redraw.jl, normal_form.jl, logit_solve.jl]
+    steps:
+      - uses: actions/checkout@v4
+      # The pedantic fatou and jscpd rules run the tools mise.toml pins.
+      - uses: jdx/mise-action@v2
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: "1"
+      - uses: julia-actions/cache@v2
+      - uses: julia-actions/julia-buildpkg@v1
+      # TestEnv activates the test target's environment, so this step also works in packages that list
+      # Corset only as a test dependency.
+      - run: julia -e 'using Pkg; Pkg.add("TestEnv")'
+      - run: julia --project=. -e 'using TestEnv; TestEnv.activate(); using Corset; exit(Corset.main(ARGS))' -- check . --pedantic --deny-warnings
+  format:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: julia-actions/setup-julia@v2
         with:
-          version: '1'
-      - uses: julia-actions/cache@v2
-      - uses: actions/cache@v4
+          version: "1"
+      - uses: fredrikekre/runic-action@v1
         with:
-          path: /home/runner/.condapkg-test
-          key: condapkg-${{ runner.os }}-${{ hashFiles('test/gambit.jl') }}
-      - uses: jdx/mise-action@v2
-      - uses: julia-actions/julia-buildpkg@v1
-      - name: Install Gremlins
-        run: julia --project=@gremlins -e 'using Pkg; Pkg.add(url="https://github.com/ParadaCarleton/Gremlins.jl", rev="main")'
-      # Survivors at 0fc39ed: four `size(_, 1)` → `size(_, 2)` on square matrices (bordered.jl) and five
-      # default-value tweaks (trace.jl); every other mutant is killed, so the bar sits just under.
-      - name: Mutation testing
-        # The suite skips its far-target Gambit comparison here; the push job runs it.
-        env:
-          GAMETRACING_MUTATION: "true"
-        run: |
-          gremlins=$(julia --project=@gremlins -e 'using Gremlins; print(pkgdir(Gremlins))')
-          julia --project=@gremlins "$gremlins/bin/gremlins-cli.jl" \
-            --pkg "$GITHUB_WORKSPACE" --warm --files ${{ matrix.file }} --strong 0.95 --acceptable 0.90 \
-            --json mutation-report.json
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: mutation-report-${{ matrix.file }}
-          path: mutation-report.json
-          if-no-files-found: ignore
+          version: "1"

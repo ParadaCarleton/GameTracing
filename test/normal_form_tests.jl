@@ -67,9 +67,9 @@ function summed_expected_payoffs(payoff::AbstractArray, strategies::Tuple, playe
     return [
         sum(
             payoff[profile] * prod(strategies[rival][profile[rival]] for rival in rivals)
-            for profile in CartesianIndices(payoff) if profile[player] == strategy
+                for profile in CartesianIndices(payoff) if profile[player] == strategy
         )
-        for strategy in axes(payoff, player)
+            for strategy in axes(payoff, player)
     ]
 end
 

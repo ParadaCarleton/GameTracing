@@ -48,19 +48,21 @@ bordered system `[∂F/∂x; bᵀ] τ = [0; 1]`, held factored (`ShiftedGame`), 
 product (`PlainOrientation`) with `old_tangent` positive at PALC state weight `state_weight`.
 """
 function restart_tangent(
-    factorization::LU{E},
-    old_tangent::AbstractVector{E},
-    state_weight::E,
-    orientation::PlainOrientation{E},
-)::AbstractVector{E} where {E <: Real}
+        factorization::LU{E},
+        old_tangent::AbstractVector{E},
+        state_weight::E,
+        orientation::PlainOrientation{E},
+    )::AbstractVector{E} where {E <: Real}
     tangent = factorization \ setindex!(zero(old_tangent), one(E), lastindex(old_tangent))
-    return sign(orientation(
-        old_tangent,
-        tangent,
-        last(old_tangent),
-        last(tangent),
-        state_weight,
-    )) .*
+    return sign(
+        orientation(
+            old_tangent,
+            tangent,
+            last(old_tangent),
+            last(tangent),
+            state_weight,
+        )
+    ) .*
         tangent
 end
 
@@ -84,11 +86,11 @@ struct RootShift{E <: Real, L <: Union{Nothing, E}}
 end
 
 function RootShift(
-    point::AbstractVector{E},
-    step::AbstractVector{E},
-    border::AbstractVector{E},
-    settings::CorrectorSettings{E},
-)::RootShift{E} where {E <: Real}
+        point::AbstractVector{E},
+        step::AbstractVector{E},
+        border::AbstractVector{E},
+        settings::CorrectorSettings{E},
+    )::RootShift{E} where {E <: Real}
     move = logit_change(point, point .+ step)
     return RootShift(collect(point), collect(border), scaled_limit(scaled_limit(settings.reach, move), settings.shift_share))
 end
@@ -132,9 +134,11 @@ function swapped!(slot::RedrawSlot{G, E}, check::RootShift, redrawn::ShiftedGame
         return false
     end
     if redrawn.game.target_precision != slot.game.target_precision
-        throw(ArgumentError(
-            "a redrawn game has target precision $(redrawn.game.target_precision), not the trace's $(slot.game.target_precision)",
-        ))
+        throw(
+            ArgumentError(
+                "a redrawn game has target precision $(redrawn.game.target_precision), not the trace's $(slot.game.target_precision)",
+            )
+        )
     end
     slot.game = redrawn.game
     slot.pending = true

@@ -17,8 +17,8 @@ end
 
 """The precision at `relative_precision`: the fraction of `game.target_precision` the trace has reached."""
 function precision_at(game::LogitGame, relative_precision::R)::typeof(
-    relative_precision * game.target_precision,
-) where {R <: Real}
+        relative_precision * game.target_precision,
+    ) where {R <: Real}
     return relative_precision * game.target_precision
 end
 
@@ -33,14 +33,14 @@ pass_workspace(::Any, ::AbstractVector)::Nothing = nothing
 
 """Call `pass!` on its outputs, with its work arrays `work` unless it has none."""
 function run_pass!(
-    pass!::Any,
-    work::Any,
-    gain::AbstractVector,
-    gain_slope::AbstractMatrix,
-    gain_precision_slope::AbstractVector,
-    logits::AbstractVector,
-    precision::Real,
-)::Nothing
+        pass!::Any,
+        work::Any,
+        gain::AbstractVector,
+        gain_slope::AbstractMatrix,
+        gain_precision_slope::AbstractVector,
+        logits::AbstractVector,
+        precision::Real,
+    )::Nothing
     if isnothing(work)
         pass!(gain, gain_slope, gain_precision_slope, logits, precision)
     else
@@ -102,9 +102,9 @@ struct GameSystem{G <: LogitGame, W <: BranchWorkspace}
 end
 
 function (system::GameSystem)(point::AbstractVector{E}, pin::Real)::Tuple{
-    Vector{E},
-    Matrix{E},
-} where {E <: Real}
+        Vector{E},
+        Matrix{E},
+    } where {E <: Real}
     filled = branch_system!(system.workspace, system.game, point, pin)
     return filled.residual, filled.jacobian
 end
@@ -138,11 +138,11 @@ end
 and `∂G/∂λ` into the blocks that hold `F` and its Jacobian, which are then formed in place.
 """
 function branch_system!(
-    workspace::BranchWorkspace{E},
-    game::LogitGame,
-    point::AbstractVector{E},
-    pin::Real,
-)::typeof(workspace) where {E <: Real}
+        workspace::BranchWorkspace{E},
+        game::LogitGame,
+        point::AbstractVector{E},
+        pin::Real,
+    )::typeof(workspace) where {E <: Real}
     (; residual, jacobian, logits, pass_work) = workspace
     gaps = payoff_gaps(point)
     width = length(gaps)
@@ -193,8 +193,10 @@ struct PinSlope{E <: Real}
     end
 end
 
-function (pin_slope::PinSlope{E})(::AbstractVector{E}, ::Any)::AbstractVector{E} where {E <:
-    Real}
+function (pin_slope::PinSlope{E})(::AbstractVector{E}, ::Any)::AbstractVector{E} where {
+        E <:
+        Real,
+    }
     return pin_slope.slope
 end
 
@@ -205,11 +207,11 @@ BifurcationKit's problem for `game`'s branch from `start = [w; ρ]` at `pin`, wi
 exact `∂F/∂pin` supplied. The system and Jacobian each own a `BranchWorkspace`.
 """
 function branch_problem(
-    game::LogitGame,
-    start::AbstractVector{E},
-    pin::Real;
-    record_from_solution::Any,
-)::BifurcationKit.AbstractBifurcationProblem where {E <: Real}
+        game::LogitGame,
+        start::AbstractVector{E},
+        pin::Real;
+        record_from_solution::Any,
+    )::BifurcationKit.AbstractBifurcationProblem where {E <: Real}
     return BifurcationKit.BifurcationProblem(
         GameResidual(game),
         start,

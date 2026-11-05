@@ -10,11 +10,11 @@ formed. The step moves `ρ` as well, so it stays defined at a fold, where a corr
 Payoff gaps `w = z / ρ` exist at every finite `ρ ≠ 0`, so `ρ` must be one.
 """
 function projection_step(
-    game::LogitGame,
-    logits::AbstractVector{E},
-    relative_precision::Real,
-    geometry::TraceGeometry,
-)::AbstractVector{E} where {E <: Real}
+        game::LogitGame,
+        logits::AbstractVector{E},
+        relative_precision::Real,
+        geometry::TraceGeometry,
+    )::AbstractVector{E} where {E <: Real}
     if !(0 < geometry.state_weight < 1)
         throw(ArgumentError("state_weight must lie in (0, 1); got $(geometry.state_weight)"))
     end
@@ -37,11 +37,11 @@ trace's norm (`settings.geometry`). The projection is first order: its residual 
 A step to a relative precision that is not positive and finite, as one from far off the branch can take, throws a `DomainError`.
 """
 function branch_projection(
-    game::LogitGame,
-    logits::AbstractVector{E},
-    relative_precision::Real,
-    settings::TraceSettings,
-)::NamedTuple{(:logits, :relative_precision), Tuple{Vector{E}, E}} where {E <: Real}
+        game::LogitGame,
+        logits::AbstractVector{E},
+        relative_precision::Real,
+        settings::TraceSettings,
+    )::NamedTuple{(:logits, :relative_precision), Tuple{Vector{E}, E}} where {E <: Real}
     step = projection_step(game, logits, relative_precision, settings.geometry)
     moved = [logits ./ E(relative_precision); E(relative_precision)] .+ step
     if !(last(moved) > 0 && isfinite(last(moved)))
