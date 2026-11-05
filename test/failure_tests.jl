@@ -80,8 +80,9 @@ end
     @test count(message -> first(message) == "corrector closed", messages) < 160
 end
 
-@testset "a predictor that leaves the point unchanged is refused, even after a settled solve ($E)" for E in (Float32, Float64)
-    point = E[1, -2, 0.5]
+"""The testset "a predictor that leaves the point unchanged is refused, even after a settled solve", in the element type `E`."""
+function check_unresolved_predictor(::Type{E})::Nothing where {E <: Real}
+    point = E[1, -2, inv(E(2))]
     check = GameTracing.CorrectorReach(
         GameTracing.AcceptAll(), nothing,
         CorrectorSettings{E}(),
@@ -100,11 +101,16 @@ end
     @test !GameTracing.step_unresolved(E[0, 1], E[floatmin(E), 1], ulps)
     @test GameTracing.step_unresolved(E[0, 1], E[0, 1 + eps(one(E))], ulps)
     # A large coordinate does not hide a small one's move.
-    @test !GameTracing.step_unresolved(E[-5.0e6, 1.3e-5], E[-5.0e6, 1.4e-5], ulps)
-    @test !GameTracing.step_unresolved(point, point .+ E[0, 0, 1.0e-3], ulps)
+    @test !GameTracing.step_unresolved(E[-5_000_000, E(13) / 1_000_000], E[-5_000_000, E(14) / 1_000_000], ulps)
+    @test !GameTracing.step_unresolved(point, point .+ E[0, 0, inv(E(1000))], ulps)
     # The resolution is a setting: a move of a few ulps resolves under a finer one.
     @test GameTracing.step_unresolved(E[0, 1], E[0, 1 + 2 * eps(one(E))], ulps)
     @test !GameTracing.step_unresolved(E[0, 1], E[0, 1 + 2 * eps(one(E))], one(E))
+    return nothing
+end
+
+@testset "a predictor that leaves the point unchanged is refused, even after a settled solve ($element)" for element in (Float32, widen(Float32))
+    check_unresolved_predictor(element)
 end
 
 @testset "a corrector reach too short to hold any step ends the trace" begin
@@ -210,9 +216,10 @@ function rounding_check(game, settings::CorrectorSettings{E}, previous, predicte
     )
 end
 
-@testset "a stalled correction within the rounding bound settles, and one past it does not ($E)" for E in (Float32, Float64)
+"""The testset "a stalled correction within the rounding bound settles, and one past it does not", in the element type `E`."""
+function check_rounding_settle(::Type{E})::Nothing where {E <: Real}
     game = game_in(E)
-    point = E[0, 0, 1.5]
+    point = E[0, 0, E(3) / 2]
     floor = GameTracing.rounding_correction(game, point, pin_row(E))
     # The bound is rounding of an O(1) residual through an O(1) inverse: a few ulps.
     @test 0 < floor <= 1000 * eps(one(E))
@@ -231,14 +238,20 @@ end
         @test (stalled isa GameTracing.BifurcationKit.NewtonConverged) == settles
         @test check.state[].settled_here == settles
     end
+    return nothing
 end
 
-@testset "a PALC corrector settles at rounding only once its step has stalled at noise ($E)" for E in (Float32, Float64)
+@testset "a stalled correction within the rounding bound settles, and one past it does not ($element)" for element in (Float32, widen(Float32))
+    check_rounding_settle(element)
+end
+
+"""The testset "a PALC corrector settles at rounding only once its step has stalled at noise", in the element type `E`."""
+function check_palc_rounding_settle(::Type{E})::Nothing where {E <: Real}
     game = game_in(E)
-    point = E[0, 0, 1.5]
+    point = E[0, 0, E(3) / 2]
     floor = GameTracing.rounding_correction(game, point, pin_row(E))
     # A predictor along ρ alone: its arclength row is the pin row, so the bound is the fixed-ρ one.
-    predicted = point .+ E[0, 0, 1.0e-3]
+    predicted = point .+ E[0, 0, inv(E(1000))]
     settings = CorrectorSettings{E}(logit_tolerance = floor / 1000)
     @test GameTracing.rounding_correction(game, point, GameTracing.bordering_row(rounding_check(game, settings, point, predicted))) ≈ floor
     iterates = [point .+ E[step * floor / last(point), 0, 0] for step in 0:2]
@@ -253,12 +266,18 @@ end
         @test (stalled isa GameTracing.BifurcationKit.NewtonConverged) == settles
         @test check.state[].settled_here == settles
     end
+    return nothing
 end
 
-@testset "the rounding bound's arclength row is PALC's, in PALC's weights ($E)" for E in (Float32, Float64)
+@testset "a PALC corrector settles at rounding only once its step has stalled at noise ($element)" for element in (Float32, widen(Float32))
+    check_palc_rounding_settle(element)
+end
+
+"""The testset "the rounding bound's arclength row is PALC's, in PALC's weights", in the element type `E`."""
+function check_weighted_row(::Type{E})::Nothing where {E <: Real}
     geometry = TraceGeometry{E}(; distance = FisherLogPrecisionDistance)
-    target = E(1.0e6)
-    previous, predicted = E[2, -3, 1.0e-5], E[2.5, -3.5, 1.2e-5]
+    target = E(1_000_000)
+    previous, predicted = E[2, -3, inv(E(100_000))], E[E(5) / 2, -E(7) / 2, E(12) / 1_000_000]
     palc = GameTracing.palc_geometry(geometry, 2, target)
     check = GameTracing.CorrectorReach(
         GameTracing.AcceptAll(), nothing, CorrectorSettings{E}(), geometry, GameTracing.PalcBorder(palc), previous, predicted, zero(E),
@@ -270,9 +289,14 @@ end
     # PALC's product weighs `ρ` far above the gaps at a far target: the raw step is another row.
     @test !(row / norm(row) ≈ direction / norm(direction))
     # PALC resets its Fisher weights in place at each accepted point, and the row reads them as they stand.
-    GameTracing.BifurcationKit.reweight!(palc.dot, GameTracing.BifurcationKit.BorderedArray(E[40, -60, 1.0e-5], E(1.0e-5)))
+    GameTracing.BifurcationKit.reweight!(palc.dot, GameTracing.BifurcationKit.BorderedArray(E[40, -60, inv(E(100_000))], inv(E(100_000))))
     @test GameTracing.bordering_row(check) ≈ GameTracing.palc_border(palc.dot, palc.palc_state_weight, direction)
     @test !(GameTracing.bordering_row(check) ≈ row)
+    return nothing
+end
+
+@testset "the rounding bound's arclength row is PALC's, in PALC's weights ($element)" for element in (Float32, widen(Float32))
+    check_weighted_row(element)
 end
 
 @testset "PALC and the corrector's rounding bound share one dotθ" begin
@@ -290,7 +314,8 @@ end
     @test iterator.alg.dotθ === corrector.border.dot
 end
 
-@testset "near a fold the arclength row bounds the rounding, where the fixed-ρ bound grows without limit ($E)" for E in (Float32, Float64)
+"""The testset "near a fold the arclength row bounds the rounding, where the fixed-ρ bound grows without limit", in the element type `E`."""
+function check_fold_bound(::Type{E})::Nothing where {E <: Real}
     # FOLD_GAME's logit solves z = λ 6 σ(z - 3), so λ(z) = z (1 + exp(3 - z)) / 6 folds where λ'(z) = 0.
     target = E(2)
     game = LogitGame(ThresholdPass(E(FOLD_GAME.amplitude), E(FOLD_GAME.threshold)), target)
@@ -305,10 +330,10 @@ end
     branch_point(logit) = [logit / (precision_at(logit) / target), precision_at(logit) / target]
     for geometry in (TraceGeometry{E}(), TraceGeometry{E}(; distance = FisherLogPrecisionDistance))
         border = GameTracing.PalcBorder(geometry, 1, target)
-        for distance in E.((1.0e-3, 1.0e-4, 1.0e-5))
+        for distance in inv.(E.((1_000, 10_000, 100_000)))
             logit = fold + distance
             point = branch_point(logit)
-            tangent = branch_point(logit + E(1.0e-3)) .- branch_point(logit - E(1.0e-3))
+            tangent = branch_point(logit + inv(E(1000))) .- branch_point(logit - inv(E(1000)))
             fixed = GameTracing.rounding_correction(game, point, E[0, 1])
             bordered = GameTracing.rounding_correction(game, point, border(tangent))
             # Measured in Float32: the fixed-ρ bound is about 0.3 ulp / distance (0.04 at 1e-5); the bordered one stays
@@ -317,6 +342,11 @@ end
             @test 0 < bordered <= 10 * eps(one(E))
         end
     end
+    return nothing
+end
+
+@testset "near a fold the arclength row bounds the rounding, where the fixed-ρ bound grows without limit ($element)" for element in (Float32, widen(Float32))
+    check_fold_bound(element)
 end
 
 @testset "a game that is non-finite at every positive precision fails at the first step" begin

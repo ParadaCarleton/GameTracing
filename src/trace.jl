@@ -511,8 +511,29 @@ function guarded_trace(
         accept_corrected::Any,
         opening::TraceProgress{E},
     )::NamedTuple where {E <: Real}
-    # PALC and the corrector's rounding bound share one `dotθ`, whose Fisher weights PALC resets in place.
-    palc = palc_geometry(settings.geometry, length(start) - 1, finalise.slot[].game.target_precision)
+    # PALC and the corrector's rounding bound share one `dotθ`, whose Fisher weights PALC resets in place. Its type
+    # follows the distance, so it is passed on rather than named.
+    return palc_segment(
+        palc_geometry(settings.geometry, length(start) - 1, finalise.slot[].game.target_precision),
+        opening,
+        settings,
+        finalise,
+        accept_corrected,
+        start,
+        old_tangent,
+    )
+end
+
+"""`guarded_trace`'s segment in PALC's `θ` and `dotθ` `palc` (`palc_geometry`), which the corrector's rounding bound shares."""
+function palc_segment(
+        palc::NamedTuple,
+        opening::TraceProgress{E},
+        settings::TraceSettings{E},
+        finalise::TraceFinalise,
+        accept_corrected::Any,
+        start::AbstractVector{E},
+        old_tangent::Union{Nothing, AbstractVector{E}},
+    )::NamedTuple where {E <: Real}
     corrector = CorrectorReach(
         accept_corrected,
         finalise.slot[].game,
