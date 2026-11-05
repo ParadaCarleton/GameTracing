@@ -15,12 +15,12 @@ struct LinearGainPass{E <: Real}
 end
 
 function (pass::LinearGainPass)(
-    gain::AbstractVector,
-    gain_slope::AbstractMatrix,
-    gain_precision_slope::AbstractVector,
-    logits::AbstractVector{E},
-    ::Real,
-)::Nothing where {E <: Real}
+        gain::AbstractVector,
+        gain_slope::AbstractMatrix,
+        gain_precision_slope::AbstractVector,
+        logits::AbstractVector{E},
+        ::Real,
+    )::Nothing where {E <: Real}
     stays = inv.(one(E) .+ exp.(-logits))
     gain .= pass.interaction * stays .+ pass.stand_alone
     gain_slope .= pass.interaction .* transpose(stays .* (one(E) .- stays))
@@ -35,12 +35,12 @@ struct ThresholdPass{E <: Real}
 end
 
 function (pass::ThresholdPass)(
-    gain::AbstractVector,
-    gain_slope::AbstractMatrix,
-    gain_precision_slope::AbstractVector,
-    logits::AbstractVector{E},
-    ::Real,
-)::Nothing where {E <: Real}
+        gain::AbstractVector,
+        gain_slope::AbstractMatrix,
+        gain_precision_slope::AbstractVector,
+        logits::AbstractVector{E},
+        ::Real,
+    )::Nothing where {E <: Real}
     stays = inv.(one(E) .+ exp.(pass.threshold .- logits))
     gain .= pass.amplitude .* stays
     gain_slope .= reshape(pass.amplitude .* stays .* (one(E) .- stays), 1, 1)
@@ -55,12 +55,12 @@ struct DampedGainPass{E <: Real}
 end
 
 function (pass::DampedGainPass)(
-    gain::AbstractVector,
-    gain_slope::AbstractMatrix,
-    gain_precision_slope::AbstractVector,
-    logits::AbstractVector{E},
-    precision::Real,
-)::Nothing where {E <: Real}
+        gain::AbstractVector,
+        gain_slope::AbstractMatrix,
+        gain_precision_slope::AbstractVector,
+        logits::AbstractVector{E},
+        precision::Real,
+    )::Nothing where {E <: Real}
     pass.pass(gain, gain_slope, gain_precision_slope, logits, precision)
     damping = inv(sqrt(1 + (precision * pass.spread)^2))
     gain_precision_slope .= -precision * pass.spread^2 * damping^2 .* damping .* gain
@@ -73,12 +73,12 @@ end
 struct PrecisionGainPass end
 
 function (::PrecisionGainPass)(
-    gain::AbstractVector,
-    gain_slope::AbstractMatrix,
-    gain_precision_slope::AbstractVector,
-    ::AbstractVector{E},
-    precision::Real,
-)::Nothing where {E <: Real}
+        gain::AbstractVector,
+        gain_slope::AbstractMatrix,
+        gain_precision_slope::AbstractVector,
+        ::AbstractVector{E},
+        precision::Real,
+    )::Nothing where {E <: Real}
     fill!(gain, E(precision))
     fill!(gain_slope, zero(E))
     fill!(gain_precision_slope, one(E))
@@ -97,12 +97,12 @@ struct NoisyFlatPass{E <: Real}
 end
 
 function (pass::NoisyFlatPass)(
-    gain::AbstractVector,
-    gain_slope::AbstractMatrix,
-    gain_precision_slope::AbstractVector,
-    logits::AbstractVector{E},
-    precision::Real,
-)::Nothing where {E <: Real}
+        gain::AbstractVector,
+        gain_slope::AbstractMatrix,
+        gain_precision_slope::AbstractVector,
+        logits::AbstractVector{E},
+        precision::Real,
+    )::Nothing where {E <: Real}
     draw = (E(hash(only(logits)) % 65536) / 32768 - one(E)) * (precision > pass.onset)
     fill!(gain, pass.level + pass.noise * draw)
     fill!(gain_slope, zero(E))
@@ -117,12 +117,12 @@ struct PoisonedPass{P, E <: Real}
 end
 
 function (pass::PoisonedPass)(
-    gain::AbstractVector,
-    gain_slope::AbstractMatrix,
-    gain_precision_slope::AbstractVector,
-    logits::AbstractVector,
-    precision::Real,
-)::Nothing
+        gain::AbstractVector,
+        gain_slope::AbstractMatrix,
+        gain_precision_slope::AbstractVector,
+        logits::AbstractVector,
+        precision::Real,
+    )::Nothing
     pass.pass(gain, gain_slope, gain_precision_slope, logits, precision)
     if precision > pass.poison
         fill!(gain, NaN32)
@@ -138,12 +138,12 @@ struct NaNSlopePass{P}
 end
 
 function (pass::NaNSlopePass)(
-    gain::AbstractVector,
-    gain_slope::AbstractMatrix,
-    gain_precision_slope::AbstractVector,
-    logits::AbstractVector,
-    precision::Real,
-)::Nothing
+        gain::AbstractVector,
+        gain_slope::AbstractMatrix,
+        gain_precision_slope::AbstractVector,
+        logits::AbstractVector,
+        precision::Real,
+    )::Nothing
     pass.pass(gain, gain_slope, gain_precision_slope, logits, precision)
     fill!(gain_slope, NaN32)
     return nothing
@@ -155,12 +155,12 @@ struct ThrowingPass{P}
 end
 
 function (pass::ThrowingPass)(
-    gain::AbstractVector,
-    gain_slope::AbstractMatrix,
-    gain_precision_slope::AbstractVector,
-    logits::AbstractVector,
-    precision::Real,
-)::Nothing
+        gain::AbstractVector,
+        gain_slope::AbstractMatrix,
+        gain_precision_slope::AbstractVector,
+        logits::AbstractVector,
+        precision::Real,
+    )::Nothing
     if precision > 0
         throw(ArgumentError("bad game"))
     end
@@ -193,11 +193,11 @@ residual_norm(pass::Any, logits::AbstractVector, precision::Real) = maximum(
 
 """Picard iterates of `logits -> T(logits, precision)` from the flat start: the equilibrium when `T` contracts."""
 function picard_equilibrium(
-    pass::Any,
-    width::Integer,
-    precision::E,
-    rounds::Integer,
-)::Vector{E} where {E <: Real}
+        pass::Any,
+        width::Integer,
+        precision::E,
+        rounds::Integer,
+    )::Vector{E} where {E <: Real}
     logits = zeros(E, width)
     for _ in 1:rounds
         logits = evaluated(pass, logits, precision).response
@@ -222,12 +222,12 @@ end
 action_sign(action::Integer)::Int = 3 - 2 * action
 
 function (pass::NormalFormPass{N})(
-    gain::AbstractVector,
-    gain_slope::AbstractMatrix,
-    gain_precision_slope::AbstractVector,
-    logits::AbstractVector{E},
-    ::Real,
-)::Nothing where {N, E <: Real}
+        gain::AbstractVector,
+        gain_slope::AbstractMatrix,
+        gain_precision_slope::AbstractVector,
+        logits::AbstractVector{E},
+        ::Real,
+    )::Nothing where {N, E <: Real}
     first_choices = inv.(one(E) .+ exp.(-logits))
     fill!(gain, zero(E))
     fill!(gain_slope, zero(E))
@@ -309,12 +309,12 @@ end
 predictor `point + step τ`; `settled` when it solves the map to `settled_root` at `scale` within `step / 10` of the predictor.
 """
 function corrected_point(
-    pass::Any,
-    point::AbstractVector{E},
-    tangent::AbstractVector{E},
-    step::E,
-    scale::E,
-)::NamedTuple where {E <: Real}
+        pass::Any,
+        point::AbstractVector{E},
+        tangent::AbstractVector{E},
+        step::E,
+        scale::E,
+    )::NamedTuple where {E <: Real}
     predicted = point .+ step .* tangent
     candidate = copy(predicted)
     for _ in 1:6
@@ -342,12 +342,12 @@ A sign change that persists to a step of `1e-6` is taken as a crossing of a sing
 steps do not reach `precision`.
 """
 function branch_reference(
-    pass::Any,
-    width::Integer,
-    precision::Real;
-    start::AbstractVector = zeros(width),
-    start_precision::Real = 0,
-)::NamedTuple
+        pass::Any,
+        width::Integer,
+        precision::Real;
+        start::AbstractVector = zeros(width),
+        start_precision::Real = 0,
+    )::NamedTuple
     # `float(1)` widens a 32-bit precision, which no Float64 literal names.
     target = precision * float(1)
     point = [level_root(pass, start, start_precision); start_precision * float(1)]

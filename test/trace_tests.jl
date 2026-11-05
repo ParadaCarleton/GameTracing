@@ -215,12 +215,12 @@ end
         )
         @test (options.ds, options.dsmin, options.dsmax, options.a, options.η) ==
             (
-                settings.first_step,
-                settings.min_step,
-                settings.max_step,
-                settings.aggressiveness,
-                settings.first_tangent_divisor,
-            )
+            settings.first_step,
+            settings.min_step,
+            settings.max_step,
+            settings.aggressiveness,
+            settings.first_tangent_divisor,
+        )
         @test (options.p_min, options.p_max) == (0, 1)
         @test options.max_steps == settings.max_steps
         # Only the corrector's callback converges a corrector short of an exact root.
@@ -245,9 +245,9 @@ end
     @test residual == GameTracing.GameResidual(game)(point, 0.5f0)
     @test jacobian ==
         GameTracing.GameJacobian(game, GameTracing.BranchWorkspace(game, point))(
-            point,
-            0.5f0,
-        )
+        point,
+        0.5f0,
+    )
     # A forward difference in each coordinate checks the Jacobian the pass formed in place.
     for (column, step) in pairs(Float32[1.0f-3, 1.0f-3, 1.0f-3])
         moved = copy(point)

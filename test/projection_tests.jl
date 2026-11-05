@@ -38,12 +38,12 @@ end
 
 """The residual `branch_projection` leaves from `on_branch`'s logits moved `offset` along `direction`."""
 function projected_residual(
-    game::LogitGame,
-    on_branch::NamedTuple,
-    offset::Real,
-    direction::AbstractVector,
-    settings::TraceSettings,
-)::typeof(float(offset))
+        game::LogitGame,
+        on_branch::NamedTuple,
+        offset::Real,
+        direction::AbstractVector,
+        settings::TraceSettings,
+    )::typeof(float(offset))
     projected = branch_projection(game, on_branch.logits .+ offset .* direction, on_branch.relative_precision, settings)
     return norm(branch_equations(game, [projected.logits ./ projected.relative_precision; projected.relative_precision]).residual)
 end

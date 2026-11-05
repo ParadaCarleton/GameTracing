@@ -1,3 +1,4 @@
 Manifest.toml
 *.cov
 .gremlins_cache.json
+docs/build/

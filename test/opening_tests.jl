@@ -25,12 +25,14 @@ const LOG_PRECISION_SETTINGS = TraceSettings{Float32}(; geometry = TraceGeometry
 @testset "a trace to a far target opens one first step from the flat start in its own distance" begin
     for payoffs in (far_opening_games(Xoshiro(FAR_OPENING_SEED))..., far_opening_games(fresh_rng())...)
         gains = NormalFormGains(payoffs)
-        failure = unwrap_error(trace_endpoint(
-            LogitGame(gains, FAR_TARGET),
-            GameTracing.logit_count(gains),
-            LOG_PRECISION_SETTINGS;
-            keep_going = StopAtPrecision(zero(Float32), FAR_TARGET),
-        ))
+        failure = unwrap_error(
+            trace_endpoint(
+                LogitGame(gains, FAR_TARGET),
+                GameTracing.logit_count(gains),
+                LOG_PRECISION_SETTINGS;
+                keep_going = StopAtPrecision(zero(Float32), FAR_TARGET),
+            )
+        )
         # A first step of length `first_step` in `log(1 + λ)` reaches at most `expm1(first_step)`.
         @test 0 < failure.context.precision <= 2 * expm1(LOG_PRECISION_SETTINGS.first_step)
     end
@@ -42,12 +44,14 @@ if get(ENV, "GAMETRACING_MUTATION", "false") != "true"
         seeded = (far_opening_games(Xoshiro(FAR_OPENING_SEED))..., last(far_opening_games(Xoshiro(MIXED_STALL_SEED))))
         for payoffs in (seeded..., far_opening_games(fresh_rng())...)
             gains = NormalFormGains(payoffs)
-            failure = unwrap_error(trace_endpoint(
-                LogitGame(gains, FAR_TARGET),
-                GameTracing.logit_count(gains),
-                LOG_PRECISION_SETTINGS;
-                keep_going = StopAtPrecision(50.0f0, FAR_TARGET),
-            ))
+            failure = unwrap_error(
+                trace_endpoint(
+                    LogitGame(gains, FAR_TARGET),
+                    GameTracing.logit_count(gains),
+                    LOG_PRECISION_SETTINGS;
+                    keep_going = StopAtPrecision(50.0f0, FAR_TARGET),
+                )
+            )
             (; precision, logits) = failure.context
             @test precision >= 50
             if precision < 50
