@@ -60,6 +60,43 @@ struct NoiseRecord{E <: Real}
 end
 
 """
+    CorrectorState(step_length, predictor_move, correction, stalls, settled_here, noise, unresolved, reach_failure)
+
+The scalars a `CorrectorReach` carries between BifurcationKit's calls: the current step's `step_length` and its
+predictor's largest logit change `predictor_move`; the current solve's last `correction` in logits, its
+non-contracting corrections in a row (`stalls`) and whether it settled (`settled_here`); the trace's `noise`
+(`NoiseRecord`); whether the current step is `unresolved` (`step_unresolved`); and the current step's last reach
+failure (`reach_failure`, `no_reach_failure` before any).
+"""
+struct CorrectorState{E <: Real}
+    step_length::E
+    predictor_move::E
+    correction::E
+    stalls::Int
+    settled_here::Bool
+    noise::NoiseRecord{E}
+    unresolved::Bool
+    reach_failure::@NamedTuple{relative_precision::E, correction::E}
+end
+
+"""`state` with the given fields replaced."""
+function restated(
+        state::CorrectorState{E};
+        step_length::Real = state.step_length,
+        predictor_move::Real = state.predictor_move,
+        correction::Real = state.correction,
+        stalls::Integer = state.stalls,
+        settled_here::Bool = state.settled_here,
+        noise::NoiseRecord{E} = state.noise,
+        unresolved::Bool = state.unresolved,
+        reach_failure::@NamedTuple{relative_precision::E, correction::E} = state.reach_failure,
+    )::CorrectorState{E} where {E <: Real}
+    return CorrectorState{E}(
+        step_length, predictor_move, correction, stalls, settled_here, noise, unresolved, reach_failure,
+    )
+end
+
+"""
     CorrectorReach(accept_corrected, noise_game, settings, geometry, previous, predicted, step_length)
 
 The trace's BifurcationKit `callback_newton`, which also decides the corrector's convergence: a `settled` iterate
@@ -74,32 +111,28 @@ add a point, so the trace ends as `TraceStuck`, or as `PrecisionExhausted` when 
 reach with a correction above `logit_tolerance` (`unresolved_noise`). On a smooth branch that distance is the branch's curvature
 times `ds² / 2`, so halving brings any step under it, while an iterate that lands on another branch is far from it. A converged closing point is refused the same way past `reach`, past a largest probability KL
 `KL(corrected ‖ predicted)` of `settings.max_kl` (`largest_kl`). A predictor that did not move has no reach to compare.
-`accept_corrected(logits, ρ, converged)` then sees every other closing point. `previous`, `predicted` and
-`step_length` hold the current step's start and predictor, `predictor_move` the predictor's largest logit change.
-`iterate`, `correction`, `stalls` and `settled_here` follow the current solve: its last iterate, its last correction
-in logits, its non-contracting corrections in a row, and whether it settled. `noise` (`NoiseRecord`) spans the trace.
+`accept_corrected(logits, ρ, converged)` then sees every other closing point. `previous` and `predicted` hold the
+current step's start and predictor, `iterate` the current solve's last iterate, all updated in place; `state`
+(`CorrectorState`) holds the scalars that change between calls.
 `noise_game`, the game the corrector solves, sets the settle floor of a correction that fails to contract
 (`rounding_correction`), which applies once halving has had its chance (`rounding_settles`); `nothing` keeps
 `logit_tolerance` as the only floor, for checks run without a game.
 """
-mutable struct CorrectorReach{C, E <: Real, G <: Union{Nothing, LogitGame}}
-    # Mutable because BifurcationKit shows the predictor only to a corrector's first callback and the
-    # accept_corrected point only to its last, and returns neither.
+struct CorrectorReach{C, E <: Real, G <: Union{Nothing, LogitGame}}
     accept_corrected::C
     noise_game::G
     settings::CorrectorSettings{E}
     geometry::TraceGeometry{E}
     previous::Vector{E}
     predicted::Vector{E}
-    step_length::E
-    predictor_move::E
     iterate::Vector{E}
-    correction::E
-    stalls::Int
-    settled_here::Bool
-    noise::NoiseRecord{E}
-    unresolved::Bool
-    reach_failure::@NamedTuple{relative_precision::E, correction::E}
+    state::Base.RefValue{CorrectorState{E}}  # lint: ref # lint: non-public-access  by design: callback_newton returns a verdict, and its state between calls is one immutable value here (RefValue is a Ref's concrete type)
+end
+
+"""`check`'s `CorrectorState` after replacing the fields named in `changes`."""
+function restate!(check::CorrectorReach{C, E}; changes...)::CorrectorState{E} where {C, E <: Real}
+    check.state[] = restated(check.state[]; changes...)
+    return check.state[]
 end
 
 # A predictor within this many ulps of a coordinate leaves it unchanged at the float type's resolution.
@@ -126,26 +159,27 @@ rounding noise, and the record confirms the precision exhausted there (`Precisio
 the last reach failure of the current step, with a NaN correction when there was none.
 """
 function unresolved_noise(check::CorrectorReach{C, E})::NoiseRecord{E} where {C, E <: Real}
-    if !(check.reach_failure.correction > check.settings.logit_tolerance)
-        return check.noise
+    (; noise, reach_failure) = check.state[]
+    if !(reach_failure.correction > check.settings.logit_tolerance)
+        return noise
     end
-    return NoiseRecord(check.noise.accuracy, (; check.reach_failure..., confirmed = true))
+    return NoiseRecord(noise.accuracy, (; reach_failure..., confirmed = true))
 end
 
 """Whether `check`'s corrector met rounding noise, confirmed at a halved step (`corrected!`)."""
 function noise_confirmed(check::CorrectorReach)::Bool
-    return !isnothing(check.noise.suspect) && check.noise.suspect.confirmed
+    return !isnothing(check.state[].noise.suspect) && check.state[].noise.suspect.confirmed
 end
 
 function CorrectorReach(
-    accept_corrected::C,
-    noise_game::G,
-    settings::CorrectorSettings{E},
-    geometry::TraceGeometry{E},
-    previous::AbstractVector{E},
-    predicted::AbstractVector{E},
-    step_length::E,
-)::CorrectorReach{C, E, G} where {C, E <: Real, G <: Union{Nothing, LogitGame}}
+        accept_corrected::C,
+        noise_game::G,
+        settings::CorrectorSettings{E},
+        geometry::TraceGeometry{E},
+        previous::AbstractVector{E},
+        predicted::AbstractVector{E},
+        step_length::E,
+    )::CorrectorReach{C, E, G} where {C, E <: Real, G <: Union{Nothing, LogitGame}}
     # A plain Newton solve has no predictor move: NaN fails the noise test, so its stalls refuse.
     return CorrectorReach{C, E, G}(
         accept_corrected,
@@ -154,26 +188,23 @@ function CorrectorReach(
         geometry,
         collect(previous),
         collect(predicted),
-        step_length,
-        E(NaN32),
         collect(previous),
-        E(NaN32),
-        0,
-        false,
-        NoiseRecord(zero(E), nothing),
-        false,
-        no_reach_failure(E),
+        Ref(  # lint: ref  see `state`
+            CorrectorState{E}(
+                step_length, E(NaN32), E(NaN32), 0, false, NoiseRecord(zero(E), nothing), false, no_reach_failure(E),
+            ),
+        ),
     )
 end
 
 """Whether `check` accepts its corrector's converged closing point `corrected` (reach and KL)."""
 function closing_accepted(
-    check::CorrectorReach{C, E},
-    corrected::AbstractVector{E},
-)::Bool where {C, E <: Real}
+        check::CorrectorReach{C, E},
+        corrected::AbstractVector{E},
+    )::Bool where {C, E <: Real}
     (; settings) = check
     if !within_reach(check, corrected)
-        @debug "corrector refused" _group = :trace reason = :reach predictor_move = check.predictor_move
+        @debug "corrector refused" _group = :trace reason = :reach predictor_move = check.state[].predictor_move
         return false
     end
     if !within_limit(settings.max_kl, largest_kl(corrected, check.predicted))
@@ -185,21 +216,22 @@ end
 
 """The verdict that ends a solve: converged (`NewtonConverged`) when it `settled_here`, else `proceed`."""
 function closing_verdict(check::CorrectorReach, proceed::Bool)::Union{
-    Bool,
-    BifurcationKit.NewtonConverged,
-}
-    if check.settled_here
+        Bool,
+        BifurcationKit.NewtonConverged,
+    }
+    if check.state[].settled_here
         return BifurcationKit.NewtonConverged()
     end
     return proceed
 end
 
-function (check::CorrectorReach{C, E})(iterate::I;
-    fromNewton::Bool = true,
-    # fatou-ignore unused-argument: BifurcationKit passes keyword arguments this callback ignores
-    keywords...,
-)::Union{Bool, BifurcationKit.NewtonConverged} where {C, E <: Real, I <: NamedTuple}
-    if check.unresolved
+function (check::CorrectorReach{C, E})(
+        iterate::I;
+        fromNewton::Bool = true,
+        # fatou-ignore unused-argument: BifurcationKit passes keyword arguments this callback ignores
+        keywords...,
+    )::Union{Bool, BifurcationKit.NewtonConverged} where {C, E <: Real, I <: NamedTuple}
+    if check.state[].unresolved
         return false
     end
     if fromNewton
@@ -208,7 +240,7 @@ function (check::CorrectorReach{C, E})(iterate::I;
             return closing_verdict(check, isfinite(iterate.residual))
         end
         if iterate.step == 0
-            check.predictor_move = E(NaN32)
+            restate!(check; predictor_move = E(NaN32))
         end
         return corrected!(check, iterate, isfinite(iterate.residual))
     end
@@ -220,15 +252,18 @@ function (check::CorrectorReach{C, E})(iterate::I;
         if iterate.step == 0
             copyto!(check.predicted, iterate.x)
             copyto!(check.previous, iterate.z0.u)
-            check.step_length = arclength_distance(iterate.z0.u, iterate.x, check.geometry)
-            check.predictor_move = logit_change(iterate.z0.u, iterate.x)
+            restate!(
+                check;
+                step_length = arclength_distance(iterate.z0.u, iterate.x, check.geometry),
+                predictor_move = logit_change(iterate.z0.u, iterate.x),
+            )
             if step_unresolved(iterate.z0.u, iterate.x)
-                @debug "corrector stopped" _group = :trace reason = :unresolved step_length = check.step_length
-                check.unresolved = true
-                check.noise = unresolved_noise(check)
+                @debug "corrector stopped" _group = :trace reason = :unresolved step_length = check.state[].step_length
+                restate!(check; unresolved = true)
+                restate!(check; noise = unresolved_noise(check))
                 return false
             end
-            check.reach_failure = no_reach_failure(E)
+            restate!(check; reach_failure = no_reach_failure(E))
         end
         if !isfinite(iterate.residual)
             @debug "corrector stopped" _group = :trace reason = :nonfinite
@@ -237,15 +272,15 @@ function (check::CorrectorReach{C, E})(iterate::I;
         reached = within_reach(check, iterate.x)
         verdict = corrected!(check, iterate, reached)
         if !reached
-            @debug "corrector stopped" _group = :trace reason = :reach correction = check.correction
-            check.reach_failure = (; relative_precision = last(iterate.x), check.correction)
+            @debug "corrector stopped" _group = :trace reason = :reach correction = check.state[].correction
+            restate!(check; reach_failure = (; relative_precision = last(iterate.x), check.state[].correction))
         end
         return verdict
     end
     # An exact root converges unsettled on BifurcationKit's own test (`residual <= tol`, tol 0), so it meets the same tests.
     converged = isfinite(iterate.residual) &&
-        (check.settled_here || iszero(iterate.residual))
-    @debug "corrector closed" _group = :trace step = iterate.step residual = iterate.residual converged step_length = check.step_length
+        (check.state[].settled_here || iszero(iterate.residual))
+    @debug "corrector closed" _group = :trace step = iterate.step residual = iterate.residual converged step_length = check.state[].step_length
     if converged && !closing_accepted(check, iterate.x)
         return false
     end
@@ -253,11 +288,11 @@ function (check::CorrectorReach{C, E})(iterate::I;
         return false
     end
     # A solve that settled at its start has no correction (NaN). An unsettled exact root's next correction is 0.
-    closing_correction = ifelse(check.settled_here, check.correction, zero(E))
+    closing_correction = ifelse(check.state[].settled_here, check.state[].correction, zero(E))
     if converged && !isnan(closing_correction)
-        check.noise = NoiseRecord(
-            max(check.noise.accuracy, closing_correction),
-            check.noise.suspect,
+        restate!(
+            check;
+            noise = NoiseRecord(max(check.state[].noise.accuracy, closing_correction), check.state[].noise.suspect),
         )
     end
     return closing_verdict(check, true)
@@ -270,66 +305,65 @@ end
 is the solve's start and never settles. Each later one is a correction `Δz` from the iterate before: it settles
 (`NewtonConverged`) when `settled`. A correction past `contraction_limit` times the one before (plus
 `logit_tolerance · contraction_offset`) fails to contract, Gambit's test (path.cc), and stops the corrector, so the
-step halves. Two in a row, each larger than the predictor's own move, are suspected noise (`check.noise`); the
+step halves. Two in a row, each larger than the predictor's own move, are suspected noise (`noise`); the
 step still halves. A second such solve before any settles, its correction at least half the suspect's, confirms it
 (`noise_confirmed`): halving shrinks the corrections of a predictor past a fold, not noise. Every later solve refuses.
 """
 function corrected!(check::CorrectorReach{C, E}, iterate::NamedTuple, proceed::Bool)::Union{
-    Bool,
-    BifurcationKit.NewtonConverged,
-} where {C, E <: Real}
+        Bool,
+        BifurcationKit.NewtonConverged,
+    } where {C, E <: Real}
     if noise_confirmed(check)
         return false
     end
     if iterate.step == 0
         copyto!(check.iterate, iterate.x)
-        check.correction, check.stalls, check.settled_here = E(NaN32), 0, false
+        restate!(check; correction = E(NaN32), stalls = 0, settled_here = false)
         return proceed
     end
-    correction, before = logit_change(check.iterate, iterate.x), check.correction
+    correction, before = logit_change(check.iterate, iterate.x), check.state[].correction
     copyto!(check.iterate, iterate.x)
-    check.correction = correction
+    restate!(check; correction)
     if !proceed
         return false
     end
     if settled(check, iterate, correction, check.settings.logit_tolerance)
-        check.settled_here, check.noise = true, NoiseRecord(check.noise.accuracy, nothing)
+        restate!(check; settled_here = true, noise = NoiseRecord(check.state[].noise.accuracy, nothing))
         return BifurcationKit.NewtonConverged()
     end
     (; contraction_limit, contraction_offset, logit_tolerance) = check.settings
     # The first correction has no rate (`before` is NaN), so it contracts.
     if isnan(before) ||
             within_limit(
-                scaled_limit(
-                    contraction_limit,
-                    before + logit_tolerance * contraction_offset,
-                ),
-                correction,
-            )
-        check.stalls = 0
+            scaled_limit(
+                contraction_limit,
+                before + logit_tolerance * contraction_offset,
+            ),
+            correction,
+        )
+        restate!(check; stalls = 0)
         return true
     end
     if rounding_settles(check) &&
             settled(check, iterate, correction, NOISE_MARGIN * rounding_correction(check.noise_game, iterate.x, bordering_row(check)))
         @debug "corrector settled at rounding" _group = :trace correction
-        check.settled_here, check.noise = true, NoiseRecord(check.noise.accuracy, nothing)
+        restate!(check; settled_here = true, noise = NoiseRecord(check.state[].noise.accuracy, nothing))
         return BifurcationKit.NewtonConverged()
     end
-    if !(check.predictor_move <= correction)
+    if !(check.state[].predictor_move <= correction)
         @debug "corrector stopped" _group = :trace reason = :contraction correction before
         return false
     end
-    check.stalls += 1
-    if check.stalls < 2
+    if restate!(check; stalls = check.state[].stalls + 1).stalls < 2
         return true
     end
     # Halving leaves noise's corrections alike (ratio 1) and shrinks an overshot predictor's by 1/4; 1/2 splits them.
-    suspect = check.noise.suspect
+    suspect = check.state[].noise.suspect
     confirmed = !isnothing(suspect) && correction >= suspect.correction / 2
-    @debug "corrector stopped" _group = :trace reason = :noise confirmed correction predictor_move = check.predictor_move
-    check.noise = NoiseRecord(
-        check.noise.accuracy,
-        (; relative_precision = last(iterate.x), correction, confirmed),
+    @debug "corrector stopped" _group = :trace reason = :noise confirmed correction predictor_move = check.state[].predictor_move
+    restate!(
+        check;
+        noise = NoiseRecord(check.state[].noise.accuracy, (; relative_precision = last(iterate.x), correction, confirmed)),
     )
     return false
 end
@@ -347,8 +381,10 @@ Whether `check`'s corrector has settled `iterate`, reached by a Newton `correcti
 logit more than `logit_tolerance`, and the relative precision `ρ` is at its pin to the relative `pin_tolerance`. The pin
 needs its own test: a far target's logits barely move with `ρ`, so they would pass a `ρ` that never left its start.
 """
-function settled(check::CorrectorReach, iterate::I, correction::Real, tolerance::Real)::Bool where {I <:
-    NamedTuple}
+function settled(check::CorrectorReach, iterate::I, correction::Real, tolerance::Real)::Bool where {
+        I <:
+        NamedTuple,
+    }
     relative_precision = last(iterate.x)
     offset = pin_residual(iterate)
     pin_scale = max(abs(relative_precision), abs(relative_precision - offset))
@@ -366,7 +402,7 @@ at noise once (`noise.suspect`), so that halving has had its chance. A first sta
 step often settles within `logit_tolerance`, and a point settled above it would widen the trace's `logit_accuracy`.
 """
 function rounding_settles(check::CorrectorReach)::Bool
-    return isnan(check.predictor_move) || !isnothing(check.noise.suspect)
+    return isnan(check.state[].predictor_move) || !isnothing(check.state[].noise.suspect)
 end
 
 """
@@ -375,7 +411,7 @@ The last row of the Newton system `check`'s corrector solves: PALC's arclength r
 predictor.
 """
 function bordering_row(check::CorrectorReach{C, E})::AbstractVector{E} where {C, E <: Real}
-    if !(check.predictor_move > 0)
+    if !(check.state[].predictor_move > 0)
         return [zeros(E, length(check.iterate) - 1); one(E)]
     end
     return check.predicted .- check.previous
@@ -393,10 +429,10 @@ where no correction can settle. Zero when `J` is singular or there is no game, s
 `logit_tolerance` alone.
 """
 function rounding_correction(
-    game::LogitGame,
-    point::AbstractVector{E},
-    row::AbstractVector{E},
-)::E where {E <: Real}
+        game::LogitGame,
+        point::AbstractVector{E},
+        row::AbstractVector{E},
+    )::E where {E <: Real}
     width = length(point) - 1
     system = branch_system!(BranchWorkspace(game, point), game, point, last(point))
     # The row's scale is immaterial: the rounding has no entry in it, so it reads only J⁻¹'s gap columns.
@@ -424,11 +460,11 @@ largest logit move (`logit_change`). Logits are target-free, as the convergence 
 branch jump (frozen Fisher weights) or swell a settled point (gaps `w = P G` at a far target).
 """
 function within_reach(check::CorrectorReach, point::AbstractVector)::Bool
-    if !(check.predictor_move > 0)
+    if !(check.state[].predictor_move > 0)
         return true
     end
     return within_limit(
-        scaled_limit(check.settings.reach, check.predictor_move),
+        scaled_limit(check.settings.reach, check.state[].predictor_move),
         logit_change(check.predicted, point),
     )
 end
@@ -457,14 +493,17 @@ end
 BifurcationKit's branch record of the trace's `point = [w; ρ]` and the state's tangent: the gaps `w`, their tangent
 and the tangent's precision part. `branch_progress` reads the trace's progress back from these records.
 """
-function trace_record_point(point::AbstractVector{E}, ::Real;
-    state::Any,
-    # fatou-ignore unused-argument: BifurcationKit passes keyword arguments this record ignores
-    keywords...,
-)::NamedTuple where {E <: Real}
-    return (; gaps = point[begin:(end - 1)], gap_tangent = state.τ.u[
-        begin:(end - 1),
-    ], tangent_precision = state.τ.p)
+function trace_record_point(
+        point::AbstractVector{E}, ::Real;
+        state::Any,
+        # fatou-ignore unused-argument: BifurcationKit passes keyword arguments this record ignores
+        keywords...,
+    )::NamedTuple where {E <: Real}
+    return (;
+        gaps = point[begin:(end - 1)], gap_tangent = state.τ.u[
+            begin:(end - 1),
+        ], tangent_precision = state.τ.p,
+    )
 end
 
 """A branch record's relative precision."""
@@ -528,8 +567,8 @@ range of both, `unmoved` when its last two records hold the same point and `loop
 point and leaves `opening` as it was, tangent included.
 """
 function branch_progress(branch::AbstractVector, opening::TraceProgress{E})::TraceProgress{
-    E,
-} where {E <: Real}
+        E,
+    } where {E <: Real}
     if length(branch) == 1
         return opening
     end
@@ -555,32 +594,40 @@ end
 BifurcationKit's `finalise_solution` of one trace segment. An accepted point bitwise equal to the branch's last one (a
 step below the point's rounding) stops the trace, a stall, as does a point that closes a loop of the branch (`looped`). The trace goes on while `keep_going(logits,
 relative_precision)` holds. Then `redraw(logits, relative_precision, shift)` may return a new game, where `shift` is
-the point's `RootShift` check under `settings`: `slot` takes it and the
+the point's `RootShift` check under `settings`: `slot`, a `Ref` to the current `RedrawSlot` (the constructor
+wraps the one it is given), takes it and the
 segment stops, for `trace_endpoint` to correct the point onto it and restart. A `redraw` that returns `nothing` or the
 current game swaps nothing. `JULIA_DEBUG=trace` lists every point.
 """
 struct TraceFinalise{A, D, S, C <: CorrectorSettings}
     keep_going::A
     redraw::D
-    slot::S
+    slot::Base.RefValue{S}  # lint: ref # lint: non-public-access  by design: finalise_solution returns a Bool, and a redraw's swap reaches the trace as one immutable value here (RefValue is a Ref's concrete type)
     settings::C
 end
 
-function (finalise::TraceFinalise)(point::P, tangent::T, step::S, result::Any;
-    state::Any,
-    iter::Any,
-    # fatou-ignore unused-argument: BifurcationKit passes keyword arguments this callback ignores
-    keywords...,
-)::Bool where {P, T, S <: Integer}
+function TraceFinalise(keep_going::A, redraw::D, slot::S, settings::C)::TraceFinalise{A, D, S, C} where {A, D, S, C <: CorrectorSettings}
+    return TraceFinalise{A, D, S, C}(keep_going, redraw, Ref(slot), settings)  # lint: ref  see `slot`
+end
+
+function (finalise::TraceFinalise)(
+        point::P, tangent::T, step::S, result::Any;
+        state::Any,
+        iter::Any,
+        # fatou-ignore unused-argument: BifurcationKit passes keyword arguments this callback ignores
+        keywords...,
+    )::Bool where {P, T, S <: Integer}
     @debug "trace point" _group = :trace step relative_precision = point.p state = copy(
         point.u,
     ) tangent = copy(tangent.u)
     # BifurcationKit saves the point after this call, so the branch's last record is the point before it.
     if same_point(
-            (; param = point.p, gaps = view(
-                point.u,
-                firstindex(point.u):(lastindex(point.u) - 1),
-            )),
+            (;
+                param = point.p, gaps = view(
+                    point.u,
+                    firstindex(point.u):(lastindex(point.u) - 1),
+                ),
+            ),
             last(result.branch),
         )
         return false
@@ -593,7 +640,8 @@ function (finalise::TraceFinalise)(point::P, tangent::T, step::S, result::Any;
     if !finalise.keep_going(logits, point.p)
         return false
     end
-    finalise.slot.step_length = abs(state.ds)
+    slot = restated(finalise.slot[]; step_length = abs(state.ds))
+    finalise.slot[] = slot
     # A redraw swaps the map for the steps after this point, and the endpoint has none.
     if point.p == 1
         return true
@@ -602,8 +650,10 @@ function (finalise::TraceFinalise)(point::P, tangent::T, step::S, result::Any;
     shift = RootShift(
         point.u,
         state.ds .* tangent.u,
-        palc_border(BifurcationKit.getdot(algorithm), eltype(point.u)(BifurcationKit.getθ(algorithm)), tangent.u),
+        palc_border(algorithm.dotθ, eltype(point.u)(algorithm.θ), tangent.u),
         finalise.settings,
     )
-    return !swapped!(finalise.slot, shift, finalise.redraw(logits, point.p, shift))
+    # The slot is pending only after a swap here: a restart clears it before the segment runs.
+    finalise.slot[] = swapped(slot, shift, finalise.redraw(logits, point.p, shift))
+    return !finalise.slot[].pending
 end

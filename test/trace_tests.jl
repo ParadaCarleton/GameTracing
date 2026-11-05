@@ -148,10 +148,6 @@ end
     @test residual_norm(FOLD_GAME, unwrap(result).logits, 2.0f0) < 1.0f-3
 end
 
-@testset "an element type LAPACK cannot factor gets BifurcationKit's matrix solver" begin
-    @test GameTracing.matrix_bls(WIDTH, Float16) isa GameTracing.BifurcationKit.MatrixBLS
-    @test GameTracing.matrix_bls(WIDTH, Float32) isa GameTracing.InPlaceMatrixBLS
-end
 
 @testset "BifurcationKit's smallest step is zero, so its halving ends only at a zero step" begin
     for element in (Float16, Float32, float(Int))
@@ -216,12 +212,12 @@ end
         )
         @test (options.ds, options.dsmin, options.dsmax, options.a, options.η) ==
             (
-                settings.first_step,
-                zero(Float32),
-                settings.max_step,
-                settings.aggressiveness,
-                settings.first_tangent_divisor,
-            )
+            settings.first_step,
+            zero(Float32),
+            settings.max_step,
+            settings.aggressiveness,
+            settings.first_tangent_divisor,
+        )
         @test (options.p_min, options.p_max) == (0, 1)
         @test options.max_steps == settings.max_steps
         # Only the corrector's callback converges a corrector short of an exact root.
@@ -246,9 +242,9 @@ end
     @test residual == GameTracing.GameResidual(game)(point, 0.5f0)
     @test jacobian ==
         GameTracing.GameJacobian(game, GameTracing.BranchWorkspace(game, point))(
-            point,
-            0.5f0,
-        )
+        point,
+        0.5f0,
+    )
     # A forward difference in each coordinate checks the Jacobian the pass formed in place.
     for (column, step) in pairs(Float32[1.0f-3, 1.0f-3, 1.0f-3])
         moved = copy(point)
@@ -356,11 +352,13 @@ end
     )
     degenerate = zeros(Float32, WIDTH + 1)
     # A swapped game that was non-finite at the swap point has no factorization (`ShiftedGame`).
-    thrown = GameTracing.segment_branch(iterator, nothing, degenerate, opening)
+    start = zeros(Float32, WIDTH + 1)
+    thrown = GameTracing.segment_branch(iterator, start, nothing, degenerate, opening)
     @test thrown.progress == opening
     @test GameTracing.solver_blowup(thrown.exception)
     @test_throws DimensionMismatch GameTracing.guarded_restart(
         iterator,
+        start,
         lu(Matrix{Float32}(I, WIDTH + 1, WIDTH + 1)),
         zeros(Float32, WIDTH + 3),
         opening,

@@ -4,7 +4,9 @@ using ErrorTypes: is_error, unwrap, unwrap_error
     rng = fresh_rng()
     for _ in 1:20
         from, to = 4 .* randn(rng, Float32, 2)
-        probability, other = inv(1 + exp(-from)), inv(1 + exp(-to))
+        # In double precision: in Float32 this direct form loses 1 - p to rounding once both logits are large, which
+        # failed rtol 1e-3 in about 1 of 1200 draws; bernoulli_kl's log1pexp form does not.
+        probability, other = inv(1 + exp(-from * float(1))), inv(1 + exp(-to * float(1)))
         direct = probability * log(probability / other) + (1 - probability) * log((1 - probability) / (1 - other))
         @test GameTracing.bernoulli_kl(from, to) ≈ direct rtol = 1.0f-3 atol = 1.0f-6
         @test GameTracing.bernoulli_kl(from, to) >= 0
@@ -62,7 +64,7 @@ end
     predicted = Float32[1, 0, 0.5f0]
     # The predictor moves the first logit by 0.5; this moves it 0.5 more, twice the reach of 0.5 times that move.
     beyond_reach = predicted .+ Float32[1, 0, 0]
-    @test GameTracing.logit_change(predicted, beyond_reach) ≈ 2 * 0.5f0 *GameTracing.logit_change(Float32[0, 0, 0.5f0], predicted)
+    @test GameTracing.logit_change(predicted, beyond_reach) ≈ 2 * 0.5f0 * GameTracing.logit_change(Float32[0, 0, 0.5f0], predicted)
     for (corrector, corrected) in (
             (CorrectorSettings{Float32}(reach = nothing, max_kl = 1.0f-3), Float32[3, 0, 0.5f0]),
             (CorrectorSettings{Float32}(reach = 0.5f0), beyond_reach),
@@ -75,13 +77,13 @@ end
             predicted,
             1.0f0,
         )
-        check.predictor_move = GameTracing.logit_change(check.previous, predicted)
+        GameTracing.restate!(check; predictor_move = GameTracing.logit_change(check.previous, predicted))
         @test GameTracing.closing_accepted(check, predicted)
         @test !GameTracing.closing_accepted(check, corrected)
         # An exact root that never settled ends BifurcationKit's solve converged, so it meets the same tests.
         @test check((; x = corrected, res_f = zero(corrected), p = 0.5f0, step = 2, residual = 0.0f0, closing = true); fromNewton = false) === false
         # The closing call reads the solve's own verdict: it settled.
-        check.settled_here = true
+        GameTracing.restate!(check; settled_here = true)
         @test check((; x = corrected, res_f = zero(corrected), p = 0.5f0, step = 2, residual = 0.0f0, closing = true); fromNewton = false) === false
     end
 end
@@ -94,10 +96,10 @@ end
         check = GameTracing.CorrectorReach(
             GameTracing.AcceptAll(), nothing, CorrectorSettings{Float32}(), TraceGeometry{Float32}(), previous, predicted, 1.0f0,
         )
-        check.predictor_move = GameTracing.logit_change(previous, predicted)
-        check.correction, check.settled_here = 0.25f0, settled
+        GameTracing.restate!(check; predictor_move = GameTracing.logit_change(previous, predicted))
+        GameTracing.restate!(check; correction = 0.25f0, settled_here = settled)
         @test check(closing; fromNewton = false) !== false
-        @test check.noise.accuracy == recorded
+        @test check.state[].noise.accuracy == recorded
     end
 end
 

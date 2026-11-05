@@ -18,19 +18,21 @@ the trace's precision (the test "Gambit's λ is the trace's precision"). `precis
 `first_step` and `max_accel` are Gambit's first step length and largest step growth, its defaults by default.
 """
 function gambit_branch(
-    payoffs::Tuple,
-    precision::E;
-    first_step::Real = 3 // 100,
-    max_accel::Real = 11 // 10,
-)::NamedTuple{(:precision, :first_choices), Tuple{E, Vector{E}}} where {E <: Real}
+        payoffs::Tuple,
+        precision::E;
+        first_step::Real = 3 // 100,
+        max_accel::Real = 11 // 10,
+    )::NamedTuple{(:precision, :first_choices), Tuple{E, Vector{E}}} where {E <: Real}
     gambit, numpy = pyimport("pygambit"), pyimport("numpy")
     game = gambit.Game.from_arrays((numpy.asarray(float.(table)) for table in payoffs)...)
-    profile = first(gambit.qre.logit_solve_lambda(
-        game;
-        lam = [float(precision)],
-        first_step = float(first_step),
-        max_accel = float(max_accel),
-    ))
+    profile = first(
+        gambit.qre.logit_solve_lambda(
+            game;
+            lam = [float(precision)],
+            first_step = float(first_step),
+            max_accel = float(max_accel),
+        )
+    )
     first_choices = [pyconvert(E, profile.profile[first(player.strategies)]) for player in game.players]
     return (; precision = pyconvert(E, profile.lam), first_choices)
 end

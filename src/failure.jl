@@ -46,10 +46,9 @@ Whether `exception` is BifurcationKit's report that a start point would not corr
 """
 uncorrected_start(::Any)::Bool = false
 uncorrected_start(message::String)::Bool = message == "Stopping continuation."
-uncorrected_start(exception::ErrorException)::Bool = startswith(
-    exception.msg,
-    "Newton failed to converge",
-)
+# `msg` is an `AbstractString` field; the `String` test and assertion let `startswith` and `contains` compile against it.
+uncorrected_start(exception::ErrorException)::Bool = exception.msg isa String &&
+    startswith(exception.msg::String, "Newton failed to converge")
 
 """
     solver_blowup(exception)
@@ -62,6 +61,6 @@ solver_blowup(::Any)::Bool = false
 solver_blowup(::SingularException)::Bool = true
 solver_blowup(::LAPACKException)::Bool = true
 function solver_blowup(exception::ArgumentError)::Bool
-    return contains(exception.msg, "LAPACK") ||
-        contains(exception.msg, "matrix contains Infs or NaNs")
+    return exception.msg isa String &&
+        (contains(exception.msg::String, "LAPACK") || contains(exception.msg::String, "matrix contains Infs or NaNs"))
 end

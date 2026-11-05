@@ -73,11 +73,11 @@ end
 
 """The probability that every player but `player` and `skipped` plays its strategy in `profile`."""
 function rival_weight(
-    strategies::NTuple{N, AbstractVector{E}},
-    profile::CartesianIndex{N},
-    player::Integer,
-    skipped::Integer,
-)::E where {N, E <: Real}
+        strategies::NTuple{N, AbstractVector{E}},
+        profile::CartesianIndex{N},
+        player::Integer,
+        skipped::Integer,
+    )::E where {N, E <: Real}
     weight = one(E)
     for (other, strategy) in pairs(strategies)
         if other != player && other != skipped
@@ -88,13 +88,13 @@ function rival_weight(
 end
 
 function (gains::NormalFormGains)(
-    work::NamedTuple,
-    gain::AbstractVector,
-    gain_slope::AbstractMatrix,
-    gain_precision_slope::AbstractVector,
-    logits::AbstractVector{E},
-    ::Real,
-)::Nothing where {E <: Real}
+        work::NamedTuple,
+        gain::AbstractVector,
+        gain_slope::AbstractMatrix,
+        gain_precision_slope::AbstractVector,
+        logits::AbstractVector{E},
+        ::Real,
+    )::Nothing where {E <: Real}
     ranges = logit_ranges(gains)
     reference_softmax!.(work.strategies, view.((logits,), ranges))
     fill!(gain_slope, zero(E))
@@ -116,12 +116,12 @@ function (gains::NormalFormGains)(
 end
 
 function (gains::NormalFormGains)(
-    gain::AbstractVector,
-    gain_slope::AbstractMatrix,
-    gain_precision_slope::AbstractVector,
-    logits::AbstractVector,
-    precision::Real,
-)::Nothing
+        gain::AbstractVector,
+        gain_slope::AbstractMatrix,
+        gain_precision_slope::AbstractVector,
+        logits::AbstractVector,
+        precision::Real,
+    )::Nothing
     return gains(pass_workspace(gains, logits), gain, gain_slope, gain_precision_slope, logits, precision)
 end
 
@@ -133,12 +133,12 @@ end
 a gain takes its strategy's row less the first strategy's.
 """
 function write_gain_slope!(
-    block::AbstractMatrix{E},
-    payoff::AbstractArray,
-    work::NamedTuple,
-    player::Integer,
-    rival::Integer,
-)::Nothing where {E <: Real}
+        block::AbstractMatrix{E},
+        payoff::AbstractArray,
+        work::NamedTuple,
+        player::Integer,
+        rival::Integer,
+    )::Nothing where {E <: Real}
     rival_strategy = work.strategies[rival]
     sensitivity = @view work.sensitivity[axes(payoff, player), axes(payoff, rival)]
     fill!(sensitivity, zero(E))
@@ -149,6 +149,6 @@ function write_gain_slope!(
     own, other = axes(sensitivity)
     own_later, later = (first(own) + 1):last(own), (first(other) + 1):last(other)
     first_row = @view sensitivity[first(own):first(own), later]
-    block .= transpose(view(rival_strategy, later)) .* (@view(sensitivity[own_later, later]) .-view(means, own_later) .- first_row .+ first(means))
+    block .= transpose(view(rival_strategy, later)) .* (@view(sensitivity[own_later, later]) .- view(means, own_later) .- first_row .+ first(means))
     return nothing
 end

@@ -106,8 +106,10 @@ end
 """Whether `swap`'s redraw passes the `RootShift` check at its swap point."""
 function shift_passes(swap::MapSwap)::Bool
     try
-        trace_endpoint(LogitGame(swap.before, swap.precision), swap.width, REDRAW_SETTINGS;
-            redraw = ShiftProbe(LogitGame(swap.after, swap.precision), swap.swap_level))
+        trace_endpoint(
+            LogitGame(swap.before, swap.precision), swap.width, REDRAW_SETTINGS;
+            redraw = ShiftProbe(LogitGame(swap.after, swap.precision), swap.swap_level)
+        )
     catch verdict
         if verdict isa ShiftVerdict
             return verdict.passes
@@ -209,7 +211,7 @@ end
     @test failure.context.accepted_step == outcome.accepted_step
     unaccepted = GameTracing.TraceProgress(copy(traced.logits), 0.5f0, 0, 0.0f0, 0.5f0, zeros(Float32, WIDTH), 0.0f0, false, false)
     @test iszero(unwrap_error(GameTracing.reached_state(unaccepted, outcome, game, REDRAW_SETTINGS, (;))).context.accepted_step)
-    reached =GameTracing.TraceProgress(copy(traced.logits), 1.0f0, 3, 0.0f0, 1.0f0, zeros(Float32, WIDTH), 0.0f0, false, false)
+    reached = GameTracing.TraceProgress(copy(traced.logits), 1.0f0, 3, 0.0f0, 1.0f0, zeros(Float32, WIDTH), 0.0f0, false, false)
     endpoint = unwrap(GameTracing.reached_state(reached, (; outcome..., exhausted = nothing), game, REDRAW_SETTINGS, (;)))
     @test endpoint.steps == 3
     @test endpoint.logit_accuracy == outcome.logit_accuracy
@@ -219,17 +221,19 @@ end
     game = LogitGame(GAME, TARGET_PRECISION)
     slot = GameTracing.RedrawSlot(game, false, 0.1f0)
     check = GameTracing.RootShift(Float32[0.1f0, 0.2f0, 0.5f0], Float32[0, 0, 1], nothing)
-    @test !GameTracing.swapped!(slot, check, nothing)
-    @test !GameTracing.swapped!(slot, check, slot.game)
-    @test !GameTracing.swapped!(slot, check, check(slot.game))
-    @test !slot.pending
-    @test_throws ArgumentError GameTracing.swapped!(slot, check, LogitGame(GAME, 2 * TARGET_PRECISION))
+    @test GameTracing.swapped(slot, check, nothing) === slot
+    @test GameTracing.swapped(slot, check, slot.game) === slot
+    @test GameTracing.swapped(slot, check, check(slot.game)) === slot
+    @test_throws ArgumentError GameTracing.swapped(slot, check, LogitGame(GAME, 2 * TARGET_PRECISION))
     flipped = check(LogitGame(LinearGainPass(GAME.interaction, -GAME.stand_alone), TARGET_PRECISION))
-    @test GameTracing.swapped!(slot, check, flipped)
-    @test slot.pending
-    @test slot.factorization === flipped.factorization
+    next = GameTracing.swapped(slot, check, flipped)
+    @test next.pending
+    @test next.game === flipped.game
+    @test next.factorization === flipped.factorization
+    @test next.step_length == slot.step_length
+    @test !slot.pending
     elsewhere = GameTracing.RootShift(copy(check.point), check.border, nothing)(game)
-    @test_throws ArgumentError GameTracing.swapped!(slot, check, elsewhere)
+    @test_throws ArgumentError GameTracing.swapped(slot, check, elsewhere)
 end
 
 @testset "a redraw of random swap 6 at relative precision 0.734 lands on the branch a double-precision reference follows" begin
@@ -284,7 +288,7 @@ end
     # Between the maps' interactions only the antisymmetric mode changes sign: the new map's root is past a pitchfork.
     modes = [
         symmetric_modes((1 - blend) * before.interaction[1, 2] + blend * after.interaction[1, 2], level)
-        for blend in range(0, 1; length = 101)
+            for blend in range(0, 1; length = 101)
     ]
     @test all(mode.symmetric > 0 for mode in modes)
     @test first(modes).antisymmetric > 0 > last(modes).antisymmetric

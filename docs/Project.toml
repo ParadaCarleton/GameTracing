@@ -1,0 +1,13 @@
+[deps]
+# GameTracing needs its BifurcationKit fork, and a dependency's [sources] apply only in its own project.
+BifurcationKit = "0f109fa4-8a5d-4b75-95aa-f515264e7665"
+Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+GameTracing = "5d2f1c0e-7a4b-4e3c-9b6a-1f0c8d2e4a77"
+
+[sources]
+BifurcationKit = {url = "https://github.com/ParadaCarleton/BifurcationKit.jl", rev = "irv"}
+GameTracing = {path = ".."}
+
+[compat]
+Documenter = "1"
+julia = "1.13"

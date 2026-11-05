@@ -90,9 +90,9 @@ end
         copy(point),
         0.0f0,
     )
-    check.settled_here = true
+    GameTracing.restate!(check; settled_here = true)
     @test !check((; x = point .+ eps.(point), z0 = (; u = point), step = 0, residual = 0.0f0); fromNewton = false)
-    @test check.unresolved
+    @test check.state[].unresolved
     @test !check((; x = point, residual = 0.0f0, step = 1, p = 1.0f0, closing = true); fromNewton = false)
     # Each coordinate's move is measured against its own size: any move of a zero coordinate resolves.
     @test !GameTracing.step_unresolved(Float32[0, 1], Float32[1.0f-30, 1])
@@ -103,11 +103,12 @@ end
 end
 
 @testset "a corrector reach too short to hold any step ends the trace" begin
-    result = trace_endpoint(LogitGame(FOLD_GAME, 2.0f0), 1, TraceSettings{Float32}(
-        corrector = CorrectorSettings{Float32}(reach = 1.0f-6),
-        first_step = 0.05f0,
-        max_step = 0.1f0,
-    );
+    result = trace_endpoint(
+        LogitGame(FOLD_GAME, 2.0f0), 1, TraceSettings{Float32}(
+            corrector = CorrectorSettings{Float32}(reach = 1.0f-6),
+            first_step = 0.05f0,
+            max_step = 0.1f0,
+        )
     )
     @test is_error(result)
     @test unwrap_error(result).cause in (GameTracing.TraceStuck, GameTracing.NoConvergence)
@@ -115,9 +116,11 @@ end
 
 @testset "exceptions BifurcationKit and LAPACK throw are told apart from a caller's" begin
     @test GameTracing.uncorrected_start("Stopping continuation.")
-    @test GameTracing.uncorrected_start(ErrorException(
-        "Newton failed to converge at the start",
-    ))
+    @test GameTracing.uncorrected_start(
+        ErrorException(
+            "Newton failed to converge at the start",
+        )
+    )
     @test !GameTracing.uncorrected_start(ErrorException("another"))
     @test !GameTracing.uncorrected_start("another")
     @test !GameTracing.uncorrected_start(ArgumentError("bad game"))
@@ -143,7 +146,7 @@ end
 end
 
 @testset "a triangular bordered system solves like the dense one" begin
-    solver = GameTracing.matrix_bls(2, Float32)
+    solver = GameTracing.bordered_linear_solver(GameTracing.MatrixSolve, 2, Float32)
     jacobian = Float32[2 0; 0 3]
     border = Float32[0, 0]
     solution, parameter, _, _ = solver(
@@ -181,7 +184,7 @@ end
         predicted,
         1.0f0,
     )
-    check.predictor_move = GameTracing.logit_change(previous, predicted)
+    GameTracing.restate!(check; predictor_move = GameTracing.logit_change(previous, predicted))
     @test GameTracing.within_reach(check, predicted .+ Float32[1.0f-2, 0])
     @test !GameTracing.within_reach(check, predicted .+ Float32[3, 0])
 end
@@ -209,7 +212,7 @@ const PIN_ROW = Float32[0, 0, 1]
         @test GameTracing.corrected!(check, (; x = iterates[2], fx = zeros(Float32, 3), step = 1), true) === true
         stalled = GameTracing.corrected!(check, (; x = iterates[3], fx = zeros(Float32, 3), step = 2), true)
         @test (stalled isa GameTracing.BifurcationKit.NewtonConverged) == settles
-        @test check.settled_here == settles
+        @test check.state[].settled_here == settles
     end
 end
 
@@ -228,13 +231,12 @@ end
         check = GameTracing.CorrectorReach(
             GameTracing.AcceptAll(), game, settings, TraceGeometry{Float32}(), point, predicted, 0.0f0,
         )
-        check.predictor_move = floor
-        check.noise = GameTracing.NoiseRecord(0.0f0, suspect)
+        GameTracing.restate!(check; predictor_move = floor, noise = GameTracing.NoiseRecord(0.0f0, suspect))
         @test GameTracing.corrected!(check, (; x = iterates[1], fx = zeros(Float32, 3), step = 0), true)
         @test GameTracing.corrected!(check, (; x = iterates[2], fx = zeros(Float32, 3), step = 1), true) === true
         stalled = GameTracing.corrected!(check, (; x = iterates[3], fx = zeros(Float32, 3), step = 2), true)
         @test (stalled isa GameTracing.BifurcationKit.NewtonConverged) == settles
-        @test check.settled_here == settles
+        @test check.state[].settled_here == settles
     end
 end
 
@@ -299,19 +301,19 @@ end
 
 """A `trace_record_point` record of BifurcationKit's branch at `step`: the point `(gaps, param)` and a unit tangent."""
 function branch_record(
-    gaps::AbstractVector{E},
-    param::E,
-    step::Integer,
-)::NamedTuple where {E <: Real}
+        gaps::AbstractVector{E},
+        param::E,
+        step::Integer,
+    )::NamedTuple where {E <: Real}
     return (; gaps, gap_tangent = zero(gaps), tangent_precision = one(E), param, step)
 end
 
 """`finalise`'s verdict on the accepted `point` (a `branch_record`) of a branch that so far holds `branch`."""
 function finalised(
-    finalise::GameTracing.TraceFinalise,
-    point::NamedTuple,
-    branch::AbstractVector,
-)::Bool
+        finalise::GameTracing.TraceFinalise,
+        point::NamedTuple,
+        branch::AbstractVector,
+    )::Bool
     # BifurcationKit calls `finalise` before it saves the point to the branch.
     tangent = (; u = zero([point.gaps; point.param]), p = one(point.param))
     return finalise(
@@ -362,13 +364,15 @@ end
     @test progress.gaps == moved.gaps && progress.relative_precision == moved.param
     outcome = (; step_length = 0.0f0, accepted_step = 0.0f0, exhausted = nothing, logit_accuracy = 0.0f0, unresolved = false, exception = nothing)
     settings = TraceSettings{Float32}(; max_steps = 2)
-    @test unwrap_error(GameTracing.reached_state(
-        progress,
-        outcome,
-        game,
-        settings,
-        (;),
-    )).cause ==
+    @test unwrap_error(
+        GameTracing.reached_state(
+            progress,
+            outcome,
+            game,
+            settings,
+            (;),
+        )
+    ).cause ==
         GameTracing.TraceStuck
     stuck = GameTracing.branch_progress(
         [start, moved, branch_record(moved.gaps, moved.param, 2)],
@@ -385,13 +389,15 @@ end
         opening,
     )
     @test !spent.unmoved
-    @test unwrap_error(GameTracing.reached_state(
-        spent,
-        outcome,
-        game,
-        settings,
-        (;),
-    )).cause ==
+    @test unwrap_error(
+        GameTracing.reached_state(
+            spent,
+            outcome,
+            game,
+            settings,
+            (;),
+        )
+    ).cause ==
         GameTracing.NoConvergence
 end
 
@@ -406,19 +412,21 @@ end
 
 """The records of `laps` laps of `per_lap` steps round the unit circle, from its first point."""
 function circle_branch(
-    ::Type{E},
-    laps::Integer,
-    per_lap::Integer,
-    turning::Bool,
-)::AbstractVector where {E <: Real}
+        ::Type{E},
+        laps::Integer,
+        per_lap::Integer,
+        turning::Bool,
+    )::AbstractVector where {E <: Real}
     return [circle_record(E(2 * pi * (index - 1) / per_lap), index, turning) for index in 1:(laps * per_lap)]
 end
 
 """The 1-based index of the first record of `branch` that `looped` flags against the records before it, or `nothing`."""
 function first_loop(branch::AbstractVector)::Union{Nothing, Int}
-    return findfirst([
-        GameTracing.looped(view(branch, firstindex(branch):(index - 1)), branch[index]) for index in eachindex(branch)
-    ])
+    return findfirst(
+        [
+            GameTracing.looped(view(branch, firstindex(branch):(index - 1)), branch[index]) for index in eachindex(branch)
+        ]
+    )
 end
 
 @testset "a branch that goes round a closed loop is flagged $element" for element in (Float32, widen(Float32))
@@ -450,13 +458,15 @@ end
     @test !GameTracing.branch_progress(circle[1:10], opening).looped
     progress = GameTracing.branch_progress(circle[1:flagged], opening)
     @test progress.looped && !progress.unmoved
-    failure = unwrap_error(GameTracing.reached_state(
-        progress,
-        (; step_length = zero(element), accepted_step = zero(element), exhausted = nothing, logit_accuracy = zero(element), unresolved = false, exception = nothing),
-        game,
-        TraceSettings{element}(; max_steps = 1000),
-        (;),
-    ))
+    failure = unwrap_error(
+        GameTracing.reached_state(
+            progress,
+            (; step_length = zero(element), accepted_step = zero(element), exhausted = nothing, logit_accuracy = zero(element), unresolved = false, exception = nothing),
+            game,
+            TraceSettings{element}(; max_steps = 1000),
+            (;),
+        )
+    )
     @test failure.cause == GameTracing.TraceStuck
     @test failure.context.looped
 end

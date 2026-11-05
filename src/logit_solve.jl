@@ -118,12 +118,12 @@ pygambit's `logit_solve_lambda`: the `LogitQREProfile` on the principal branch o
 otherwise).
 """
 function logit_solve_lambda(
-    gains::NormalFormGains{N},
-    lam::AbstractVector{<:Real};
-    first_step::Real = 0.03f0,
-    max_accel::Real = 1.1f0,
-    settings::TraceSettings{E} = gambit_settings(float(eltype(gains))(first_step), max_accel),
-)::BranchResult{E, N} where {N, E <: Real}
+        gains::NormalFormGains{N},
+        lam::AbstractVector{<:Real};
+        first_step::Real = 0.03f0,
+        max_accel::Real = 1.1f0,
+        settings::TraceSettings{E} = gambit_settings(float(eltype(gains))(first_step), max_accel),
+    )::BranchResult{E, N} where {N, E <: Real}
     require_payoff_type(gains, settings)
     # ponytail: one trace per precision; one trace stopping at each would save the repeated low-precision steps.
     results = lambda_profile.((gains,), E.(lam), (settings,))
@@ -135,14 +135,9 @@ function logit_solve_lambda(
     return Ok(unwrap.(results))
 end
 
-function logit_solve_lambda(
-    gains::NormalFormGains{N},
-    lam::Real;
-    first_step::Real = 0.03f0,
-    max_accel::Real = 1.1f0,
-    settings::TraceSettings{E} = gambit_settings(float(eltype(gains))(first_step), max_accel),
-)::BranchResult{E, N} where {N, E <: Real}
-    return logit_solve_lambda(gains, [lam]; settings)
+# The vector method's keywords, passed on whole.
+function logit_solve_lambda(gains::NormalFormGains{N}, lam::Real; keywords...)::BranchResult{<:Real, N} where {N}
+    return logit_solve_lambda(gains, [lam]; keywords...)
 end
 
 """
@@ -154,13 +149,13 @@ to `maximum_precision` at most, and fails `NoConvergence` with reason `:maximum_
 any other failure of the trace is returned as is. `maxregret` defaults to `sqrt(eps(E))` in the trace's element type `E`. `first_step`, `max_accel` and `settings` are `logit_solve_lambda`'s.
 """
 function logit_solve_branch(
-    gains::NormalFormGains{N};
-    first_step::Real = 0.03f0,
-    max_accel::Real = 1.1f0,
-    maximum_precision::Real = 1.0f6,
-    settings::TraceSettings{E} = gambit_settings(float(eltype(gains))(first_step), max_accel),
-    maxregret::Real = sqrt(eps(typeof(settings.first_step))),
-)::BranchResult{E, N} where {N, E <: Real}
+        gains::NormalFormGains{N};
+        first_step::Real = 0.03f0,
+        max_accel::Real = 1.1f0,
+        maximum_precision::Real = 1.0f6,
+        settings::TraceSettings{E} = gambit_settings(float(eltype(gains))(first_step), max_accel),
+        maxregret::Real = sqrt(eps(typeof(settings.first_step))),
+    )::BranchResult{E, N} where {N, E <: Real}
     if !(maxregret > 0)
         throw(ArgumentError("maxregret must be positive; got $maxregret"))
     end
@@ -192,15 +187,12 @@ end
 pygambit's `logit_solve`: the last point of `logit_solve_branch`, an approximate Nash equilibrium of the normal-form
 game `gains` at which no player's regret passes `maxregret` times the payoff range.
 """
-function logit_solve(
-    gains::NormalFormGains{N};
-    first_step::Real = 0.03f0,
-    max_accel::Real = 1.1f0,
-    maximum_precision::Real = 1.0f6,
-    settings::TraceSettings{E} = gambit_settings(float(eltype(gains))(first_step), max_accel),
-    maxregret::Real = sqrt(eps(typeof(settings.first_step))),
-)::ProfileResult{E, N} where {N, E <: Real}
-    branch = logit_solve_branch(gains; maxregret, maximum_precision, settings)
+function logit_solve(gains::NormalFormGains{N}; keywords...)::ProfileResult{<:Real, N} where {N}
+    return last_profile(logit_solve_branch(gains; keywords...))
+end
+
+"""The last profile of a `logit_solve_branch` result, or its failure."""
+function last_profile(branch::BranchResult{E, N})::ProfileResult{E, N} where {E <: Real, N}
     if is_error(branch)
         return Err(unwrap_error(branch))
     end

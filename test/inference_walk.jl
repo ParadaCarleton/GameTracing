@@ -15,9 +15,9 @@ function mentions_module(signature::Any, target::Module, depth::Integer)::Bool
     end
     return parentmodule(signature) === target ||
         any(
-            parameter -> mentions_module(parameter, target, depth + 1),
-            signature.parameters,
-        )
+        parameter -> mentions_module(parameter, target, depth + 1),
+        signature.parameters,
+    )
 end
 
 """The method instance an `:invoke` statement names (a `CodeInstance` on Julia 1.12 and later), or `nothing`."""
@@ -37,13 +37,13 @@ function invoked_signatures(signature::Any, target::Module)::Vector{Any}
     code = first(first(typed)).code
     invoked = [
         invoked_instance(first(statement.args))
-        for statement in code
-        if statement isa Expr && statement.head in (:invoke, :invoke_modify)
+            for statement in code
+            if statement isa Expr && statement.head in (:invoke, :invoke_modify)
     ]
     return Any[
         callee.specTypes
-        for callee in invoked
-        if callee isa Core.MethodInstance &&
+            for callee in invoked
+            if callee isa Core.MethodInstance &&
             callee.def isa Method &&
             (callee.def.module === target || mentions_module(callee.specTypes, target, 0))
     ]
@@ -57,9 +57,9 @@ function walked_signatures(seeds::AbstractVector, target::Module)::Vector{Type}
         union!(seen, frontier)
         frontier = unique(
             callee
-            for signature in frontier
-            for callee in invoked_signatures(signature, target)
-            if !(callee in seen)
+                for signature in frontier
+                for callee in invoked_signatures(signature, target)
+                if !(callee in seen)
         )
     end
     return Type[signature for signature in seen]

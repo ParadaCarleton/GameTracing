@@ -46,20 +46,20 @@ end
 
 """The plain inner product of two displacements `[Δw; Δρ]` in `geometry` (`coordinate_weight`, `level_weight`)."""
 function trace_dot(
-    left::AbstractVector{E},
-    right::AbstractVector{E},
-    geometry::TraceGeometry{E},
-)::E where {E <: Real}
+        left::AbstractVector{E},
+        right::AbstractVector{E},
+        geometry::TraceGeometry{E},
+    )::E where {E <: Real}
     return coordinate_weight(geometry, length(left) - 1) * dot(payoff_gaps(left), payoff_gaps(right)) +
         level_weight(geometry) * last(left) * last(right)
 end
 
 """The distance from `from` to `to`, both `[w; ρ]`, in `geometry`'s plain norm (`trace_dot`)."""
 function arclength_distance(
-    from::AbstractVector{E},
-    to::AbstractVector{E},
-    geometry::TraceGeometry{E},
-)::E where {E <: Real}
+        from::AbstractVector{E},
+        to::AbstractVector{E},
+        geometry::TraceGeometry{E},
+    )::E where {E <: Real}
     displacement = to .- from
     return sqrt(trace_dot(displacement, displacement, geometry))
 end
@@ -183,11 +183,11 @@ end
 
 """PALC's product `state_weight ⟨x, y⟩ + (1 - state_weight) ρₓ ρ_y` of two branch vectors `[x; ρ]` under the trace's `dot`."""
 function palc_product(
-    dot::BifurcationKit.DotTheta,
-    state_weight::E,
-    left::AbstractVector{E},
-    right::AbstractVector{E},
-)::E where {E <: Real}
+        dot::BifurcationKit.DotTheta,
+        state_weight::E,
+        left::AbstractVector{E},
+        right::AbstractVector{E},
+    )::E where {E <: Real}
     return dot(left, right, last(left), last(right), state_weight)
 end
 
@@ -202,7 +202,7 @@ end
 
 """The row `b` with `b ⋅ τ = palc_product(dot, state_weight, vector, τ)` for every branch vector `τ`."""
 function palc_border(dot::BifurcationKit.DotTheta, state_weight::E, vector::AbstractVector{E})::AbstractVector{E} where {E <: Real}
-    border = state_weight .* applied_operator(BifurcationKit._get_apply_dot(dot), copy(vector))
+    border = state_weight .* applied_operator(dot.apply!, copy(vector))
     border[end] += (one(E) - state_weight) * last(vector)
     return border
 end

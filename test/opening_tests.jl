@@ -25,12 +25,14 @@ const LOG_PRECISION_SETTINGS = TraceSettings{Float32}(; geometry = TraceGeometry
 @testset "a trace to a far target opens one first step from the flat start in its own distance" begin
     for payoffs in (far_opening_games(Xoshiro(FAR_OPENING_SEED))..., far_opening_games(fresh_rng())...)
         gains = NormalFormGains(payoffs)
-        failure = unwrap_error(trace_endpoint(
-            LogitGame(gains, FAR_TARGET),
-            GameTracing.logit_count(gains),
-            LOG_PRECISION_SETTINGS;
-            keep_going = StopAtPrecision(zero(Float32), FAR_TARGET),
-        ))
+        failure = unwrap_error(
+            trace_endpoint(
+                LogitGame(gains, FAR_TARGET),
+                GameTracing.logit_count(gains),
+                LOG_PRECISION_SETTINGS;
+                keep_going = StopAtPrecision(zero(Float32), FAR_TARGET),
+            )
+        )
         # A first step of length `first_step` in `log(1 + λ)` reaches at most `expm1(first_step)`.
         @test 0 < failure.context.precision <= 2 * expm1(LOG_PRECISION_SETTINGS.first_step)
     end
@@ -42,12 +44,14 @@ if get(ENV, "GAMETRACING_MUTATION", "false") != "true"
         seeded = (far_opening_games(Xoshiro(FAR_OPENING_SEED))..., last(far_opening_games(Xoshiro(MIXED_STALL_SEED))))
         for payoffs in (seeded..., far_opening_games(fresh_rng())...)
             gains = NormalFormGains(payoffs)
-            failure = unwrap_error(trace_endpoint(
-                LogitGame(gains, FAR_TARGET),
-                GameTracing.logit_count(gains),
-                LOG_PRECISION_SETTINGS;
-                keep_going = StopAtPrecision(50.0f0, FAR_TARGET),
-            ))
+            failure = unwrap_error(
+                trace_endpoint(
+                    LogitGame(gains, FAR_TARGET),
+                    GameTracing.logit_count(gains),
+                    LOG_PRECISION_SETTINGS;
+                    keep_going = StopAtPrecision(50.0f0, FAR_TARGET),
+                )
+            )
             (; precision, logits) = failure.context
             @test precision >= 50
             if precision < 50
@@ -87,7 +91,7 @@ function fresh_check(predictor_move::E)::GameTracing.CorrectorReach{GameTracing.
     check = GameTracing.CorrectorReach(
         GameTracing.AcceptAll(), nothing, CorrectorSettings{E}(), TraceGeometry{E}(), zeros(E, 3), zeros(E, 3), one(E),
     )
-    check.predictor_move = predictor_move
+    GameTracing.restate!(check; predictor_move = predictor_move)
     return check
 end
 
@@ -104,12 +108,12 @@ end
     @test solve_verdicts(poor, stalled)[1:3] == [true, true, false]
     @test !GameTracing.noise_confirmed(poor)
     # It overshoots again at half the step, then the step recovers: the corrections contract and settle.
-    poor.predictor_move = 0.5f0
+    GameTracing.restate!(poor; predictor_move = 0.5f0)
     @test solve_verdicts(poor, stalled[1:3]) == [true, true, false]
     settling = solve_verdicts(poor, Float32[0, 1.0f-2, 1.1f-2, 1.101f-2])
     @test settling[1:3] == [true, true, true]
     @test last(settling) isa GameTracing.BifurcationKit.NewtonConverged
-    @test poor.settled_here
+    @test poor.state[].settled_here
     @test !GameTracing.noise_confirmed(poor)
     # A predictor that moved less than the stalled correction cannot be halved under it: the second stall is suspected noise.
     noisy = fresh_check(1.0f-3)
@@ -118,18 +122,18 @@ end
     # Past a fold, halving shrinks the corrections: a stalled pair under half the suspect's confirms nothing.
     folded = fresh_check(1.0f-3)
     solve_verdicts(folded, stalled)
-    folded.predictor_move = 1.0f-4
+    GameTracing.restate!(folded; predictor_move = 1.0f-4)
     @test solve_verdicts(folded, Float32[0, 4.0f-3, 8.0f-3, 1.2f-2]) == [true, true, true, false]
     @test !GameTracing.noise_confirmed(folded)
     # A settled solve clears the suspicion.
     solve_verdicts(folded, Float32[0, 1.0f-2, 1.1f-2, 1.101f-2])
-    @test isnothing(folded.noise.suspect)
+    @test isnothing(folded.state[].noise.suspect)
     # At noise the halved step stalls as before: the suspicion is confirmed.
-    noisy.predictor_move = 5.0f-4
+    GameTracing.restate!(noisy; predictor_move = 5.0f-4)
     @test solve_verdicts(noisy, stalled) == [true, true, true, false]
     @test GameTracing.noise_confirmed(noisy)
-    @test noisy.noise.suspect.relative_precision == 1
-    @test noisy.noise.suspect.correction ≈ 1.0f-2
+    @test noisy.state[].noise.suspect.relative_precision == 1
+    @test noisy.state[].noise.suspect.correction ≈ 1.0f-2
     # Every later solve refuses at its start.
     @test solve_verdicts(noisy, Float32[0]) == [false]
 end

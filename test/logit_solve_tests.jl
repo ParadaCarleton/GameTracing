@@ -38,10 +38,10 @@ end
 @testset "logit_solve ends at the Nash equilibrium of games whose equilibrium is known" begin
     uniform = fill(1.0f0 / 3, 3)
     for (payoffs, equilibrium) in (
-        (LOGITNASH_GAMES.prisoners_dilemma, (Float32[0, 1], Float32[0, 1])),
-        (LOGITNASH_GAMES.matching_pennies, (fill(0.5f0, 2), fill(0.5f0, 2))),
-        (ROCK_PAPER_SCISSORS, (uniform, uniform)),
-    )
+            (LOGITNASH_GAMES.prisoners_dilemma, (Float32[0, 1], Float32[0, 1])),
+            (LOGITNASH_GAMES.matching_pennies, (fill(0.5f0, 2), fill(0.5f0, 2))),
+            (ROCK_PAPER_SCISSORS, (uniform, uniform)),
+        )
         gains = NormalFormGains(map(table -> Float32.(table), payoffs))
         result = logit_solve(gains)
         @test !is_error(result)
