@@ -69,6 +69,7 @@ end
         GameTracing.AcceptAll(), nothing,
         GameTracing.CorrectorSettings{Float32}(),
         TraceGeometry{Float32}(),
+        GameTracing.PalcBorder(TraceGeometry{Float32}(), 2, 1.0f0),
         zeros(Float32, 3),
         zeros(Float32, 3),
         zero(Float32),
@@ -89,7 +90,8 @@ end
 """A fresh `CorrectorReach` whose current step's predictor moved the logits `predictor_move`."""
 function fresh_check(predictor_move::E)::GameTracing.CorrectorReach{GameTracing.AcceptAll, E} where {E <: Real}
     check = GameTracing.CorrectorReach(
-        GameTracing.AcceptAll(), nothing, CorrectorSettings{E}(), TraceGeometry{E}(), zeros(E, 3), zeros(E, 3), one(E),
+        GameTracing.AcceptAll(), nothing, CorrectorSettings{E}(), TraceGeometry{E}(),
+        GameTracing.PalcBorder(TraceGeometry{E}(), 2, one(E)), zeros(E, 3), zeros(E, 3), one(E),
     )
     GameTracing.restate!(check; predictor_move = predictor_move)
     return check

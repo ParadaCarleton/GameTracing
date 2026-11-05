@@ -73,6 +73,7 @@ end
             GameTracing.AcceptAll(), nothing,
             corrector,
             geometry,
+            GameTracing.PalcBorder(geometry, 2, 1.0f0),
             Float32[0, 0, 0.5f0],
             predicted,
             1.0f0,
@@ -94,7 +95,8 @@ end
     closing = (; x = predicted, res_f = zero(predicted), p = 0.5f0, step = 2, residual = 0.0f0, z0 = (; u = previous, p = 0.5f0), closing = true)
     for (settled, recorded) in ((false, 0.0f0), (true, 0.25f0))
         check = GameTracing.CorrectorReach(
-            GameTracing.AcceptAll(), nothing, CorrectorSettings{Float32}(), TraceGeometry{Float32}(), previous, predicted, 1.0f0,
+            GameTracing.AcceptAll(), nothing, CorrectorSettings{Float32}(), TraceGeometry{Float32}(),
+            GameTracing.PalcBorder(TraceGeometry{Float32}(), length(previous) - 1, 1.0f0), previous, predicted, 1.0f0,
         )
         GameTracing.restate!(check; predictor_move = GameTracing.logit_change(previous, predicted))
         GameTracing.restate!(check; correction = 0.25f0, settled_here = settled)

@@ -3,7 +3,7 @@ using LinearAlgebra: dot, issuccess, lu, norm
 using Logging: @debug
 """
     CorrectorSettings{E}(; reach, max_kl, logit_tolerance, pin_tolerance, contraction_limit,
-                         contraction_offset, newton_iterations)
+                         contraction_offset, newton_iterations, resolution_ulps, noise_margin)
 
 The corrector's controls (`CorrectorReach`); `nothing` switches a limit off. `reach`: a corrector that moves a logit
 further from the predictor than this times the predictor's own largest logit move is refused. `shift_share`: the share
@@ -15,6 +15,9 @@ moves no logit more than `logit_tolerance`, at a relative precision within the r
 A correction that moves the logits more than `contraction_limit` times the one before it (plus `logit_tolerance`
 times `contraction_offset`) fails to contract; BifurcationKit's step growth reads the same rate (`corrector_quality`).
 `newton_iterations`: Newton iterations per corrector (BifurcationKit's default, 25; Gambit's is 100).
+`resolution_ulps`: a predictor within this many ulps of each coordinate leaves the point unchanged at the float type's
+resolution (`step_unresolved`). `noise_margin`: the multiple of the one-evaluation rounding bound (`rounding_correction`)
+a stalled correction may settle within; four bounds cover two noisy iterates plus Newton's own error.
 """
 Base.@kwdef struct CorrectorSettings{E <: Real}
     reach::Union{Nothing, E} = 2.0f0
@@ -27,6 +30,8 @@ Base.@kwdef struct CorrectorSettings{E <: Real}
     contraction_limit::Union{Nothing, E} = 0.6f0
     contraction_offset::E = 0.1f0
     newton_iterations::Int = 25
+    resolution_ulps::E = 4.0f0
+    noise_margin::E = 4.0f0
 end
 
 """The largest change of a logit from `from` to `to`, two points `[w; ρ]` (`logits_at`)."""
@@ -97,7 +102,7 @@ function restated(
 end
 
 """
-    CorrectorReach(accept_corrected, noise_game, settings, geometry, previous, predicted, step_length)
+    CorrectorReach(accept_corrected, noise_game, settings, geometry, border, previous, predicted, step_length)
 
 The trace's BifurcationKit `callback_newton`, which also decides the corrector's convergence: a `settled` iterate
 ends Newton's method converged (`NewtonConverged`), and a correction that fails to contract stops it (`corrected!`).
@@ -105,7 +110,7 @@ Two such corrections in a row, each larger than the predictor's own move in logi
 (`noise`), confirmed at the next halved step; the check then refuses every corrector (`noise_confirmed`).
 A non-finite residual stops the corrector,
 and so does any iterate whose logits are further from the predictor's than `settings.reach` times the predictor's own
-largest logit move (`within_reach`); the step then halves. A predictor within `RESOLUTION_ULPS` ulps of each of the
+largest logit move (`within_reach`); the step then halves. A predictor within `settings.resolution_ulps` ulps of each of the
 point's coordinates (`step_unresolved`) refuses that corrector and every later one (`unresolved`): no smaller step can
 add a point, so the trace ends as `TraceStuck`, or as `PrecisionExhausted` when the corrector before it stopped past its
 reach with a correction above `logit_tolerance` (`unresolved_noise`). On a smooth branch that distance is the branch's curvature
@@ -116,13 +121,15 @@ current step's start and predictor, `iterate` the current solve's last iterate, 
 (`CorrectorState`) holds the scalars that change between calls.
 `noise_game`, the game the corrector solves, sets the settle floor of a correction that fails to contract
 (`rounding_correction`), which applies once halving has had its chance (`rounding_settles`); `nothing` keeps
-`logit_tolerance` as the only floor, for checks run without a game.
+`logit_tolerance` as the only floor, for checks run without a game. `border` (`PalcBorder`) is PALC's arclength row,
+read with the weights PALC's corrector solves with, which bounds that rounding (`bordering_row`).
 """
-struct CorrectorReach{C, E <: Real, G <: Union{Nothing, LogitGame}}
+struct CorrectorReach{C, E <: Real, G <: Union{Nothing, LogitGame}, B <: PalcBorder}
     accept_corrected::C
     noise_game::G
     settings::CorrectorSettings{E}
     geometry::TraceGeometry{E}
+    border::B
     previous::Vector{E}
     predicted::Vector{E}
     iterate::Vector{E}
@@ -135,16 +142,17 @@ function restate!(check::CorrectorReach{C, E}; changes...)::CorrectorState{E} wh
     return check.state[]
 end
 
-# A predictor within this many ulps of a coordinate leaves it unchanged at the float type's resolution.
-const RESOLUTION_ULPS = 4
-
 """
-Whether the predictor `predicted` moves no coordinate of `start` by more than `RESOLUTION_ULPS · eps(E)` of its own
+Whether the predictor `predicted` moves no coordinate of `start` by more than `resolution_ulps · eps(E)` of its own
 size: the ODE solvers' per-coordinate error test, `|Δz_i| ≤ abstol + reltol |z_i|`, with abstol zero. Coordinates
 of different scales (payoff gaps near 1e6, ρ near 1e-5) each count, and any move of a zero coordinate resolves.
 """
-function step_unresolved(start::AbstractVector{E}, predicted::AbstractVector{E})::Bool where {E <: Real}
-    return all(abs.(predicted .- start) .<= RESOLUTION_ULPS * eps(E) .* abs.(start))
+function step_unresolved(
+        start::AbstractVector{E},
+        predicted::AbstractVector{E},
+        resolution_ulps::E,
+    )::Bool where {E <: Real}
+    return all(abs.(predicted .- start) .<= resolution_ulps * eps(E) .* abs.(start))
 end
 
 """A step's reach-failure record before any corrector failed its reach: the correction is NaN, as at a solve's start."""
@@ -176,16 +184,18 @@ function CorrectorReach(
         noise_game::G,
         settings::CorrectorSettings{E},
         geometry::TraceGeometry{E},
+        border::B,
         previous::AbstractVector{E},
         predicted::AbstractVector{E},
         step_length::E,
-    )::CorrectorReach{C, E, G} where {C, E <: Real, G <: Union{Nothing, LogitGame}}
+    )::CorrectorReach{C, E, G, B} where {C, E <: Real, G <: Union{Nothing, LogitGame}, B <: PalcBorder}
     # A plain Newton solve has no predictor move: NaN fails the noise test, so its stalls refuse.
-    return CorrectorReach{C, E, G}(
+    return CorrectorReach{C, E, G, B}(
         accept_corrected,
         noise_game,
         settings,
         geometry,
+        border,
         collect(previous),
         collect(predicted),
         collect(previous),
@@ -257,7 +267,7 @@ function (check::CorrectorReach{C, E})(
                 step_length = arclength_distance(iterate.z0.u, iterate.x, check.geometry),
                 predictor_move = logit_change(iterate.z0.u, iterate.x),
             )
-            if step_unresolved(iterate.z0.u, iterate.x)
+            if step_unresolved(iterate.z0.u, iterate.x, check.settings.resolution_ulps)
                 @debug "corrector stopped" _group = :trace reason = :unresolved step_length = check.state[].step_length
                 restate!(check; unresolved = true)
                 restate!(check; noise = unresolved_noise(check))
@@ -345,7 +355,7 @@ function corrected!(check::CorrectorReach{C, E}, iterate::NamedTuple, proceed::B
         return true
     end
     if rounding_settles(check) &&
-            settled(check, iterate, correction, NOISE_MARGIN * rounding_correction(check.noise_game, iterate.x, bordering_row(check)))
+            settled(check, iterate, correction, check.settings.noise_margin * rounding_correction(check.noise_game, iterate.x, bordering_row(check)))
         @debug "corrector settled at rounding" _group = :trace correction
         restate!(check; settled_here = true, noise = NoiseRecord(check.state[].noise.accuracy, nothing))
         return BifurcationKit.NewtonConverged()
@@ -392,9 +402,6 @@ function settled(check::CorrectorReach, iterate::I, correction::Real, tolerance:
         abs(offset) <= check.settings.pin_tolerance * pin_scale
 end
 
-# Two noisy iterates plus Newton's own error: four one-evaluation bounds.
-const NOISE_MARGIN = 4
-
 """
 Whether `check`'s stalled corrector may settle at its rounding bound (`rounding_correction`): a plain Newton solve,
 which has no predictor (`predictor_move` NaN) and so no step to halve, or a PALC corrector whose step already stalled
@@ -406,15 +413,15 @@ function rounding_settles(check::CorrectorReach)::Bool
 end
 
 """
-The last row of the Newton system `check`'s corrector solves: PALC's arclength row along the predictor step,
-`predicted - previous` in `[w; ρ]`, or the pin row `[0 … 0 1]` (fixed `ρ`) for a plain Newton solve, which has no
-predictor.
+The last row of the Newton system `check`'s corrector solves: PALC's arclength row (`check.border`) along the predictor
+step `predicted - previous` in `[w; ρ]`, the tangent times `ds`, in PALC's weighted product, or the pin row
+`[0 … 0 1]` (fixed `ρ`) for a plain Newton solve, which has no predictor.
 """
 function bordering_row(check::CorrectorReach{C, E})::AbstractVector{E} where {C, E <: Real}
     if !(check.state[].predictor_move > 0)
         return [zeros(E, length(check.iterate) - 1); one(E)]
     end
-    return check.predicted .- check.previous
+    return check.border(check.predicted .- check.previous)
 end
 
 """
