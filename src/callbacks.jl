@@ -1,5 +1,5 @@
 using BifurcationKit: BifurcationKit
-using LinearAlgebra: dot, inv, issuccess, lu, norm
+using LinearAlgebra: dot, issuccess, lu, norm
 using Logging: @debug
 """
     CorrectorSettings{E}(; reach, max_kl, logit_tolerance, pin_tolerance, contraction_limit,
