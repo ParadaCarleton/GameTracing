@@ -129,7 +129,7 @@ end
         predicted,
         1.0f0,
     )
-    check.predictor_move = GameTracing.logit_change(previous, predicted)
+    GameTracing.restate!(check; predictor_move = GameTracing.logit_change(previous, predicted))
     @test GameTracing.within_reach(check, predicted .+ Float32[1.0f-2, 0])
     @test !GameTracing.within_reach(check, predicted .+ Float32[3, 0])
 end

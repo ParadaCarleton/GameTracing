@@ -26,10 +26,9 @@ end
 
 The game a trace runs on, whether `redraw` swapped it since the last restart (`pending`), the arclength step the
 trace last held, which a restart carries on, and the swapped game's factored bordered Jacobian at the swap point
-(`ShiftedGame`), from which the restart takes its tangent.
+(`ShiftedGame`), from which the restart takes its tangent. `TraceFinalise` holds the current one.
 """
-mutable struct RedrawSlot{G <: LogitGame, E <: Real}
-    # Mutable because BifurcationKit's finalise callback returns only a `Bool`.
+struct RedrawSlot{G <: LogitGame, E <: Real}
     game::G
     pending::Bool
     step_length::E
@@ -38,6 +37,17 @@ end
 
 function RedrawSlot(game::G, pending::Bool, step_length::E)::RedrawSlot{G, E} where {G <: LogitGame, E <: Real}
     return RedrawSlot{G, E}(game, pending, step_length, nothing)
+end
+
+"""`slot` with the given fields replaced."""
+function restated(
+        slot::RedrawSlot{G, E};
+        game::G = slot.game,
+        pending::Bool = slot.pending,
+        step_length::Real = slot.step_length,
+        factorization::Union{Nothing, LU{E, Matrix{E}, Vector{Int}}} = slot.factorization,
+    )::RedrawSlot{G, E} where {G <: LogitGame, E <: Real}
+    return RedrawSlot{G, E}(game, pending, step_length, factorization)
 end
 
 """
@@ -110,28 +120,34 @@ function (check::RootShift{E})(game::LogitGame)::ShiftedGame{typeof(game), E} wh
 end
 
 """
-    swapped!(slot, check, redrawn)
+    swapped(slot, check, redrawn)
 
-Whether a `redraw` hook's result `redrawn` swaps `slot`'s game: `nothing` and the current game do not; a new game
+The `RedrawSlot` after a `redraw` hook's result `redrawn`, `slot` itself unless it swaps the game: `nothing` and the current game do not; a new game
 swaps as the `ShiftedGame` that `check` (`RootShift`) builds for it, and a `ShiftedGame` the hook returned must come
 from `check`. A swap sets `pending` and the factorization the restart reads. A game of another type, or with another
 target precision, is a caller error: the trace's relative precision would change meaning.
 """
-swapped!(::RedrawSlot, ::RootShift, ::Nothing)::Bool = false
-
-function swapped!(slot::RedrawSlot, check::RootShift, redrawn::LogitGame)::Bool
-    if redrawn === slot.game
-        return false
-    end
-    return swapped!(slot, check, check(redrawn))
+function swapped(slot::RedrawSlot{G, E}, ::RootShift, ::Nothing)::RedrawSlot{G, E} where {G <: LogitGame, E <: Real}
+    return slot
 end
 
-function swapped!(slot::RedrawSlot{G, E}, check::RootShift, redrawn::ShiftedGame{G})::Bool where {G <: LogitGame, E <: Real}
+function swapped(slot::RedrawSlot{G, E}, check::RootShift, redrawn::LogitGame)::RedrawSlot{G, E} where {G <: LogitGame, E <: Real}
+    if redrawn === slot.game
+        return slot
+    end
+    return swapped(slot, check, check(redrawn))
+end
+
+function swapped(
+        slot::RedrawSlot{G, E},
+        check::RootShift,
+        redrawn::ShiftedGame{G},
+    )::RedrawSlot{G, E} where {G <: LogitGame, E <: Real}
     if redrawn.point !== check.point
         throw(ArgumentError("a redraw hook returned a ShiftedGame built at another point than this one"))
     end
     if redrawn.game === slot.game
-        return false
+        return slot
     end
     if redrawn.game.target_precision != slot.game.target_precision
         throw(
@@ -140,8 +156,5 @@ function swapped!(slot::RedrawSlot{G, E}, check::RootShift, redrawn::ShiftedGame
             )
         )
     end
-    slot.game = redrawn.game
-    slot.pending = true
-    slot.factorization = redrawn.factorization
-    return true
+    return restated(slot; redrawn.game, pending = true, redrawn.factorization)
 end

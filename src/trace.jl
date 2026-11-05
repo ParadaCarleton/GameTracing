@@ -448,11 +448,11 @@ function redrawn_trace(
         context::NamedTuple,
     )::TraceResult{E} where {E <: Real}
     (; progress) = outcome
-    (; slot) = finalise
+    slot = finalise.slot[]
     if !isnothing(outcome.exception) || !slot.pending
         return reached_state(progress, outcome, slot.game, settings, context)
     end
-    slot.pending = false
+    finalise.slot[] = restated(slot; pending = false)
     if progress.steps >= settings.max_steps
         return reached_state(progress, outcome, slot.game, settings, context)
     end
@@ -512,16 +512,16 @@ function guarded_trace(
     return segment_outcome(
         segment_branch(
             trace_iterator(
-                finalise.slot.game,
+                finalise.slot[].game,
                 start,
                 settings,
                 finalise,
                 corrector,
-                finalise.slot.step_length,
+                finalise.slot[].step_length,
                 settings.max_steps - opening.steps,
             ),
             start,
-            finalise.slot.factorization,
+            finalise.slot[].factorization,
             old_tangent,
             opening,
         ),
@@ -541,14 +541,14 @@ function segment_outcome(
     )::NamedTuple where {C, E <: Real}
     return (;
         ran.progress,
-        step_length = ifelse(isnothing(ran.exception), corrector.step_length, zero(E)),
-        accepted_step = E(finalise.slot.step_length),
+        step_length = ifelse(isnothing(ran.exception), corrector.state[].step_length, zero(E)),
+        accepted_step = E(finalise.slot[].step_length),
         exhausted = ifelse(
             isnothing(ran.exception) && noise_confirmed(corrector),
-            corrector.noise.suspect,
+            corrector.state[].noise.suspect,
             nothing,
         ),
-        logit_accuracy = corrector.noise.accuracy,
+        logit_accuracy = corrector.state[].noise.accuracy,
         ran.exception,
     )
 end

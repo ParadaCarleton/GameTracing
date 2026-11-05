@@ -77,13 +77,13 @@ end
             predicted,
             1.0f0,
         )
-        check.predictor_move = GameTracing.logit_change(check.previous, predicted)
+        GameTracing.restate!(check; predictor_move = GameTracing.logit_change(check.previous, predicted))
         @test GameTracing.closing_accepted(check, predicted)
         @test !GameTracing.closing_accepted(check, corrected)
         # An exact root that never settled ends BifurcationKit's solve converged, so it meets the same tests.
         @test check((; x = corrected, res_f = zero(corrected), p = 0.5f0, step = 2, residual = 0.0f0, closing = true); fromNewton = false) === false
         # The closing call reads the solve's own verdict: it settled.
-        check.settled_here = true
+        GameTracing.restate!(check; settled_here = true)
         @test check((; x = corrected, res_f = zero(corrected), p = 0.5f0, step = 2, residual = 0.0f0, closing = true); fromNewton = false) === false
     end
 end
@@ -96,10 +96,10 @@ end
         check = GameTracing.CorrectorReach(
             GameTracing.AcceptAll(), CorrectorSettings{Float32}(), TraceGeometry{Float32}(), previous, predicted, 1.0f0,
         )
-        check.predictor_move = GameTracing.logit_change(previous, predicted)
-        check.correction, check.settled_here = 0.25f0, settled
+        GameTracing.restate!(check; predictor_move = GameTracing.logit_change(previous, predicted))
+        GameTracing.restate!(check; correction = 0.25f0, settled_here = settled)
         @test check(closing; fromNewton = false) !== false
-        @test check.noise.accuracy == recorded
+        @test check.state[].noise.accuracy == recorded
     end
 end
 
