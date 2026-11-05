@@ -76,6 +76,9 @@ end
     @test !GameTracing.settled(check, (; x = point, res_f = Float32[0, 0, -0.04f0]), 0.0f0, check.settings.logit_tolerance)
     tolerance = check.settings.logit_tolerance
     @test GameTracing.settled(check, (; x = point, res_f = zeros(Float32, 3)), tolerance, check.settings.logit_tolerance)
+    # The pin row is the last entry of whichever residual the solver reports.
+    @test GameTracing.pin_residual((; x = point, fx = Float32[0, 0, -0.04f0])) == -0.04f0
+    @test GameTracing.pin_residual((; x = point, res_f = Float32[0, 0, 0.25f0])) == 0.25f0
     @test !GameTracing.settled(check, (; x = point, res_f = zeros(Float32, 3)), nextfloat(tolerance), check.settings.logit_tolerance)
 end
 
