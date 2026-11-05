@@ -9,9 +9,17 @@ LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 LogExpFunctions = "2ab3a3ac-af41-5b50-aa03-7779005ae688"
 Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
 
-[sources]
-Corset = {url = "https://github.com/ParadaCarleton/Corset.jl", rev = "e6ab42c93325fadefc401c1e9f79a39a85bdd901"}
-BifurcationKit = {url = "https://github.com/ParadaCarleton/BifurcationKit.jl", rev = "irv"}
+[sources.BifurcationKit]
+rev = "irv"
+url = "https://github.com/ParadaCarleton/BifurcationKit.jl"
+
+[sources.Corset]
+rev = "e6ab42c93325fadefc401c1e9f79a39a85bdd901"
+url = "https://github.com/ParadaCarleton/Corset.jl"
+
+[compat]
+ErrorTypes = "0.5"
+julia = "1.11"
 
 [extras]
 CondaPkg = "992eb4ea-22a4-4c89-a5bb-47a3300528ab"
@@ -27,6 +35,3 @@ Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
 test = ["CondaPkg", "Corset", "ErrorTypes", "LogitNash", "Mooncake", "Printf", "PythonCall", "Random", "Statistics", "Test"]
-
-[compat]
-julia = "1.11"
