@@ -488,7 +488,7 @@ function (finalise::TraceFinalise)(
     shift = RootShift(
         point.u,
         state.ds .* tangent.u,
-        palc_border(BifurcationKit.getdot(algorithm), eltype(point.u)(BifurcationKit.getθ(algorithm)), tangent.u),
+        palc_border(algorithm.dotθ, eltype(point.u)(algorithm.θ), tangent.u),
         finalise.settings,
     )
     return !swapped!(finalise.slot, shift, finalise.redraw(logits, point.p, shift))
