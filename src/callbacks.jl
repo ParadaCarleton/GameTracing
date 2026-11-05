@@ -112,7 +112,7 @@ struct CorrectorReach{C, E <: Real}
     previous::Vector{E}
     predicted::Vector{E}
     iterate::Vector{E}
-    state::Base.RefValue{CorrectorState{E}}  # lint: ref  callback_newton returns only a verdict, so its state between calls lives here
+    state::Base.RefValue{CorrectorState{E}}  # lint: ref # lint: non-public-access  the concrete type of a Ref; callback_newton returns only a verdict, so its state between calls lives here
 end
 
 """`check`'s `CorrectorState` after replacing the fields named in `changes`."""
@@ -471,7 +471,7 @@ current game swaps nothing. `JULIA_DEBUG=trace` lists every point.
 struct TraceFinalise{A, D, S, C <: CorrectorSettings}
     keep_going::A
     redraw::D
-    slot::Base.RefValue{S}  # lint: ref  finalise_solution returns only a Bool, so a redraw's swap reaches the trace here
+    slot::Base.RefValue{S}  # lint: ref # lint: non-public-access  the concrete type of a Ref; finalise_solution returns only a Bool, so a redraw's swap reaches the trace here
     settings::C
 end
 
