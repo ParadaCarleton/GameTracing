@@ -91,7 +91,7 @@ end
 end
 
 @testset "a triangular bordered system solves like the dense one" begin
-    solver = GameTracing.matrix_bls(2, Float32)
+    solver = GameTracing.bordered_linear_solver(GameTracing.MatrixSolve, 2, Float32)
     jacobian = Float32[2 0; 0 3]
     border = Float32[0, 0]
     solution, parameter, _, _ = solver(
