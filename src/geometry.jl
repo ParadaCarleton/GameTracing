@@ -202,7 +202,7 @@ end
 
 """The row `b` with `b ⋅ τ = palc_product(dot, state_weight, vector, τ)` for every branch vector `τ`."""
 function palc_border(dot::BifurcationKit.DotTheta, state_weight::E, vector::AbstractVector{E})::AbstractVector{E} where {E <: Real}
-    border = state_weight .* applied_operator(BifurcationKit._get_apply_dot(dot), copy(vector))
+    border = state_weight .* applied_operator(dot.apply!, copy(vector))
     border[end] += (one(E) - state_weight) * last(vector)
     return border
 end

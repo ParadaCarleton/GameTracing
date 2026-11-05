@@ -1,26 +1,25 @@
 using BifurcationKit: BifurcationKit
-using LinearAlgebra: BlasFloat, BlasInt, LAPACK, LU, SingularException, istril, istriu
+using LinearAlgebra: LU, issuccess, istril, istriu, ldiv!, logabsdet, lu, lu!
 """How PALC solves its bordered linear system: `MatrixSolve` factors the whole bordered matrix, `BorderingSolve` the Jacobian alone."""
 @enum BorderedSolver MatrixSolve BorderingSolve
 
 """
-    InPlaceMatrixBLS(matrix, pivots, solver)
+    InPlaceMatrixBLS(factorization, solver)
 
-BifurcationKit's `MatrixBLS` with the bordered matrix written into `matrix` and LU-factored there
-with `pivots` (LAPACK `getrf`/`getrs`), without `MatrixBLS`'s `vcat`/`hcat` copies; its solutions
-are bit-identical. A triangular bordered matrix goes to `\\`. `solver` is never read; it keeps PALC's
-`update` from replacing this solver with one built from the Newton options. The system is
+BifurcationKit's `MatrixBLS` with the bordered matrix written into `factorization`'s factors and LU-factored there
+(`lu!`), without `MatrixBLS`'s `vcat`/`hcat` copies; its solutions are bit-identical. Any real element type factors:
+LAPACK's for the BLAS floats, the generic LU otherwise. A triangular bordered matrix goes to `\\`. `solver` is never
+read; it keeps PALC's `update` from replacing this solver with one built from the Newton options. The system is
 `[J dR; ξu dzu' ξp dzp] [dX; dl] = [R; n]`, `J` the trace's `width × width` Jacobian.
 """
-struct InPlaceMatrixBLS{E <: BlasFloat, S <: BifurcationKit.AbstractLinearSolver} <:
+struct InPlaceMatrixBLS{E <: Real, S <: BifurcationKit.AbstractLinearSolver} <:
     BifurcationKit.AbstractBorderedLinearSolver
-    matrix::Matrix{E}
-    pivots::Vector{BlasInt}
+    factorization::LU{E, Matrix{E}, Vector{Int}}
     solver::S
 end
 
 function (bls::InPlaceMatrixBLS)(
-        jacobian::Any,
+        jacobian::AbstractMatrix,
         dR::AbstractVector,
         dzu::AbstractVector,
         dzp::T,
@@ -31,28 +30,15 @@ function (bls::InPlaceMatrixBLS)(
         dotp::Any = nothing,
         applyξu!::Any = nothing,
     )::Tuple where {T <: Number}
-    bordered = bordered_matrix!(
-        bls.matrix,
-        BifurcationKit.getmatrix(jacobian),
-        dR,
-        dzu,
-        dzp,
-        ξu,
-        ξp,
-        applyξu!,
-    )
+    bordered = bordered_matrix!(bls.factorization.factors, jacobian, dR, dzu, dzp, ξu, ξp, applyξu!)
     width = size(bordered, 1) - 1
     rhs = vcat(residual, border_value)
     if istril(bordered) || istriu(bordered)
         solution = bordered \ rhs
         return view(solution, 1:width), solution[end], true, 1
     end
-    # `check` rejects only non-finite entries; a zero pivot shows in `info`, which `MatrixBLS`'s `lu` throws on.
-    _, _, info = LAPACK.getrf!(bordered, bls.pivots; check = true)
-    if info > 0
-        throw(SingularException(info))
-    end
-    LAPACK.getrs!('N', bordered, bls.pivots, rhs)
+    # `check` rejects non-finite entries and throws `SingularException` on a zero pivot, as `MatrixBLS`'s `lu` does.
+    ldiv!(lu!(bls.factorization, bordered; check = true), rhs)
     return view(rhs, 1:width), rhs[end], true, 1
 end
 
@@ -94,51 +80,42 @@ end
 
 """
 The `Bordered` tangent of PALC and the sign of the bordered matrix's determinant that its
-`orientation_check` reads, from one LU: the matrix is built as `MatrixBLS` builds it, factored in
-`bls`'s buffers (LAPACK `getrf`), the tangent solves with that factorization, and the sign is its
-pivots' (`BifurcationKit.determinant_sign`). A zero pivot makes the matrix singular: the sign and the
-tangent are zero, which PALC's NaN checks refuse as a step.
+`orientation_check` reads, from one LU: the matrix is built as `MatrixBLS` builds it, from PALC's `θ` and `dotθ`,
+factored in `bls`'s buffers (`lu!`), the tangent solves with that factorization, and the sign is its determinant's
+(`logabsdet`). A zero pivot makes the matrix singular: the sign and the tangent are zero, which PALC's NaN checks
+refuse as a step.
 """
 function BifurcationKit.bordered_tangent_and_sign(
         bls::InPlaceMatrixBLS,
         iter::BifurcationKit.AbstractContinuationIterable,
         state::BifurcationKit.AbstractContinuationState,
-        jacobian::Any,
+        jacobian::AbstractMatrix,
         dFdl::AbstractVector,
         rhsu::AbstractVector,
         rhsp::Number,
     )::Tuple
-    state_weight = BifurcationKit.getθ(iter)
+    state_weight = iter.alg.θ
     tangent = state.τ
     bordered = bordered_matrix!(
-        bls.matrix,
-        BifurcationKit.getmatrix(jacobian),
-        dFdl,
-        tangent.u,
-        tangent.p,
-        state_weight,
-        one(state_weight) - state_weight,
-        BifurcationKit._get_apply_dot(BifurcationKit.getdot(iter)),
+        bls.factorization.factors, jacobian, dFdl, tangent.u, tangent.p, state_weight, one(state_weight) - state_weight,
+        iter.alg.dotθ.apply!,
     )
-    _, _, info = LAPACK.getrf!(bordered, bls.pivots; check = false)
+    factorization = lu!(bls.factorization, bordered; check = false)
     solution = vcat(rhsu, rhsp)
-    if info > 0
+    if !issuccess(factorization)
         return view(zero(solution), 1:(length(solution) - 1)),
             zero(eltype(solution)),
             zero(eltype(solution))
     end
-    LAPACK.getrs!('N', bordered, bls.pivots, solution)
-    return view(solution, 1:(length(solution) - 1)),
-        solution[end],
-        BifurcationKit.determinant_sign(LU(bordered, bls.pivots, info))
+    ldiv!(factorization, solution)
+    return view(solution, 1:(length(solution) - 1)), solution[end], last(logabsdet(factorization))
 end
 
 """
     bordered_linear_solver(name, width, element)
 
 PALC's bordered linear solver: `BorderingSolve` factors the Jacobian alone (`BorderingBLS`), `MatrixSolve`
-factors the whole bordered matrix (`InPlaceMatrixBLS`, or BifurcationKit's `MatrixBLS` for an element type
-LAPACK does not factor).
+factors the whole bordered matrix in place (`InPlaceMatrixBLS`), in any real element type.
 """
 function bordered_linear_solver(
         solver::BorderedSolver,
@@ -148,20 +125,11 @@ function bordered_linear_solver(
     if solver == BorderingSolve
         return BifurcationKit.BorderingBLS(BifurcationKit.DefaultLS())
     end
-    return matrix_bls(width, E)
-end
-
-function matrix_bls(
-        width::Integer,
-        ::Type{E},
-    )::BifurcationKit.AbstractBorderedLinearSolver where {E <: BlasFloat}
-    return InPlaceMatrixBLS(
-        Matrix{E}(undef, width + 1, width + 1),
-        Vector{BlasInt}(undef, width + 1),
-        BifurcationKit.DefaultLS(),
-    )
-end
-
-function matrix_bls(::Integer, ::Type{<:Real})::BifurcationKit.AbstractBorderedLinearSolver
-    return BifurcationKit.MatrixBLS()
+    # The identity factors without pivoting, so the buffers start valid for any element type.
+    identity = Matrix{E}(undef, width + 1, width + 1)
+    identity .= zero(E)
+    for diagonal in axes(identity, 1)
+        identity[diagonal, diagonal] = one(E)
+    end
+    return InPlaceMatrixBLS(lu(identity), BifurcationKit.DefaultLS())
 end
