@@ -94,7 +94,7 @@ function BifurcationKit.bordered_tangent_and_sign(
         rhsu::AbstractVector,
         rhsp::Number,
     )::Tuple
-    state_weight = iter.alg.θ
+    state_weight = BifurcationKit.getθ(iter)
     tangent = state.τ
     bordered = bordered_matrix!(
         bls.factorization.factors, jacobian, dFdl, tangent.u, tangent.p, state_weight, one(state_weight) - state_weight,
