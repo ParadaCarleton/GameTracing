@@ -53,41 +53,54 @@ distance (`TraceGeometry`).
   own. Do not override `newton_options`, `p_min`, `p_max`, `ds` or the `dsmin`/`dsmax` pair: `CorrectorReach` converges a
   corrector on its own test and needs `tol = 0`, and the trace ends at `p_max`.
 """
-Base.@kwdef struct TraceSettings{
+struct TraceSettings{
         E <: Real,
         T <: BifurcationKit.AbstractTangentComputation,
         C,
         P <: NamedTuple,
         O <: NamedTuple,
     }
-    first_step::E = 0.05f0
-    min_step::E = nextfloat(zero(E))
-    max_step::E = 1000.0f0
-    aggressiveness::E = 0.5f0
-    geometry::TraceGeometry{E} = TraceGeometry{E}()
-    first_tangent_divisor::E = 150.0f0
-    corrector::CorrectorSettings{E} = CorrectorSettings{E}()
-    max_steps::Int = 2_000
-    tangent::T = BifurcationKit.Bordered()
-    bordered_solver::BorderedSolver = MatrixSolve
-    step_control::Union{Nothing, StepControl{E}} = StepControl{E}()
-    orientation_check::Bool = true
-    palc_corrector::C = nothing
-    palc_options::P = (;)
-    continuation_options::O = (;)
+    first_step::E
+    min_step::E
+    max_step::E
+    aggressiveness::E
+    geometry::TraceGeometry{E}
+    first_tangent_divisor::E
+    corrector::CorrectorSettings{E}
+    max_steps::Int
+    tangent::T
+    bordered_solver::BorderedSolver
+    step_control::Union{Nothing, StepControl{E}}
+    orientation_check::Bool
+    palc_corrector::C
+    palc_options::P
+    continuation_options::O
 end
 
+# Each keyword is named, not splatted: a splatted `keywords...` leaves the field conversions to runtime dispatch.
 function TraceSettings{E}(;
+        first_step::Real = 0.05f0,
+        min_step::Real = nextfloat(zero(E)),
+        max_step::Real = 1000.0f0,
+        aggressiveness::Real = 0.5f0,
+        geometry::TraceGeometry{E} = TraceGeometry{E}(),
+        first_tangent_divisor::Real = 150.0f0,
+        corrector::CorrectorSettings{E} = CorrectorSettings{E}(),
+        max_steps::Integer = 2_000,
         tangent::T = BifurcationKit.Bordered(),
+        bordered_solver::BorderedSolver = MatrixSolve,
+        step_control::Union{Nothing, StepControl{E}} = StepControl{E}(),
+        orientation_check::Bool = true,
         palc_corrector::C = nothing,
         palc_options::P = (;),
         continuation_options::O = (;),
-        keywords...,
     )::TraceSettings{E, T, C, P, O} where {
         E <: Real, T <: BifurcationKit.AbstractTangentComputation, C, P <: NamedTuple, O <: NamedTuple,
     }
-    return TraceSettings{E, T, C, P, O}(;
-        tangent, palc_corrector, palc_options, continuation_options, keywords...,
+    return TraceSettings{E, T, C, P, O}(
+        E(first_step), E(min_step), E(max_step), E(aggressiveness), geometry, E(first_tangent_divisor), corrector,
+        Int(max_steps), tangent, bordered_solver, step_control, orientation_check, palc_corrector, palc_options,
+        continuation_options,
     )
 end
 
@@ -290,7 +303,7 @@ function continuation_iterator(
     )::BifurcationKit.ContIterable
     return BifurcationKit.ContIterable(
         problem,
-        BifurcationKit.update(algorithm, options, nothing),
+        algorithm,
         options;
         normC = BifurcationKit.norminf,
         verbosity = 0,
@@ -300,22 +313,23 @@ function continuation_iterator(
 end
 
 """
-    opened_state(iterator, ::Nothing) / opened_state(iterator, opening)
+    opened_state(iterator, start, ::Nothing) / opened_state(iterator, start, opening)
 
-BifurcationKit's first continuation state of `iterator`. From the flat start the first tangent is BifurcationKit's
+BifurcationKit's first continuation state of `iterator` from `start`. From the flat start the first tangent is BifurcationKit's
 secant to a second solve. After a redraw, the run opens through BifurcationKit's two-point start toward the point
 `opening`, whose secant is the restart tangent.
 """
 opened_state(
     iterator::BifurcationKit.ContIterable,
+    ::AbstractVector,
     ::Nothing,
 )::BifurcationKit.ContState = first(iterate(iterator))
 
 function opened_state(
         iterator::BifurcationKit.ContIterable,
+        start::AbstractVector,
         opening::AbstractVector,
     )::BifurcationKit.ContState
-    start = BifurcationKit.getu0(iterator.prob)
     return first(
         BifurcationKit.iterate_from_two_points(
             iterator,
@@ -328,7 +342,7 @@ function opened_state(
 end
 
 """
-    restart_opening(iterator, factorization, old_tangent)
+    restart_opening(iterator, start, factorization, old_tangent)
 
 `(; opening, gap_tangent, tangent_precision)` of a restart of `iterator` after a redraw: the point `opening` `ds`
 along `restart_tangent` from the swapped game's `factorization`, oriented by the trace's `old_tangent`, and that
@@ -336,13 +350,12 @@ tangent of unit length in the trace's norm, split into its gap and precision par
 """
 function restart_opening(
         iterator::BifurcationKit.ContIterable,
+        start::AbstractVector{E},
         factorization::LU{E},
         old_tangent::AbstractVector{E},
     )::NamedTuple where {E <: Real}
     algorithm = iterator.alg
-    start = BifurcationKit.getu0(iterator.prob)
-    dot, palc_state_weight = BifurcationKit.getdot(algorithm),
-        E(BifurcationKit.getθ(algorithm))
+    dot, palc_state_weight = algorithm.dotθ, E(algorithm.θ)
     # A Fisher trace's weights are those of the point it restarts from.
     BifurcationKit.reweight!(dot, BifurcationKit.BorderedArray(start, last(start)))
     tangent = restart_tangent(factorization, old_tangent, palc_state_weight, algorithm.orientation_dot)
@@ -435,11 +448,11 @@ function redrawn_trace(
         context::NamedTuple,
     )::TraceResult{E} where {E <: Real}
     (; progress) = outcome
-    (; slot) = finalise
+    slot = finalise.slot[]
     if !isnothing(outcome.exception) || !slot.pending
         return reached_state(progress, outcome, slot.game, settings, context)
     end
-    slot.pending = false
+    finalise.slot[] = restated(slot; pending = false)
     if progress.steps >= settings.max_steps
         return reached_state(progress, outcome, slot.game, settings, context)
     end
@@ -499,15 +512,16 @@ function guarded_trace(
     return segment_outcome(
         segment_branch(
             trace_iterator(
-                finalise.slot.game,
+                finalise.slot[].game,
                 start,
                 settings,
                 finalise,
                 corrector,
-                finalise.slot.step_length,
+                finalise.slot[].step_length,
                 settings.max_steps - opening.steps,
             ),
-            finalise.slot.factorization,
+            start,
+            finalise.slot[].factorization,
             old_tangent,
             opening,
         ),
@@ -527,14 +541,14 @@ function segment_outcome(
     )::NamedTuple where {C, E <: Real}
     return (;
         ran.progress,
-        step_length = ifelse(isnothing(ran.exception), corrector.step_length, zero(E)),
-        accepted_step = E(finalise.slot.step_length),
+        step_length = ifelse(isnothing(ran.exception), corrector.state[].step_length, zero(E)),
+        accepted_step = E(finalise.slot[].step_length),
         exhausted = ifelse(
             isnothing(ran.exception) && noise_confirmed(corrector),
-            corrector.noise.suspect,
+            corrector.state[].noise.suspect,
             nothing,
         ),
-        logit_accuracy = corrector.noise.accuracy,
+        logit_accuracy = corrector.state[].noise.accuracy,
         ran.exception,
     )
 end
@@ -561,25 +575,29 @@ BifurcationKit's results are not inferable.
 """
 function segment_branch(
         iterator::BifurcationKit.ContIterable,
+        start::AbstractVector{E},
         factorization::Union{Nothing, LU{E}},
         old_tangent::Union{Nothing, AbstractVector{E}},
         opening::TraceProgress{E},
     )::NamedTuple where {E <: Real}
     return restarted_segment(
         iterator,
-        guarded_restart(iterator, factorization, old_tangent, opening),
+        start,
+        guarded_restart(iterator, start, factorization, old_tangent, opening),
         opening,
     )
 end
 
 restarted_segment(
     ::BifurcationKit.ContIterable,
+    ::AbstractVector,
     thrown::Thrown,
     opening::TraceProgress,
 )::NamedTuple = (; progress = opening, thrown.exception)
 
 function restarted_segment(
         iterator::BifurcationKit.ContIterable,
+        start::AbstractVector{E},
         restart::NamedTuple,
         opening::TraceProgress{E},
     )::NamedTuple where {E <: Real}
@@ -594,7 +612,7 @@ function restarted_segment(
         opening.unmoved,
         opening.looped,
     )
-    return opened_segment(iterator, guarded_state(iterator, restart.opening), opened)
+    return opened_segment(iterator, guarded_state(iterator, start, restart.opening), opened)
 end
 
 opened_segment(
@@ -642,12 +660,13 @@ ended_segment(
 """`restart_opening`, or the `Thrown` failure that `expected_failure` names; any other exception propagates."""
 function guarded_restart(
         iterator::BifurcationKit.ContIterable,
-        factorization::Union{Nothing, LU{E}},
-        old_tangent::Union{Nothing, AbstractVector{E}},
-        opening::TraceProgress{E},
-    )::Union{NamedTuple, GuardedEnd} where {E <: Real}
+        start::AbstractVector,
+        factorization::Any,
+        old_tangent::Any,
+        opening::TraceProgress,
+    )::Union{NamedTuple, GuardedEnd}
     try
-        return restart_opening(iterator, factorization, old_tangent, opening)
+        return restart_opening(iterator, start, factorization, old_tangent, opening)
     catch exception
         return thrown_failure(exception)
     end
@@ -656,10 +675,11 @@ end
 """`opened_state`, or the `Thrown` failure that `expected_failure` names; any other exception propagates."""
 function guarded_state(
         iterator::BifurcationKit.ContIterable,
+        start::AbstractVector,
         opening::Union{Nothing, AbstractVector},
     )::Union{BifurcationKit.ContState, GuardedEnd}
     try
-        return opened_state(iterator, opening)
+        return opened_state(iterator, start, opening)
     catch exception
         return thrown_failure(exception)
     end
@@ -692,13 +712,14 @@ expected_failure(exception::Any)::Bool = uncorrected_start(exception) ||
     solver_blowup(exception)
 
 """
-    restart_opening(iterator, factorization, old_tangent, opening)
+    restart_opening(iterator, start, factorization, old_tangent, opening)
 
 The flat start (`old_tangent` is `nothing`) opens on BifurcationKit's secant with no point to aim at, and keeps
 `opening`'s tangent until a point is accepted.
 """
 function restart_opening(
         ::BifurcationKit.ContIterable,
+        ::AbstractVector,
         ::Nothing,
         ::Nothing,
         opening::TraceProgress,
@@ -708,15 +729,17 @@ end
 
 function restart_opening(
         iterator::BifurcationKit.ContIterable,
+        start::AbstractVector{E},
         factorization::LU{E},
         old_tangent::AbstractVector{E},
         ::TraceProgress{E},
     )::NamedTuple where {E <: Real}
-    return restart_opening(iterator, factorization, old_tangent)
+    return restart_opening(iterator, start, factorization, old_tangent)
 end
 
 function restart_opening(
         ::BifurcationKit.ContIterable,
+        ::AbstractVector,
         ::Nothing,
         ::AbstractVector,
         ::TraceProgress,
