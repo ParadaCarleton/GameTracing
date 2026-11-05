@@ -221,17 +221,19 @@ end
     game = LogitGame(GAME, TARGET_PRECISION)
     slot = GameTracing.RedrawSlot(game, false, 0.1f0)
     check = GameTracing.RootShift(Float32[0.1f0, 0.2f0, 0.5f0], Float32[0, 0, 1], nothing)
-    @test !GameTracing.swapped!(slot, check, nothing)
-    @test !GameTracing.swapped!(slot, check, slot.game)
-    @test !GameTracing.swapped!(slot, check, check(slot.game))
-    @test !slot.pending
-    @test_throws ArgumentError GameTracing.swapped!(slot, check, LogitGame(GAME, 2 * TARGET_PRECISION))
+    @test GameTracing.swapped(slot, check, nothing) === slot
+    @test GameTracing.swapped(slot, check, slot.game) === slot
+    @test GameTracing.swapped(slot, check, check(slot.game)) === slot
+    @test_throws ArgumentError GameTracing.swapped(slot, check, LogitGame(GAME, 2 * TARGET_PRECISION))
     flipped = check(LogitGame(LinearGainPass(GAME.interaction, -GAME.stand_alone), TARGET_PRECISION))
-    @test GameTracing.swapped!(slot, check, flipped)
-    @test slot.pending
-    @test slot.factorization === flipped.factorization
+    next = GameTracing.swapped(slot, check, flipped)
+    @test next.pending
+    @test next.game === flipped.game
+    @test next.factorization === flipped.factorization
+    @test next.step_length == slot.step_length
+    @test !slot.pending
     elsewhere = GameTracing.RootShift(copy(check.point), check.border, nothing)(game)
-    @test_throws ArgumentError GameTracing.swapped!(slot, check, elsewhere)
+    @test_throws ArgumentError GameTracing.swapped(slot, check, elsewhere)
 end
 
 @testset "a redraw of random swap 6 at relative precision 0.734 lands on the branch a double-precision reference follows" begin

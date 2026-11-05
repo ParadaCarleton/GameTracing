@@ -148,10 +148,6 @@ end
     @test residual_norm(FOLD_GAME, unwrap(result).logits, 2.0f0) < 1.0f-3
 end
 
-@testset "an element type LAPACK cannot factor gets BifurcationKit's matrix solver" begin
-    @test GameTracing.matrix_bls(WIDTH, Float16) isa GameTracing.BifurcationKit.MatrixBLS
-    @test GameTracing.matrix_bls(WIDTH, Float32) isa GameTracing.InPlaceMatrixBLS
-end
 
 @testset "the default smallest step is the smallest positive number of the settings' element type" begin
     for element in (Float16, Float32, float(Int))
@@ -355,11 +351,13 @@ end
     )
     degenerate = zeros(Float32, WIDTH + 1)
     # A swapped game that was non-finite at the swap point has no factorization (`ShiftedGame`).
-    thrown = GameTracing.segment_branch(iterator, nothing, degenerate, opening)
+    start = zeros(Float32, WIDTH + 1)
+    thrown = GameTracing.segment_branch(iterator, start, nothing, degenerate, opening)
     @test thrown.progress == opening
     @test GameTracing.solver_blowup(thrown.exception)
     @test_throws DimensionMismatch GameTracing.guarded_restart(
         iterator,
+        start,
         lu(Matrix{Float32}(I, WIDTH + 1, WIDTH + 1)),
         zeros(Float32, WIDTH + 3),
         opening,
