@@ -1,4 +1,3 @@
-using BifurcationKit: BifurcationKit
 using LinearAlgebra: dot, norm
 using Logging: @debug
 """
