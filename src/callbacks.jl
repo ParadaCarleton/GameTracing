@@ -243,13 +243,14 @@ function (check::CorrectorReach{C, E})(
                 check;
                 step_length = arclength_distance(iterate.z0.u, iterate.x, check.geometry),
                 predictor_move = logit_change(iterate.z0.u, iterate.x),
-                reach_failure = no_reach_failure(E),
             )
+            # The unresolved test reads the previous step's reach failure, so the record resets only after it.
             if step_unresolved(iterate.z0.u, iterate.x)
                 @debug "corrector stopped" _group = :trace reason = :unresolved step_length = check.state[].step_length
                 restate!(check; unresolved = true, noise = unresolved_noise(check))
                 return false
             end
+            restate!(check; reach_failure = no_reach_failure(E))
         end
         if !isfinite(iterate.residual)
             @debug "corrector stopped" _group = :trace reason = :nonfinite
