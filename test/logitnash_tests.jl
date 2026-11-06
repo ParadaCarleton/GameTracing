@@ -133,11 +133,12 @@ end
         result = trace_endpoint(LogitGame(pass, 4.0f0), length(pass.payoffs), TraceSettings{Float32}(; tangent))
         # The cause depends on whether rounding breaks the symmetry: an exact branch point factors singular, while one
         # that rounding unfolds by about eps (battle_of_the_sexes, rcond ≥ 1e-5) is near-singular and exhausts. A step
-        # the turn test refuses at the branch point halves to dsmin, and the unmoved point stops the trace (run 41375663203).
+        # the turn test refuses at the branch point halves until its predictor cannot move the point (`unresolved`), or an
+        # unmoved point stops the trace (run 41375663203).
         if is_error(result)
             failure = unwrap_error(result)
             @test failure.cause in (GameTracing.Singular, GameTracing.PrecisionExhausted) ||
-                (failure.cause == GameTracing.TraceStuck && failure.context.unmoved)
+                (failure.cause == GameTracing.TraceStuck && (failure.context.unmoved || failure.context.unresolved))
             # A trace that broke at its start never reached the pitchfork.
             @test failure.context.relative_precision > 0
         else

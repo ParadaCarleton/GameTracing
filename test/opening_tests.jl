@@ -83,6 +83,9 @@ end
     point = Float32[1.0f6, -1.0f6, 0.5f0]
     # A correction that moved no logit settles only at the pin, in Newton's `fx` or PALC's `res_f`.
     @test !GameTracing.settled(check, (; x = point, fx = Float32[0, 0, -0.04f0]), 0.0f0)
+    # The pin row is the last entry of whichever residual the solver reports.
+    @test GameTracing.pin_residual((; x = point, fx = Float32[0, 0, -0.04f0])) == -0.04f0
+    @test GameTracing.pin_residual((; x = point, res_f = Float32[0, 0, 0.25f0])) == 0.25f0
     @test GameTracing.settled(check, (; x = point, fx = zeros(Float32, 3)), 0.0f0)
     @test !GameTracing.settled(check, (; x = point, res_f = Float32[0, 0, -0.04f0]), 0.0f0)
     tolerance = check.settings.logit_tolerance

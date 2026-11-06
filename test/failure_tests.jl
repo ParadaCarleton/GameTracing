@@ -1,4 +1,5 @@
 using ErrorTypes: is_error, unwrap_error
+using Logging: Logging
 using LinearAlgebra: LAPACKException, SingularException
 
 const FAILURE_SETTINGS = TraceSettings{Float32}(first_step = 0.01f0, max_step = 0.05f0)
@@ -45,6 +46,49 @@ struct RefuseConverged end
     )
     @test is_error(result)
     @test unwrap_error(result).cause == GameTracing.TraceStuck
+end
+
+"""An `accept_corrected` that refuses every corrector past relative precision `level`."""
+struct RefusePast{E <: Real}
+    level::E
+end
+
+(refuse::RefusePast)(::AbstractVector, relative_precision::Real, ::Bool)::Bool = relative_precision <= refuse.level
+
+# Refused from the flat start, where ρ = 0, and mid-branch.
+@testset "halving ends once the predictor cannot move the point ($(typeof(refusal)))" for refusal in (RefuseConverged(), RefusePast(0.25f0))
+    logs, result = Test.collect_test_logs(min_level = Logging.Debug) do
+        trace_endpoint(LogitGame(GAME, TARGET_PRECISION), WIDTH, FAILURE_SETTINGS; accept_corrected = refusal)
+    end
+    messages = [(log.message, get(log.kwargs, :reason, nothing)) for log in logs]
+    @test unwrap_error(result).cause == GameTracing.TraceStuck
+    # At ρ = 0 any move of ρ resolves: halving ends at BifurcationKit's zero step, never at an unresolved predictor.
+    @test count(==(("corrector stopped", :unresolved)), messages) == ifelse(refusal isa RefuseConverged, 0, 1)
+    # Halving 0.05 to Float32's smallest subnormal 2^-149 takes log2(0.05) + 149 ≈ 145 steps (measured: 143 from
+    # the flat start, 41 mid-branch); 15 more allow accepted steps before the refusals.
+    @test count(message -> first(message) == "corrector closed", messages) < 160
+end
+
+@testset "a predictor that leaves the point unchanged is refused, even after a settled solve" begin
+    point = Float32[1, -2, 0.5f0]
+    check = GameTracing.CorrectorReach(
+        GameTracing.AcceptAll(),
+        CorrectorSettings{Float32}(),
+        TraceGeometry{Float32}(),
+        copy(point),
+        copy(point),
+        0.0f0,
+    )
+    GameTracing.restate!(check; settled_here = true)
+    @test !check((; x = point .+ eps.(point), z0 = (; u = point), step = 0, residual = 0.0f0); fromNewton = false)
+    @test check.state[].unresolved
+    @test !check((; x = point, residual = 0.0f0, step = 1, p = 1.0f0, closing = true); fromNewton = false)
+    # Each coordinate's move is measured against its own size: any move of a zero coordinate resolves.
+    @test !GameTracing.step_unresolved(Float32[0, 1], Float32[1.0f-30, 1])
+    @test GameTracing.step_unresolved(Float32[0, 1], Float32[0, 1 + eps(1.0f0)])
+    # A large coordinate does not hide a small one's move.
+    @test !GameTracing.step_unresolved(Float32[-5.0f6, 1.3f-5], Float32[-5.0f6, 1.4f-5])
+    @test !GameTracing.step_unresolved(point, point .+ Float32[0, 0, 1.0f-3])
 end
 
 @testset "a corrector reach too short to hold any step ends the trace" begin
@@ -159,7 +203,7 @@ end
     )
     result = GameTracing.reached_state(
         progress,
-        (; step_length = 0.0f0, accepted_step = 0.0f0, exhausted = nothing, logit_accuracy = 0.0f0, exception = "Stopping continuation."),
+        (; step_length = 0.0f0, accepted_step = 0.0f0, exhausted = nothing, logit_accuracy = 0.0f0, unresolved = false, exception = "Stopping continuation."),
         LogitGame(GAME, TARGET_PRECISION),
         TraceSettings{Float32}(; max_steps = 10),
         (;),
@@ -231,7 +275,7 @@ end
     @test !progress.unmoved
     @test (progress.steps, progress.precision_max) == (1, moved.param)
     @test progress.gaps == moved.gaps && progress.relative_precision == moved.param
-    outcome = (; step_length = 0.0f0, accepted_step = 0.0f0, exhausted = nothing, logit_accuracy = 0.0f0, exception = nothing)
+    outcome = (; step_length = 0.0f0, accepted_step = 0.0f0, exhausted = nothing, logit_accuracy = 0.0f0, unresolved = false, exception = nothing)
     settings = TraceSettings{Float32}(; max_steps = 2)
     @test unwrap_error(
         GameTracing.reached_state(
@@ -330,7 +374,7 @@ end
     failure = unwrap_error(
         GameTracing.reached_state(
             progress,
-            (; step_length = zero(element), accepted_step = zero(element), exhausted = nothing, logit_accuracy = zero(element), exception = nothing),
+            (; step_length = zero(element), accepted_step = zero(element), exhausted = nothing, logit_accuracy = zero(element), unresolved = false, exception = nothing),
             game,
             TraceSettings{element}(; max_steps = 1000),
             (;),
