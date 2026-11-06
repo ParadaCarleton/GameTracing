@@ -18,7 +18,7 @@ Base.@kwdef struct StepControl{E <: Real}
 end
 
 """
-    TraceSettings{E}(; first_step, min_step, max_step, aggressiveness, geometry, first_tangent_divisor,
+    TraceSettings{E}(; first_step, max_step, aggressiveness, geometry, first_tangent_divisor,
                      corrector, max_steps, tangent, bordered_solver, step_control, orientation_check, palc_corrector,
                      palc_options, continuation_options)
 
@@ -26,8 +26,10 @@ BifurcationKit PALC controls for `trace_endpoint`, in `(w, ρ)` with `w = logits
 relative precision. Step sizes are arclength in `geometry`'s norm (`StepDistance`); the default is the Fisher
 distance (`TraceGeometry`).
 
-- `first_step`, `min_step`, `max_step`: first, smallest and largest arclength step. A step whose corrector fails
-  halves; the trace ends as `TraceStuck` once the step reaches `min_step`.
+- `first_step`, `max_step`: first and largest arclength step. A step whose corrector fails halves; the trace ends as
+  `TraceStuck` once its predictor moves the point no more than a few ulps of its size (`step_unresolved`).
+  BifurcationKit's `dsmin` is zero: its halving stops at a zero step. After the predictor stops moving, BifurcationKit
+  still halves to zero through the subnormals, about 150 halvings of one refused residual evaluation each.
 - `aggressiveness` (BifurcationKit's `a`): without a `step_control` growth limit, a step grows by
   `1 + a ((N - n) / N)²` after a corrector of `n` of its `N = corrector.newton_iterations` iterations.
 - `corrector`: a `CorrectorSettings`.
@@ -61,7 +63,6 @@ struct TraceSettings{
         O <: NamedTuple,
     }
     first_step::E
-    min_step::E
     max_step::E
     aggressiveness::E
     geometry::TraceGeometry{E}
@@ -80,7 +81,6 @@ end
 # Each keyword is named, not splatted: a splatted `keywords...` leaves the field conversions to runtime dispatch.
 function TraceSettings{E}(;
         first_step::Real = 0.05f0,
-        min_step::Real = nextfloat(zero(E)),
         max_step::Real = 1000.0f0,
         aggressiveness::Real = 0.5f0,
         geometry::TraceGeometry{E} = TraceGeometry{E}(),
@@ -98,7 +98,7 @@ function TraceSettings{E}(;
         E <: Real, T <: BifurcationKit.AbstractTangentComputation, C, P <: NamedTuple, O <: NamedTuple,
     }
     return TraceSettings{E, T, C, P, O}(
-        E(first_step), E(min_step), E(max_step), E(aggressiveness), geometry, E(first_tangent_divisor), corrector,
+        E(first_step), E(max_step), E(aggressiveness), geometry, E(first_tangent_divisor), corrector,
         Int(max_steps), tangent, bordered_solver, step_control, orientation_check, palc_corrector, palc_options,
         continuation_options,
     )
@@ -226,7 +226,7 @@ function continuation_options(
     )::BifurcationKit.ContinuationPar where {E <: Real}
     own = (;
         ds = step_length,
-        dsmin = settings.min_step,
+        dsmin = zero(E),
         dsmax = settings.max_step,
         a = settings.aggressiveness,
         η = first_tangent_divisor,
@@ -376,7 +376,7 @@ The relative precision `ρ` is the precision in units of the target.
 
 `keep_going(logits, ρ)` runs at each accepted point before the next step's corrector, and `false` stops the trace.
 `accept_corrected(logits, ρ, converged)` runs as each corrector ends, and `false` refuses a converged point, which
-halves the step. A trace that stops short fails with `NoConvergence` when it spends `settings.max_steps` and `TraceStuck` otherwise (a step below `min_step`, an unchanged accepted point, or a
+halves the step. A trace that stops short fails with `NoConvergence` when it spends `settings.max_steps` and `TraceStuck` otherwise (a step below the float type's resolution, an unchanged accepted point, or a
 refusal); a non-finite start or a broken linear solve fails `NotFinite` or `Singular`. `context` rides on
 every failure.
 
@@ -483,11 +483,12 @@ end
 """
     guarded_trace(start, old_tangent, settings, finalise, accept_corrected, opening)
 
-`(; progress, step_length, accepted_step, exhausted, logit_accuracy, exception)` of a PALC segment on `finalise.slot`'s
+`(; progress, step_length, accepted_step, exhausted, logit_accuracy, unresolved, exception)` of a PALC segment on `finalise.slot`'s
 game from `start = [w; ρ]`, the point of `opening` (the `TraceProgress` before it), for the steps `settings.max_steps`
 leaves: the progress after it (`branch_progress`), the step length its last corrector tried, the step of the last
 accepted point (the slot's, carried from an earlier segment when this one accepted none), the corrector's confirmed stall
-at rounding noise (or `nothing`), the largest last correction of an accepted point, and `nothing` for a segment that
+at rounding noise (or `nothing`), the largest last correction of an accepted point, whether its predictor fell below
+the float type's resolution (`step_unresolved`), and `nothing` for a segment that
 ran, else the third-party failure it ended on. From the flat start (`old_tangent` is `nothing`) the first tangent is
 BifurcationKit's secant; a restart after a redraw opens along `restart_tangent`, oriented by `old_tangent`.
 BifurcationKit throws a `String` when Newton misses its first point and an `ErrorException` at its second; a
@@ -549,6 +550,7 @@ function segment_outcome(
             nothing,
         ),
         logit_accuracy = corrector.state[].noise.accuracy,
+        unresolved = isnothing(ran.exception) && corrector.state[].unresolved,
         ran.exception,
     )
 end
@@ -784,12 +786,14 @@ function reached_state(
     if isnothing(outcome.exception) && progress.relative_precision == one(E)
         return Ok(Traced(copy(progress.gaps), progress.steps, E(outcome.logit_accuracy)))
     end
-    # Why the trace stopped short: a start that would not correct, a broken linear solve, a point that did not move, a loop of the branch,
-    # spent steps, or else a step below `min_step`, `keep_going` or a refusal (`STOP_CAUSES`).
+    # Why the trace stopped short: a start that would not correct, a broken linear solve, a step below resolution, a point that did not move, a loop of the branch,
+    # spent steps, or else `keep_going` or a refusal (`STOP_CAUSES`).
     reason = if uncorrected_start(outcome.exception)
         :uncorrected_start
     elseif !isnothing(outcome.exception)
         :solver_blowup
+    elseif outcome.unresolved
+        :unresolved_step
     elseif progress.unmoved
         :unmoved
     elseif progress.looped
@@ -810,7 +814,7 @@ end
 
 # The cause a trace that stops short for each reason fails with.
 const STOP_CAUSES = (;
-    uncorrected_start = TraceStuck, solver_blowup = Singular, max_steps = NoConvergence, unmoved = TraceStuck, loop = TraceStuck,
+    uncorrected_start = TraceStuck, solver_blowup = Singular, max_steps = NoConvergence, unmoved = TraceStuck, unresolved_step = TraceStuck, loop = TraceStuck,
     stopped_short = TraceStuck,
 )
 
@@ -818,7 +822,7 @@ const STOP_CAUSES = (;
     stopped_context(progress, outcome, target_precision, context)
 
 The context of a trace that stopped at `progress`'s last accepted point after `outcome`: `context`, the steps, the
-precision and its range, the logits, the step held, the arclength step of the last accepted point (`accepted_step`,
+precision and its range, the `unmoved`, `unresolved` and `looped` flags, the logits, the step held, the arclength step of the last accepted point (`accepted_step`,
 zero when no step was accepted), the tangent in logits, the `logit_accuracy` of its accepted points and the exception.
 """
 function stopped_context(
@@ -830,7 +834,7 @@ function stopped_context(
     return (;
         context..., progress.steps,
         precision = target_precision * progress.relative_precision,
-        progress.precision_min, progress.precision_max, progress.unmoved, progress.looped,
+        progress.precision_min, progress.precision_max, progress.unmoved, outcome.unresolved, progress.looped,
         logits = progress.relative_precision .* progress.gaps, progress.relative_precision,
         step_length = E(outcome.step_length),
         accepted_step = ifelse(progress.steps > 0, E(outcome.accepted_step), zero(E)),

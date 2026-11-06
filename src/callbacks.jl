@@ -60,7 +60,7 @@ struct NoiseRecord{E <: Real}
 end
 
 """
-    CorrectorState(step_length, predictor_move, correction, stalls, settled_here, noise)
+    CorrectorState(step_length, predictor_move, correction, stalls, settled_here, noise, unresolved, reach_failure)
 
 The scalars a `CorrectorReach` carries between BifurcationKit's calls: the current step's `step_length` and its
 predictor's largest logit change `predictor_move`; the current solve's last `correction` in logits, its
@@ -74,6 +74,8 @@ struct CorrectorState{E <: Real}
     stalls::Int
     settled_here::Bool
     noise::NoiseRecord{E}
+    unresolved::Bool
+    reach_failure::@NamedTuple{relative_precision::E, correction::E}
 end
 
 """`state` with the given fields replaced."""
@@ -85,8 +87,10 @@ function restated(
         stalls::Integer = state.stalls,
         settled_here::Bool = state.settled_here,
         noise::NoiseRecord{E} = state.noise,
+        unresolved::Bool = state.unresolved,
+        reach_failure::@NamedTuple{relative_precision::E, correction::E} = state.reach_failure,
     )::CorrectorState{E} where {E <: Real}
-    return CorrectorState{E}(step_length, predictor_move, correction, stalls, settled_here, noise)
+    return CorrectorState{E}(step_length, predictor_move, correction, stalls, settled_here, noise, unresolved, reach_failure)
 end
 
 """
@@ -98,7 +102,10 @@ Two such corrections in a row, each larger than the predictor's own move in logi
 (`noise`), confirmed at the next halved step; the check then refuses every corrector (`noise_confirmed`).
 A non-finite residual stops the corrector,
 and so does any iterate whose logits are further from the predictor's than `settings.reach` times the predictor's own
-largest logit move (`within_reach`); the step then halves. On a smooth branch that distance is the branch's curvature
+largest logit move (`within_reach`); the step then halves. A predictor within `RESOLUTION_ULPS` ulps of each of the
+point's coordinates (`step_unresolved`) refuses that corrector and every later one (`unresolved`): no smaller step can
+add a point, so the trace ends as `TraceStuck`, or as `PrecisionExhausted` when the corrector before it stopped past its
+reach with a correction above `logit_tolerance` (`unresolved_noise`). On a smooth branch that distance is the branch's curvature
 times `ds² / 2`, so halving brings any step under it, while an iterate that lands on another branch is far from it. A converged closing point is refused the same way past `reach`, past a largest probability KL
 `KL(corrected ‖ predicted)` of `settings.max_kl` (`largest_kl`). A predictor that did not move has no reach to compare.
 `accept_corrected(logits, ρ, converged)` then sees every other closing point. `previous` and `predicted` hold the
@@ -119,6 +126,37 @@ end
 function restate!(check::CorrectorReach{C, E}; changes...)::CorrectorState{E} where {C, E <: Real}
     check.state[] = restated(check.state[]; changes...)
     return check.state[]
+end
+
+# A predictor within this many ulps of a coordinate leaves it unchanged at the float type's resolution.
+const RESOLUTION_ULPS = 4
+
+"""
+Whether the predictor `predicted` moves no coordinate of `start` by more than `RESOLUTION_ULPS · eps(E)` of its own
+size: the ODE solvers' per-coordinate error test, `|Δz_i| ≤ abstol + reltol |z_i|`, with abstol zero. Coordinates
+of different scales (payoff gaps near 1e6, ρ near 1e-5) each count, and any move of a zero coordinate resolves.
+"""
+function step_unresolved(start::AbstractVector{E}, predicted::AbstractVector{E})::Bool where {E <: Real}
+    return all(abs.(predicted .- start) .<= RESOLUTION_ULPS * eps(E) .* abs.(start))
+end
+
+"""A step's reach-failure record before any corrector failed its reach: the correction is NaN, as at a solve's start."""
+function no_reach_failure(::Type{E})::@NamedTuple{relative_precision::E, correction::E} where {E <: Real}
+    return (; relative_precision = zero(E), correction = E(NaN32))
+end
+
+"""
+`check`'s noise record once its step is unresolved. When the last corrector stopped past its reach with a correction
+above `logit_tolerance`, halving reached the float type's resolution without closing a point: the corrections are
+rounding noise, and the record confirms the precision exhausted there (`PrecisionExhausted`). `reach_failure` holds
+the last reach failure of the current step, with a NaN correction when there was none.
+"""
+function unresolved_noise(check::CorrectorReach{C, E})::NoiseRecord{E} where {C, E <: Real}
+    (; reach_failure, noise) = check.state[]
+    if !(reach_failure.correction > check.settings.logit_tolerance)
+        return noise
+    end
+    return NoiseRecord(noise.accuracy, (; reach_failure..., confirmed = true))
 end
 
 """Whether `check`'s corrector met rounding noise, confirmed at a halved step (`corrected!`)."""
@@ -142,7 +180,7 @@ function CorrectorReach(
         collect(previous),
         collect(predicted),
         collect(previous),
-        Ref(CorrectorState{E}(step_length, E(NaN32), E(NaN32), 0, false, NoiseRecord(zero(E), nothing))),  # lint: ref  see `state`
+        Ref(CorrectorState{E}(step_length, E(NaN32), E(NaN32), 0, false, NoiseRecord(zero(E), nothing), false, no_reach_failure(E))),  # lint: ref  see `state`
     )
 end
 
@@ -180,6 +218,9 @@ function (check::CorrectorReach{C, E})(
         # fatou-ignore unused-argument: BifurcationKit passes keyword arguments this callback ignores
         keywords...,
     )::Union{Bool, BifurcationKit.NewtonConverged} where {C, E <: Real, I <: NamedTuple}
+    if check.state[].unresolved
+        return false
+    end
     if fromNewton
         # Newton's closing call is its only one without `J`; an exact root converges on BifurcationKit's own test.
         if !haskey(iterate, :J)
@@ -203,16 +244,26 @@ function (check::CorrectorReach{C, E})(
                 step_length = arclength_distance(iterate.z0.u, iterate.x, check.geometry),
                 predictor_move = logit_change(iterate.z0.u, iterate.x),
             )
+            # The unresolved test reads the previous step's reach failure, so the record resets only after it.
+            if step_unresolved(iterate.z0.u, iterate.x)
+                @debug "corrector stopped" _group = :trace reason = :unresolved step_length = check.state[].step_length
+                restate!(check; unresolved = true, noise = unresolved_noise(check))
+                return false
+            end
+            restate!(check; reach_failure = no_reach_failure(E))
         end
         if !isfinite(iterate.residual)
             @debug "corrector stopped" _group = :trace reason = :nonfinite
             return corrected!(check, iterate, false)
         end
         reached = within_reach(check, iterate.x)
+        verdict = corrected!(check, iterate, reached)
         if !reached
-            @debug "corrector stopped" _group = :trace reason = :reach
+            correction = check.state[].correction
+            @debug "corrector stopped" _group = :trace reason = :reach correction
+            restate!(check; reach_failure = (; relative_precision = last(iterate.x), correction))
         end
-        return corrected!(check, iterate, reached)
+        return verdict
     end
     # An exact root converges unsettled on BifurcationKit's own test (`residual <= tol`, tol 0), so it meets the same tests.
     converged = isfinite(iterate.residual) &&
