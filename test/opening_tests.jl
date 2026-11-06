@@ -5,6 +5,9 @@ using Random: AbstractRNG, Xoshiro
 const FAR_OPENING_SEED = 0xb0bf341028e24ba6
 # The seed whose (2, 2, 2) game stalled at λ ≈ 22.9 on its way to 1e6, under a residual tolerance below P G's rounding.
 const MIXED_STALL_SEED = 0x233ce38d667063a1
+# The seed whose (3, 3) game's corrector made two zero-length Newton steps at λ ≈ 34: with tolerance 0 the step control's
+# contraction rate was 0 / 0, so the step length went NaN and the step halved forever.
+const ZERO_STEP_SEED = 0x4e6997513e7cba6d
 
 """Normal-form games with strategy counts `(3, 3)` and `(2, 2, 2)`, payoffs `3 randn`, drawn from `rng` in that order."""
 function far_opening_games(rng::AbstractRNG)::AbstractVector
@@ -41,7 +44,11 @@ end
 # Each comparison runs a Gambit trace; the mutation jobs skip it to stay under their time limit.
 if get(ENV, "GAMETRACING_MUTATION", "false") != "true"
     @testset "a trace to a far target stays on Gambit's branch" begin
-        seeded = (far_opening_games(Xoshiro(FAR_OPENING_SEED))..., last(far_opening_games(Xoshiro(MIXED_STALL_SEED))))
+        seeded = (
+            far_opening_games(Xoshiro(FAR_OPENING_SEED))...,
+            last(far_opening_games(Xoshiro(MIXED_STALL_SEED))),
+            first(far_opening_games(Xoshiro(ZERO_STEP_SEED))),
+        )
         for payoffs in (seeded..., far_opening_games(fresh_rng())...)
             gains = NormalFormGains(payoffs)
             failure = unwrap_error(
