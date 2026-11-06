@@ -8,6 +8,13 @@ function fresh_rng()::Xoshiro
     return Xoshiro(seed)
 end
 
+"""A `CorrectorReach` of `settings` for a branch of `width` logits, before any step, to build continuation options with."""
+function idle_corrector(settings::TraceSettings{E}, width::Integer)::GameTracing.CorrectorReach{GameTracing.AcceptAll, E} where {E <: Real}
+    return GameTracing.CorrectorReach(
+        GameTracing.AcceptAll(), settings.corrector, settings.geometry, zeros(E, width + 1), zeros(E, width + 1), zero(E),
+    )
+end
+
 """Payoff gains `G = A p + b` with `p = logistic(logits)`, independent of the precision: the logit map `λ (A p + b)`."""
 struct LinearGainPass{E <: Real}
     interaction::Matrix{E}

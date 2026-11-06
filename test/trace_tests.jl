@@ -183,7 +183,7 @@ end
     @test algorithm.corrector === free
     @test !algorithm.orientation_check
     @test algorithm.θ == one(element) / 4
-    options = GameTracing.continuation_options(settings, settings.first_step, 50, settings.first_tangent_divisor)
+    options = GameTracing.continuation_options(settings, settings.first_step, 50, settings.first_tangent_divisor, idle_corrector(settings, WIDTH))
     @test (options.max_steps, options.p_max) == (3, one(element) / 2)
     @test options.p_min == 0
 end
@@ -201,13 +201,16 @@ end
             corrector = CorrectorSettings{Float32}(
                 logit_tolerance = 1.0f-3 * rand(rng, Float32),
                 newton_iterations = rand(rng, 1:20),
+                residual_tolerance = rand(rng, (Inf32, rand(rng, Float32))),
             ),
         )
+        corrector = idle_corrector(settings, WIDTH)
         options = GameTracing.continuation_options(
             settings,
             settings.first_step,
             settings.max_steps,
             settings.first_tangent_divisor,
+            corrector,
         )
         @test (options.ds, options.dsmin, options.dsmax, options.a, options.η) ==
             (
@@ -219,8 +222,9 @@ end
         )
         @test (options.p_min, options.p_max) == (0, 1)
         @test options.max_steps == settings.max_steps
-        # Only the corrector's callback converges a corrector short of an exact root.
-        @test options.newton_options.tol == 0
+        # A corrector converges when the callback settles it and its residual is within the residual tolerance.
+        @test options.newton_options.tol == settings.corrector.residual_tolerance
+        @test options.newton_options.convergence_test.check === corrector
         @test options.newton_options.max_iterations == settings.corrector.newton_iterations
         @test !options.detect_fold
         @test options.detect_bifurcation == 0
@@ -335,6 +339,7 @@ end
             settings.first_step,
             settings.max_steps,
             settings.first_tangent_divisor,
+            idle_corrector(settings, WIDTH),
         );
         verbosity = 0,
     )
