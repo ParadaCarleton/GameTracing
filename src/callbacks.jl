@@ -475,7 +475,11 @@ function looped(history::AbstractVector{R}, current::NamedTuple)::Bool where {R 
         return false
     end
     turn = sum(tangent_turn.(view(history, firstindex(history):(lastindex(history) - 1)), view(history, (firstindex(history) + 1):lastindex(history))))
-    return turn >= 2 * oftype(turn, pi)
+    if turn >= 2 * oftype(turn, pi)
+        @info "loop stop" length(history) anchor_index step_length anchor_distance = norm(point - [anchor.gaps; anchor.param]) turn params = [r.param for r in history[firstindex(history) + anchor_index - 1:end]] current_param = current.param anchor_param = anchor.param gap_norms = [norm(r.gaps) for r in history[firstindex(history) + anchor_index - 1:end]]
+        return true
+    end
+    return false
 end
 
 """
