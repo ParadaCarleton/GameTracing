@@ -62,20 +62,20 @@ struct TraceSettings{
         P <: NamedTuple,
         O <: NamedTuple,
     }
-    first_step::E = 0.05f0
-    max_step::E = 1000.0f0
-    aggressiveness::E = 0.5f0
-    geometry::TraceGeometry{E} = TraceGeometry{E}()
-    first_tangent_divisor::E = 150.0f0
-    corrector::CorrectorSettings{E} = CorrectorSettings{E}()
-    max_steps::Int = 2_000
-    tangent::T = BifurcationKit.Bordered()
-    bordered_solver::BorderedSolver = MatrixSolve
-    step_control::Union{Nothing, StepControl{E}} = StepControl{E}()
-    orientation_check::Bool = true
-    palc_corrector::C = nothing
-    palc_options::P = (;)
-    continuation_options::O = (;)
+    first_step::E
+    max_step::E
+    aggressiveness::E
+    geometry::TraceGeometry{E}
+    first_tangent_divisor::E
+    corrector::CorrectorSettings{E}
+    max_steps::Int
+    tangent::T
+    bordered_solver::BorderedSolver
+    step_control::Union{Nothing, StepControl{E}}
+    orientation_check::Bool
+    palc_corrector::C
+    palc_options::P
+    continuation_options::O
 end
 
 # Each keyword is named, not splatted: a splatted `keywords...` leaves the field conversions to runtime dispatch.
