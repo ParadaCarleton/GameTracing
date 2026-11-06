@@ -3,7 +3,7 @@ using LinearAlgebra: dot, norm
 using Logging: @debug
 """
     CorrectorSettings{E}(; reach, max_kl, logit_tolerance, pin_tolerance, contraction_limit,
-                         contraction_offset, newton_iterations)
+                         contraction_offset, newton_iterations, residual_tolerance)
 
 The corrector's controls (`CorrectorReach`); `nothing` switches a limit off. `reach`: a corrector that moves a logit
 further from the predictor than this times the predictor's own largest logit move is refused. `shift_share`: the share
@@ -15,6 +15,9 @@ moves no logit more than `logit_tolerance`, at a relative precision within the r
 A correction that moves the logits more than `contraction_limit` times the one before it (plus `logit_tolerance`
 times `contraction_offset`) fails to contract; BifurcationKit's step growth reads the same rate (`corrector_quality`).
 `newton_iterations`: Newton iterations per corrector (BifurcationKit's default, 25; Gambit's is 100).
+`residual_tolerance`: BifurcationKit's residual tolerance `tol`, which a corrector must also meet. The branch residual
+`w - P G` is in logits at the target precision `P`, so its size grows with `P`; the default `Inf` leaves convergence to
+the logit test.
 """
 Base.@kwdef struct CorrectorSettings{E <: Real}
     reach::Union{Nothing, E} = 2.0f0
@@ -27,6 +30,7 @@ Base.@kwdef struct CorrectorSettings{E <: Real}
     contraction_limit::Union{Nothing, E} = 0.6f0
     contraction_offset::E = 0.1f0
     newton_iterations::Int = 25
+    residual_tolerance::E = Inf32
 end
 
 """The largest change of a logit from `from` to `to`, two points `[w; ρ]` (`logits_at`)."""
@@ -92,8 +96,9 @@ end
 """
     CorrectorReach(accept_corrected, settings, geometry, previous, predicted, step_length)
 
-The trace's BifurcationKit `callback_newton`, which also decides the corrector's convergence: a `settled` iterate
-ends Newton's method converged (`NewtonConverged`), and a correction that fails to contract stops it (`corrected!`).
+The trace's BifurcationKit `callback_newton`, which also tests the corrector's convergence: it marks a `settled`
+iterate (`settled_here`), which ends Newton's method converged through `CorrectorSettled`, and a correction that fails
+to contract stops it (`corrected!`).
 Two such corrections in a row, each larger than the predictor's own move in logits, are suspected rounding noise
 (`noise`), confirmed at the next halved step; the check then refuses every corrector (`noise_confirmed`).
 A non-finite residual stops the corrector,
@@ -125,6 +130,19 @@ end
 function noise_confirmed(check::CorrectorReach)::Bool
     return !isnothing(check.state[].noise.suspect) && check.state[].noise.suspect.confirmed
 end
+
+"""
+    CorrectorSettled(check)
+
+BifurcationKit's `convergence_test` (`NewtonPar`) of the trace: whether the `CorrectorReach` `check` settled the
+current iterate. BifurcationKit calls it after the callback `check` on each iterate.
+"""
+struct CorrectorSettled{R <: CorrectorReach}
+    check::R
+end
+
+# fatou-ignore unused-argument: BifurcationKit passes the iterate and keywords, which `check` has already read
+(test::CorrectorSettled)(::NamedTuple; keywords...)::Bool = test.check.state[].settled_here
 
 function CorrectorReach(
         accept_corrected::C,
@@ -163,27 +181,16 @@ function closing_accepted(
     return true
 end
 
-"""The verdict that ends a solve: converged (`NewtonConverged`) when it `settled_here`, else `proceed`."""
-function closing_verdict(check::CorrectorReach, proceed::Bool)::Union{
-        Bool,
-        BifurcationKit.NewtonConverged,
-    }
-    if check.state[].settled_here
-        return BifurcationKit.NewtonConverged()
-    end
-    return proceed
-end
-
 function (check::CorrectorReach{C, E})(
         iterate::I;
         fromNewton::Bool = true,
         # fatou-ignore unused-argument: BifurcationKit passes keyword arguments this callback ignores
         keywords...,
-    )::Union{Bool, BifurcationKit.NewtonConverged} where {C, E <: Real, I <: NamedTuple}
+    )::Bool where {C, E <: Real, I <: NamedTuple}
     if fromNewton
-        # Newton's closing call is its only one without `J`; an exact root converges on BifurcationKit's own test.
+        # Newton's closing call is its only one without `J`.
         if !haskey(iterate, :J)
-            return closing_verdict(check, isfinite(iterate.residual))
+            return isfinite(iterate.residual)
         end
         if iterate.step == 0
             restate!(check; predictor_move = E(NaN32))
@@ -214,9 +221,8 @@ function (check::CorrectorReach{C, E})(
         end
         return corrected!(check, iterate, reached)
     end
-    # An exact root converges unsettled on BifurcationKit's own test (`residual <= tol`, tol 0), so it meets the same tests.
-    converged = isfinite(iterate.residual) &&
-        (check.state[].settled_here || iszero(iterate.residual))
+    # An exact root converges unsettled on a Newton update of exactly zero (`unmoved`), so it meets the same tests.
+    converged = isfinite(iterate.residual) && (iterate.converged || get(iterate, :unmoved, false))
     @debug "corrector closed" _group = :trace step = iterate.step residual = iterate.residual converged step_length = check.state[].step_length
     if converged && !closing_accepted(check, iterate.x)
         return false
@@ -232,7 +238,7 @@ function (check::CorrectorReach{C, E})(
             noise = NoiseRecord(max(check.state[].noise.accuracy, closing_correction), check.state[].noise.suspect),
         )
     end
-    return closing_verdict(check, true)
+    return true
 end
 
 """
@@ -240,16 +246,13 @@ end
 
 `check`'s verdict on a Newton `iterate` that its other tests let `proceed`, in logits `z = ρ w`. The first iterate
 is the solve's start and never settles. Each later one is a correction `Δz` from the iterate before: it settles
-(`NewtonConverged`) when `settled`. A correction past `contraction_limit` times the one before (plus
+(`settled_here`, read by `CorrectorSettled`) when `settled`. A correction past `contraction_limit` times the one before (plus
 `logit_tolerance · contraction_offset`) fails to contract, Gambit's test (path.cc), and stops the corrector, so the
 step halves. Two in a row, each larger than the predictor's own move, are suspected noise (`noise`); the
 step still halves. A second such solve before any settles, its correction at least half the suspect's, confirms it
 (`noise_confirmed`): halving shrinks the corrections of a predictor past a fold, not noise. Every later solve refuses.
 """
-function corrected!(check::CorrectorReach{C, E}, iterate::NamedTuple, proceed::Bool)::Union{
-        Bool,
-        BifurcationKit.NewtonConverged,
-    } where {C, E <: Real}
+function corrected!(check::CorrectorReach{C, E}, iterate::NamedTuple, proceed::Bool)::Bool where {C, E <: Real}
     if noise_confirmed(check)
         return false
     end
@@ -266,7 +269,7 @@ function corrected!(check::CorrectorReach{C, E}, iterate::NamedTuple, proceed::B
     end
     if settled(check, iterate, correction)
         restate!(check; settled_here = true, noise = NoiseRecord(check.state[].noise.accuracy, nothing))
-        return BifurcationKit.NewtonConverged()
+        return true
     end
     (; contraction_limit, contraction_offset, logit_tolerance) = check.settings
     # The first correction has no rate (`before` is NaN), so it contracts.

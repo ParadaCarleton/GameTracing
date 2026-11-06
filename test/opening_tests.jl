@@ -115,9 +115,9 @@ end
     GameTracing.restate!(poor; predictor_move = 0.5f0)
     @test solve_verdicts(poor, stalled[1:3]) == [true, true, false]
     settling = solve_verdicts(poor, Float32[0, 1.0f-2, 1.1f-2, 1.101f-2])
-    @test settling[1:3] == [true, true, true]
-    @test last(settling) isa GameTracing.BifurcationKit.NewtonConverged
+    @test settling == [true, true, true, true]
     @test poor.state[].settled_here
+    @test GameTracing.CorrectorSettled(poor)((;))
     @test !GameTracing.noise_confirmed(poor)
     # A predictor that moved less than the stalled correction cannot be halved under it: the second stall is suspected noise.
     noisy = fresh_check(1.0f-3)

@@ -80,19 +80,21 @@ end
         GameTracing.restate!(check; predictor_move = GameTracing.logit_change(check.previous, predicted))
         @test GameTracing.closing_accepted(check, predicted)
         @test !GameTracing.closing_accepted(check, corrected)
-        # An exact root that never settled ends BifurcationKit's solve converged, so it meets the same tests.
-        @test check((; x = corrected, res_f = zero(corrected), p = 0.5f0, step = 2, residual = 0.0f0, closing = true); fromNewton = false) === false
+        # An exact root that never settled ends BifurcationKit's solve converged on a zero Newton update (`unmoved`), so it
+        # meets the same tests.
+        @test check((; x = corrected, res_f = zero(corrected), p = 0.5f0, step = 2, residual = 0.0f0, closing = true, converged = false, unmoved = true); fromNewton = false) === false
         # The closing call reads the solve's own verdict: it settled.
         GameTracing.restate!(check; settled_here = true)
-        @test check((; x = corrected, res_f = zero(corrected), p = 0.5f0, step = 2, residual = 0.0f0, closing = true); fromNewton = false) === false
+        @test check((; x = corrected, res_f = zero(corrected), p = 0.5f0, step = 2, residual = 0.0f0, closing = true, converged = true, unmoved = false); fromNewton = false) === false
     end
 end
 
 @testset "a point closed at an exact root records a correction of 0, a settled one its last correction" begin
     previous, predicted = Float32[0, 0, 0.5f0], Float32[1, 0, 0.5f0]
     # BifurcationKit gives the closing call the step's start `z0` too; its `closing` marker sets it apart.
-    closing = (; x = predicted, res_f = zero(predicted), p = 0.5f0, step = 2, residual = 0.0f0, z0 = (; u = previous, p = 0.5f0), closing = true)
     for (settled, recorded) in ((false, 0.0f0), (true, 0.25f0))
+        # An exact root converges on a zero Newton update (`unmoved`), a settled point on the corrector's test.
+        closing = (; x = predicted, res_f = zero(predicted), p = 0.5f0, step = 2, residual = 0.0f0, z0 = (; u = previous, p = 0.5f0), closing = true, converged = settled, unmoved = !settled)
         check = GameTracing.CorrectorReach(
             GameTracing.AcceptAll(), CorrectorSettings{Float32}(), TraceGeometry{Float32}(), previous, predicted, 1.0f0,
         )

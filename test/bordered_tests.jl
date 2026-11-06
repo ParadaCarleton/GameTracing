@@ -155,6 +155,7 @@ end
             settings.first_step,
             settings.max_steps,
             settings.first_tangent_divisor,
+            idle_corrector(settings, WIDTH),
         );
         verbosity = 0,
     )

@@ -50,8 +50,8 @@ distance (`TraceGeometry`).
   `step_control`, `orientation_check`, `orientation_dot`, `θ`, `dotθ` or `bls`: the trace's step shrinking, tangent orientation
   and geometry rest on them, and `TraceSettings` fields set them consistently.
 - `continuation_options`: a `NamedTuple` of further keywords for `BifurcationKit.ContinuationPar`, which override the trace's
-  own. Do not override `newton_options`, `p_min`, `p_max`, `ds` or the `dsmin`/`dsmax` pair: `CorrectorReach` converges a
-  corrector on its own test and needs `tol = 0`, and the trace ends at `p_max`.
+  own. Do not override `newton_options`, `p_min`, `p_max`, `ds` or the `dsmin`/`dsmax` pair: the corrector converges on
+  `CorrectorReach`'s test (`CorrectorSettled`) and `CorrectorSettings`' `residual_tolerance`, and the trace ends at `p_max`.
 """
 struct TraceSettings{
         E <: Real,
@@ -215,7 +215,8 @@ end
 """
 BifurcationKit's continuation parameters for `settings`, from relative precision zero to one, with first step
 `step_length`, at most `max_steps` steps and first tangent the secant to a solve at `step_length / first_tangent_divisor`
-in the continuation parameter. Eigenvalues, fold and bifurcation detection serve bifurcation diagrams; the trace reads
+in the continuation parameter. A corrector converges when `corrector` settles it and its residual is within
+`residual_tolerance`. Eigenvalues, fold and bifurcation detection serve bifurcation diagrams; the trace reads
 only its endpoint.
 """
 function continuation_options(
@@ -223,6 +224,7 @@ function continuation_options(
         step_length::E,
         max_steps::Integer,
         first_tangent_divisor::E,
+        corrector::CorrectorReach,
     )::BifurcationKit.ContinuationPar where {E <: Real}
     own = (;
         ds = step_length,
@@ -234,8 +236,8 @@ function continuation_options(
         p_max = one(E),
         max_steps,
         newton_options = BifurcationKit.NewtonPar(;
-            # Only `CorrectorReach` converges a corrector (`settled`), and an exact root.
-            tol = zero(E),
+            tol = settings.corrector.residual_tolerance,
+            convergence_test = CorrectorSettled(corrector),
             max_iterations = settings.corrector.newton_iterations,
             α = one(E),
             αmin = one(E) / 1000,
@@ -288,6 +290,7 @@ function trace_iterator(
             step_length,
             max_steps,
             opening_divisor(settings, game.target_precision),
+            corrector,
         ),
         finalise,
         corrector,
