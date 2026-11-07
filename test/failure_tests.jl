@@ -100,7 +100,7 @@ end
         )
     )
     @test is_error(result)
-    # A step that halves to the float type's resolution after reach refusals is labelled PrecisionExhausted
+    # A step that halves to the float type's resolution after reach refusals is labeled PrecisionExhausted
     # (`unresolved_noise`): a refused correction under `logit_tolerance` is rounding noise too. The trace still fails.
     @test unwrap_error(result).cause in (GameTracing.TraceStuck, GameTracing.NoConvergence, GameTracing.PrecisionExhausted)
     @test isfinite(unwrap_error(result).context.relative_precision)
