@@ -267,6 +267,7 @@ function (check::CorrectorReach{C, E})(
                 step_length = arclength_distance(iterate.z0.u, iterate.x, check.geometry),
                 predictor_move = logit_change(iterate.z0.u, iterate.x),
             )
+            # The unresolved test reads the previous step's reach failure, so the record resets only after it.
             if step_unresolved(iterate.z0.u, iterate.x, check.settings.resolution_ulps)
                 @debug "corrector stopped" _group = :trace reason = :unresolved step_length = check.state[].step_length
                 restate!(check; unresolved = true)
@@ -544,7 +545,7 @@ end
     looped(history, current)
 
 Whether `current`, a point with `gaps` and `param` that follows the branch records `history`, closes a loop of the
-branch (an isola). Gate: the tangents of `history` have turned through at least 2π in total (`tangent_turn`), as a closed
+branch (an isola). Gates: the precision tangent changes sign between the anchor and `current` (a closed curve returns to its starting precision), and the tangents of `history` have turned through at least 2π in total (`tangent_turn`), as a closed
 curve must (Fenchel's theorem). Then Brent's cycle detection: the anchor is the record at the largest power-of-two index
 not after the last record (indices from 1), and the trace has looped when `current` lies closer to the anchor than the
 last step is long, with the anchor at least two records before `current`. Distances are plain Euclidean on
@@ -559,6 +560,11 @@ function looped(history::AbstractVector{R}, current::NamedTuple)::Bool where {R 
     point = [current.gaps; current.param]
     step_length = norm(point - [last(history).gaps; last(history).param])
     if !(norm(point - [anchor.gaps; anchor.param]) < step_length)
+        return false
+    end
+    # A closed curve returns to its starting precision, so its precision tangent changes sign along the lap.
+    precision_tangents = [record.tangent_precision for record in view(history, (firstindex(history) + anchor_index - 1):lastindex(history))]
+    if !(minimum(precision_tangents) < 0 < maximum(precision_tangents))
         return false
     end
     turn = sum(tangent_turn.(view(history, firstindex(history):(lastindex(history) - 1)), view(history, (firstindex(history) + 1):lastindex(history))))

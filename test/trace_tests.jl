@@ -213,7 +213,7 @@ end
         @test (options.ds, options.dsmin, options.dsmax, options.a, options.η) ==
             (
             settings.first_step,
-            zero(Float32),
+            zero(settings.max_step),
             settings.max_step,
             settings.aggressiveness,
             settings.first_tangent_divisor,
@@ -372,6 +372,33 @@ end
     catch exception
         GameTracing.thrown_failure(exception)
     end
+end
+
+@testset "ended_segment keeps the opening when a segment throws before accepting a point" begin
+    settings = TraceSettings{Float32}()
+    problem = GameTracing.branch_problem(
+        LogitGame(GAME, TARGET_PRECISION),
+        zeros(Float32, WIDTH + 1),
+        0.0f0;
+        record_from_solution = GameTracing.trace_record_point,
+    )
+    iterator = GameTracing.BifurcationKit.ContIterable(
+        problem,
+        GameTracing.palc_algorithm(settings, WIDTH, TARGET_PRECISION),
+        GameTracing.continuation_options(settings, settings.first_step, settings.max_steps, settings.first_tangent_divisor);
+        verbosity = 0,
+    )
+    state = GameTracing.opened_state(iterator, zeros(Float32, WIDTH + 1), nothing)
+    opening = GameTracing.TraceProgress{Float32}(
+        zeros(Float32, WIDTH), 0.0f0, 0, 0.0f0, 0.0f0, zeros(Float32, WIDTH), 1.0f0, false, false,
+    )
+    ended = GameTracing.ended_segment(
+        GameTracing.thrown_failure(SingularException(2)),
+        BifurcationKit.ContResult(iterator, state),
+        opening,
+    )
+    @test ended.progress == opening
+    @test ended.exception isa SingularException
 end
 
 @testset "the turn test is on by default, on oriented paths only ($element)" for element in (Float32, widen(Float32))
