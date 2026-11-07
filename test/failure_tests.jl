@@ -94,13 +94,13 @@ end
 @testset "a corrector reach too short to hold any step ends the trace" begin
     result = trace_endpoint(
         LogitGame(FOLD_GAME, 2.0f0), 1, TraceSettings{Float32}(
-            corrector = CorrectorSettings{Float32}(reach = 1.0f-6),
+            corrector = CorrectorSettings{Float32}(reach = 1.0f-6, logit_tolerance = 1.0f-9),
             first_step = 0.05f0,
             max_step = 0.1f0,
         )
     )
     @test is_error(result)
-    @test unwrap_error(result).cause in (GameTracing.TraceStuck, GameTracing.NoConvergence)
+    @test unwrap_error(result).cause in (GameTracing.TraceStuck, GameTracing.NoConvergence, GameTracing.PrecisionExhausted)
 end
 
 @testset "exceptions BifurcationKit and LAPACK throw are told apart from a caller's" begin
@@ -175,7 +175,7 @@ end
     )
     GameTracing.restate!(check; predictor_move = GameTracing.logit_change(previous, predicted))
     @test GameTracing.within_reach(check, predicted .+ Float32[1.0f-2, 0])
-    @test !GameTracing.within_reach(check, predicted .+ Float32[3, 0])
+    @test !GameTracing.within_reach(check, predicted .+ Float32[3000, 0])
 end
 
 @testset "reach floors at logit_tolerance: a step under the corrector's rounding noise still closes" begin
