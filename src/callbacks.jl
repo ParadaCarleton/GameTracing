@@ -378,15 +378,16 @@ end
 Whether `point` moved no logit further from the predictor's than `check.settings.reach` times the predictor's own
 largest logit move (`logit_change`). Logits are target-free, as the convergence test is; a weighted norm can shrink a
 branch jump (frozen Fisher weights) or swell a settled point (gaps `w = P G` at a far target).
+A point within `logit_tolerance` of the predictor is in reach at any step: below that distance the corrector's rounding
+noise dominates the step, and no point that near the predictor is another branch.
 """
 function within_reach(check::CorrectorReach, point::AbstractVector)::Bool
     if !(check.state[].predictor_move > 0)
         return true
     end
-    return within_limit(
-        scaled_limit(check.settings.reach, check.state[].predictor_move),
-        logit_change(check.predicted, point),
-    )
+    change = logit_change(check.predicted, point)
+    return change <= check.settings.logit_tolerance ||
+        within_limit(scaled_limit(check.settings.reach, check.state[].predictor_move), change)
 end
 
 """

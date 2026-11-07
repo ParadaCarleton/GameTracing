@@ -178,6 +178,22 @@ end
     @test !GameTracing.within_reach(check, predicted .+ Float32[3, 0])
 end
 
+@testset "reach floors at logit_tolerance: a step under the corrector's rounding noise still closes" begin
+    previous, predicted = Float32[0, 1.0f0], Float32[1.0f-8, 1.0f0]
+    check = GameTracing.CorrectorReach(
+        GameTracing.AcceptAll(),
+        CorrectorSettings{Float32}(),
+        TraceGeometry{Float32}(),
+        previous,
+        predicted,
+        1.0f0,
+    )
+    GameTracing.restate!(check; predictor_move = GameTracing.logit_change(previous, predicted))
+    tolerance = CorrectorSettings{Float32}().logit_tolerance
+    @test GameTracing.within_reach(check, predicted .+ Float32[tolerance / 2, 0])
+    @test !GameTracing.within_reach(check, predicted .+ Float32[2 * tolerance, 0])
+end
+
 @testset "a game that is non-finite at every positive precision fails at the first step" begin
     result = trace_endpoint(
         LogitGame(PoisonedPass(GAME, 0.0f0), TARGET_PRECISION),
