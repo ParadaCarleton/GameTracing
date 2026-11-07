@@ -351,6 +351,12 @@ end
     @test isnothing(first_loop(circle_branch(element, 3, 20, false)))
     line = [branch_record([element(index) / 10], element(index) / 20, index) for index in 1:60]
     @test isnothing(first_loop(line))
+    # A path that comes within a step of its anchor without its precision ever turning back is no loop.
+    rising = [(; record..., tangent_precision = abs(record.tangent_precision) + one(element)) for record in circle]
+    @test isnothing(first_loop(rising))
+    # A stalled record has no direction, so it turns nothing.
+    stalled = (; line[1]..., gap_tangent = [zero(element)], tangent_precision = zero(element))
+    @test GameTracing.tangent_turn(stalled, line[2]) == 0
     s_curve = [
         (; branch_record([element(index) / 10], sin(element(index) / 5), index)..., gap_tangent = [one(element)], tangent_precision = cos(element(index) / 5))
             for index in 1:60
