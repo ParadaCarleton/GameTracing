@@ -105,7 +105,7 @@ and so does any iterate whose logits are further from the predictor's than `sett
 largest logit move (`within_reach`); the step then halves. A predictor within `RESOLUTION_ULPS` ulps of each of the
 point's coordinates (`step_unresolved`) refuses that corrector and every later one (`unresolved`): no smaller step can
 add a point, so the trace ends as `TraceStuck`, or as `PrecisionExhausted` when the corrector before it stopped past its
-reach with a correction above `logit_tolerance` (`unresolved_noise`). On a smooth branch that distance is the branch's curvature
+reach (`unresolved_noise`). On a smooth branch that distance is the branch's curvature
 times `ds² / 2`, so halving brings any step under it, while an iterate that lands on another branch is far from it. A converged closing point is refused the same way past `reach`, past a largest probability KL
 `KL(corrected ‖ predicted)` of `settings.max_kl` (`largest_kl`). A predictor that did not move has no reach to compare.
 `accept_corrected(logits, ρ, converged)` then sees every other closing point. `previous` and `predicted` hold the
@@ -146,14 +146,14 @@ function no_reach_failure(::Type{E})::@NamedTuple{relative_precision::E, correct
 end
 
 """
-`check`'s noise record once its step is unresolved. When the last corrector stopped past its reach with a correction
-above `logit_tolerance`, halving reached the float type's resolution without closing a point: the corrections are
+`check`'s noise record once its step is unresolved. When the last corrector stopped past its reach, whatever its
+correction (one under `logit_tolerance` also fails to settle once the predictor is below the rounding noise), halving reached the float type's resolution without closing a point: the corrections are
 rounding noise, and the record confirms the precision exhausted there (`PrecisionExhausted`). `reach_failure` holds
 the last reach failure of the current step, with a NaN correction when there was none.
 """
 function unresolved_noise(check::CorrectorReach{C, E})::NoiseRecord{E} where {C, E <: Real}
     (; reach_failure, noise) = check.state[]
-    if !(reach_failure.correction > check.settings.logit_tolerance)
+    if isnan(reach_failure.correction)
         return noise
     end
     return NoiseRecord(noise.accuracy, (; reach_failure..., confirmed = true))
