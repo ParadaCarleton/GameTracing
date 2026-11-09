@@ -206,7 +206,7 @@ end
     )
     result = GameTracing.reached_state(
         progress,
-        (; step_length = 0.0f0, accepted_step = 0.0f0, exhausted = nothing, logit_accuracy = 0.0f0, unresolved = false, exception = "Stopping continuation."),
+        (; step_length = 0.0f0, accepted_step = 0.0f0, exhausted = nothing, logit_accuracy = 0.0f0, unresolved = false, predictor_move = 0.0f0, closings = 0, retcode = BifurcationKit.ReturnCode.Success, exception = "Stopping continuation."),
         LogitGame(GAME, TARGET_PRECISION),
         TraceSettings{Float32}(; max_steps = 10),
         (;),
@@ -278,7 +278,7 @@ end
     @test !progress.unmoved
     @test (progress.steps, progress.precision_max) == (1, moved.param)
     @test progress.gaps == moved.gaps && progress.relative_precision == moved.param
-    outcome = (; step_length = 0.0f0, accepted_step = 0.0f0, exhausted = nothing, logit_accuracy = 0.0f0, unresolved = false, exception = nothing)
+    outcome = (; step_length = 0.0f0, accepted_step = 0.0f0, exhausted = nothing, logit_accuracy = 0.0f0, unresolved = false, predictor_move = 0.0f0, closings = 0, retcode = BifurcationKit.ReturnCode.Success, exception = nothing)
     settings = TraceSettings{Float32}(; max_steps = 2)
     @test unwrap_error(
         GameTracing.reached_state(
@@ -383,7 +383,7 @@ end
     failure = unwrap_error(
         GameTracing.reached_state(
             progress,
-            (; step_length = zero(element), accepted_step = zero(element), exhausted = nothing, logit_accuracy = zero(element), unresolved = false, exception = nothing),
+            (; step_length = zero(element), accepted_step = zero(element), exhausted = nothing, logit_accuracy = zero(element), unresolved = false, predictor_move = 0.0f0, closings = 0, retcode = BifurcationKit.ReturnCode.Success, exception = nothing),
             game,
             TraceSettings{element}(; max_steps = 1000),
             (;),
