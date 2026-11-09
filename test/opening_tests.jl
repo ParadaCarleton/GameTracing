@@ -199,3 +199,17 @@ end
     end
     @info "accepted points of the trace to 1e6 up to precision 100" points = length(recorded)
 end
+
+@testset "the opening tangent is the exact bordered tangent, whatever the first-tangent divisor" begin
+    game = LogitGame(GAME, TARGET_PRECISION)
+    settings = TraceSettings{Float32}()
+    start = GameTracing.trace_start(game, zeros(Float32, WIDTH))
+    @test GameTracing.opening_factorization(game, start, settings) isa GameTracing.LU
+    @test isnothing(GameTracing.opening_factorization(LogitGame(NaNSlopePass(GAME), TARGET_PRECISION), start, settings))
+    results = [
+        unwrap(trace_endpoint(game, WIDTH, TraceSettings{Float32}(; first_tangent_divisor = divisor)))
+            for divisor in (1.0f0, 150.0f0, 1.0f4)
+    ]
+    @test allequal(result.steps for result in results)
+    @test all(result -> isapprox(result.logits, first(results).logits; atol = 1.0f-4), results)
+end

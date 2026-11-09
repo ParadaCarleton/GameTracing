@@ -1,6 +1,6 @@
 using BifurcationKit: BifurcationKit
 using ErrorTypes: Err, Ok
-using LinearAlgebra: LU
+using LinearAlgebra: LU, issuccess, lu
 """
     StepControl{E}(; distance_limit, growth_limit, turn_limit)
 
@@ -34,7 +34,8 @@ distance (`TraceGeometry`).
   `1 + a ((N - n) / N)²` after a corrector of `n` of its `N = corrector.newton_iterations` iterations.
 - `corrector`: a `CorrectorSettings`.
 - `geometry`: a `TraceGeometry`, the norm a trace steps in and its state weight. `first_tangent_divisor`:
-  the first tangent is the secant to a solve at `first_step / first_tangent_divisor`.
+  the first tangent is the exact bordered tangent at the flat start (`opening_factorization`), and the secant to a solve at
+  `first_step / first_tangent_divisor` only where that Jacobian is non-finite or singular.
 - `max_steps`: continuation steps before the trace fails as `NoConvergence`.
 - `tangent`: BifurcationKit's tangent algorithm, passed to PALC as is. `Bordered()` (the default) solves the bordered
   Jacobian system. `Secant()` extrapolates the last two points and saves that solve. Do not use it where a small payoff
@@ -368,6 +369,38 @@ function restart_opening(
 end
 
 """
+    opening_factorization(game, start, settings)
+
+The factored bordered Jacobian of `game` at the flat `start = [w; 0]` under PALC's arclength row along increasing
+precision, or `nothing` when it is non-finite or singular. The opening tangent solves it exactly, as a restart's does
+(`restart_opening`), so a branch that bends within `first_tangent_divisor`'s secant distance (a near crossing, where
+rounding in the second solve turns the secant by radians) starts along its true tangent. `nothing` leaves the secant start.
+"""
+function opening_factorization(
+        game::LogitGame,
+        start::AbstractVector{E},
+        settings::TraceSettings{E},
+    )::Union{Nothing, LU{E, Matrix{E}, Vector{Int}}} where {E <: Real}
+    width = length(start) - 1
+    palc = palc_geometry(settings.geometry, width, game.target_precision)
+    border = palc_border(palc.dot, E(palc.palc_state_weight), opening_direction(start))
+    system = branch_system!(BranchWorkspace(game, start), game, start, last(start))
+    bordered = [@view(system.jacobian[1:width, :]); transpose(border)]
+    if !all(isfinite, bordered)
+        return nothing
+    end
+    factored = lu(bordered; check = false)
+    return ifelse(issuccess(factored), factored, nothing)
+end
+
+"""The direction the opening tangent keeps: increasing precision, `[0; …; 0; 1]`."""
+opening_direction(start::AbstractVector{E}) where {E <: Real} = setindex!(zero(start), one(E), lastindex(start))
+
+"""The old tangent that orients the opening's exact tangent, or `nothing` (BifurcationKit's secant) where `opening_factorization` found none."""
+opening_tangent(start::AbstractVector, ::LU) = opening_direction(start)
+opening_tangent(::AbstractVector, ::Nothing) = nothing
+
+"""
     trace_endpoint(game, width, settings; keep_going, accept_corrected, redraw, context)
 
 Follow `game`'s branch of `width` logits from the flat start (zero logits, the only root at precision zero) to
@@ -418,14 +451,15 @@ function trace_endpoint(
         false,
         false,
     )
+    factorization = opening_factorization(game, traced_start, settings)
     finalise = TraceFinalise(
         keep_going,
         redraw,
-        RedrawSlot(game, false, settings.first_step),
+        restated(RedrawSlot(game, false, settings.first_step); factorization),
         settings.corrector,
     )
     return redrawn_trace(
-        guarded_trace(traced_start, nothing, settings, finalise, accept_corrected, opening),
+        guarded_trace(traced_start, opening_tangent(traced_start, factorization), settings, finalise, accept_corrected, opening),
         finalise,
         settings,
         accept_corrected,
