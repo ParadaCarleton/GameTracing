@@ -213,3 +213,16 @@ end
     @test allequal(result.steps for result in results)
     @test all(result -> isapprox(result.logits, first(results).logits; atol = 1.0f-4), results)
 end
+
+# With noise 0.1 below precision 1e-3 the secant to a solve at first_step / 150 turned 1.16 rad from the branch, and
+# BifurcationKit's turn test refused every step (TraceStuck, no accepted point), as on irv-extremism study draw 116.
+@testset "noise in the secant's solve does not stop the trace" begin
+    clean = unwrap(trace_endpoint(LogitGame(GAME, TARGET_PRECISION), WIDTH, TraceSettings{Float32}()))
+    noisy = trace_endpoint(
+        LogitGame(WindowNoisePass(GAME, 0.1f0, 1.0f-3), TARGET_PRECISION),
+        WIDTH,
+        TraceSettings{Float32}(; first_tangent_divisor = 150.0f0),
+    )
+    @test !is_error(noisy)
+    @test isapprox(unwrap(noisy).logits, clean.logits; atol = 1.0f-3)
+end
