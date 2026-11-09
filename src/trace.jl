@@ -551,6 +551,9 @@ function segment_outcome(
         ),
         logit_accuracy = corrector.state[].noise.accuracy,
         unresolved = isnothing(ran.exception) && corrector.state[].unresolved,
+        predictor_move = corrector.state[].predictor_move,
+        closings = corrector.state[].closings,
+        ran.retcode,
         ran.exception,
     )
 end
@@ -595,7 +598,7 @@ restarted_segment(
     ::AbstractVector,
     thrown::Thrown,
     opening::TraceProgress,
-)::NamedTuple = (; progress = opening, thrown.exception)
+)::NamedTuple = (; progress = opening, thrown.exception, retcode = BifurcationKit.ReturnCode.EmptyReturnCode)
 
 function restarted_segment(
         iterator::BifurcationKit.ContIterable,
@@ -621,7 +624,7 @@ opened_segment(
     ::BifurcationKit.ContIterable,
     thrown::Thrown,
     opened::TraceProgress,
-)::NamedTuple = (; progress = opened, thrown.exception)
+)::NamedTuple = (; progress = opened, thrown.exception, retcode = BifurcationKit.ReturnCode.EmptyReturnCode)
 
 function opened_segment(
         iterator::BifurcationKit.ContIterable,
@@ -644,20 +647,22 @@ function continued_segment(
         opened::TraceProgress,
     )::NamedTuple
     # `guarded_continuation!` runs before `ended_segment` reads the branch it filled.
-    return ended_segment(guarded_continuation!(iterator, state, branch), branch, opened)
+    return ended_segment(guarded_continuation!(iterator, state, branch), branch, opened, state.retcode)
 end
 
 ended_segment(
     ::Ended,
     branch::BifurcationKit.ContResult,
     opened::TraceProgress,
-)::NamedTuple = (; progress = branch_progress(branch.branch, opened), exception = nothing)
+    retcode::BifurcationKit.ReturnCode.T,
+)::NamedTuple = (; progress = branch_progress(branch.branch, opened), exception = nothing, retcode)
 
 ended_segment(
     thrown::Thrown,
     branch::BifurcationKit.ContResult,
     opened::TraceProgress,
-)::NamedTuple = (; progress = branch_progress(branch.branch, opened), thrown.exception)
+    retcode::BifurcationKit.ReturnCode.T,
+)::NamedTuple = (; progress = branch_progress(branch.branch, opened), thrown.exception, retcode)
 
 """`restart_opening`, or the `Thrown` failure that `expected_failure` names; any other exception propagates."""
 function guarded_restart(
@@ -800,6 +805,14 @@ function reached_state(
         :loop
     elseif progress.steps >= settings.max_steps
         :max_steps
+    elseif outcome.retcode == BifurcationKit.ReturnCode.DsLessThanMin && isnan(outcome.predictor_move)
+        :nonfinite_predictor
+    elseif outcome.retcode == BifurcationKit.ReturnCode.DsLessThanMin && outcome.closings > 0
+        :rejected_after_convergence
+    elseif outcome.retcode == BifurcationKit.ReturnCode.DsLessThanMin
+        :step_floor
+    elseif outcome.retcode == BifurcationKit.ReturnCode.Finalized
+        :finalized
     else
         :stopped_short
     end
@@ -807,7 +820,7 @@ function reached_state(
     return Err(
         TraceFailure(
             STOP_CAUSES[reason],
-            stopped_context(progress, outcome, target_precision, context),
+            (; stopped_context(progress, outcome, target_precision, context)..., reason),
         )
     )
 end
@@ -816,6 +829,7 @@ end
 const STOP_CAUSES = (;
     uncorrected_start = TraceStuck, solver_blowup = Singular, max_steps = NoConvergence, unmoved = TraceStuck, unresolved_step = TraceStuck, loop = TraceStuck,
     stopped_short = TraceStuck,
+    nonfinite_predictor = NotFinite, rejected_after_convergence = TraceStuck, step_floor = TraceStuck, finalized = TraceStuck,
 )
 
 """
@@ -842,6 +856,7 @@ function stopped_context(
             progress.tangent_precision .* progress.gaps,
         progress.tangent_precision,
         logit_accuracy = E(outcome.logit_accuracy),
+        outcome.predictor_move, outcome.closings, outcome.retcode,
         outcome.exception,
     )
 end

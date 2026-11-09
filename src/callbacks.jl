@@ -60,12 +60,13 @@ struct NoiseRecord{E <: Real}
 end
 
 """
-    CorrectorState(step_length, predictor_move, correction, stalls, settled_here, noise, unresolved, reach_failure)
+    CorrectorState(step_length, predictor_move, correction, stalls, settled_here, noise, unresolved, reach_failure, closings)
 
 The scalars a `CorrectorReach` carries between BifurcationKit's calls: the current step's `step_length` and its
 predictor's largest logit change `predictor_move`; the current solve's last `correction` in logits, its
-non-contracting corrections in a row (`stalls`) and whether it settled (`settled_here`); and the trace's `noise`
-(`NoiseRecord`).
+non-contracting corrections in a row (`stalls`) and whether it settled (`settled_here`); the trace's `noise`
+(`NoiseRecord`); and the `closings`, the correctors that closed converged and passed the reach, KL and
+`accept_corrected` tests (BifurcationKit's own orientation and turn tests may still refuse them).
 """
 struct CorrectorState{E <: Real}
     step_length::E
@@ -76,6 +77,7 @@ struct CorrectorState{E <: Real}
     noise::NoiseRecord{E}
     unresolved::Bool
     reach_failure::@NamedTuple{relative_precision::E, correction::E}
+    closings::Int
 end
 
 """`state` with the given fields replaced."""
@@ -89,8 +91,9 @@ function restated(
         noise::NoiseRecord{E} = state.noise,
         unresolved::Bool = state.unresolved,
         reach_failure::@NamedTuple{relative_precision::E, correction::E} = state.reach_failure,
+        closings::Integer = state.closings,
     )::CorrectorState{E} where {E <: Real}
-    return CorrectorState{E}(step_length, predictor_move, correction, stalls, settled_here, noise, unresolved, reach_failure)
+    return CorrectorState{E}(step_length, predictor_move, correction, stalls, settled_here, noise, unresolved, reach_failure, closings)
 end
 
 """
@@ -180,7 +183,7 @@ function CorrectorReach(
         collect(previous),
         collect(predicted),
         collect(previous),
-        Ref(CorrectorState{E}(step_length, E(NaN32), E(NaN32), 0, false, NoiseRecord(zero(E), nothing), false, no_reach_failure(E))),  # lint: ref  see `state`
+        Ref(CorrectorState{E}(step_length, E(NaN32), E(NaN32), 0, false, NoiseRecord(zero(E), nothing), false, no_reach_failure(E), 0)),  # lint: ref  see `state`
     )
 end
 
@@ -274,6 +277,9 @@ function (check::CorrectorReach{C, E})(
     end
     if !check.accept_corrected(logits_at(iterate.x), iterate.p, converged)
         return false
+    end
+    if converged
+        restate!(check; closings = check.state[].closings + 1)
     end
     # A solve that settled at its start has no correction (NaN). An unsettled exact root's next correction is 0.
     closing_correction = ifelse(check.state[].settled_here, check.state[].correction, zero(E))

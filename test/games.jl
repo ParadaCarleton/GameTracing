@@ -535,3 +535,23 @@ function probability_bound(pass::Any, logits::AbstractVector, precision::Real, r
     logit_error = opnorm(inv(jacobian), Inf32) * residual + 32 * eps(Float32) * maximum(abs, logits)
     return slope * logit_error
 end
+
+"""A pass that gives a NaN precision slope past `onset`, so the tangent and every predictor there are non-finite where the residual and Jacobian are not."""
+struct NaNPrecisionSlopePass{P, E <: Real}
+    pass::P
+    onset::E
+end
+
+function (pass::NaNPrecisionSlopePass)(
+        gain::AbstractVector,
+        gain_slope::AbstractMatrix,
+        gain_precision_slope::AbstractVector,
+        logits::AbstractVector,
+        precision::Real,
+    )::Nothing
+    pass.pass(gain, gain_slope, gain_precision_slope, logits, precision)
+    if precision > pass.onset
+        fill!(gain_precision_slope, NaN32)
+    end
+    return nothing
+end

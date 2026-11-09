@@ -396,6 +396,7 @@ end
         GameTracing.thrown_failure(SingularException(2)),
         BifurcationKit.ContResult(iterator, state),
         opening,
+        BifurcationKit.ReturnCode.EmptyReturnCode,
     )
     @test ended.progress == opening
     @test ended.exception isa SingularException
