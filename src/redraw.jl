@@ -48,7 +48,7 @@ function restated(
         pending::Bool = slot.pending,
         step_length::Real = slot.step_length,
         factorization::Union{Nothing, LU{E, Matrix{E}, Vector{Int}}} = slot.factorization,
-        shift::Vector{E} = slot.shift,
+        shift::AbstractVector{E} = slot.shift,
     )::RedrawSlot{G, E} where {G <: LogitGame, E <: Real}
     return RedrawSlot{G, E}(game, pending, step_length, factorization, shift)
 end
@@ -122,6 +122,9 @@ function (check::RootShift{E})(game::LogitGame)::ShiftedGame{typeof(game), E} wh
     return ShiftedGame(game, point, factorization, shift, move, within_limit(check.limit, move))
 end
 
+"""The root shift a restart on `redrawn` starts from: its own when `within` the corrector's reach, else none, so a root out of reach fails stuck at the swap instead of jumping branches."""
+restart_shift(redrawn::ShiftedGame)::Vector{<:Real} = redrawn.within ? redrawn.shift : zero(redrawn.shift)
+
 """
     swapped(slot, check, redrawn)
 
@@ -159,5 +162,5 @@ function swapped(
             )
         )
     end
-    return restated(slot; redrawn.game, pending = true, redrawn.factorization, redrawn.shift)
+    return restated(slot; redrawn.game, pending = true, redrawn.factorization, restart_shift(redrawn))
 end
