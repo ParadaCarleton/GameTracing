@@ -1,5 +1,6 @@
 using ErrorTypes: is_error, unwrap, unwrap_error
 using Logging: Debug
+using Random: RandomDevice, Xoshiro
 using Test: collect_test_logs
 
 const REDRAW_SETTINGS = TraceSettings{Float32}()
@@ -310,4 +311,34 @@ end
     @test is_error(result)
     @test unwrap_error(result).cause == GameTracing.NoConvergence
     @test unwrap_error(result).context.relative_precision < 1
+end
+
+"""An `accept_corrected` that refuses the first converged corrector beyond relative precision `after` and accepts all others."""
+struct RefuseOnceBeyond{E <: Real}
+    after::E
+    refused::Base.RefValue{Bool}
+end
+
+function (hook::RefuseOnceBeyond)(::AbstractVector, relative_precision::Real, ::Bool)::Bool
+    if relative_precision <= hook.after || hook.refused[]
+        return true
+    end
+    hook.refused[] = true
+    return false
+end
+
+@testset "a step refused right after a swap shrinks and proceeds from the new map's root: no reach stop" begin
+    seed = rand(RandomDevice(), UInt64)
+    rng = Xoshiro(seed)
+    swap = MapSwap(NEAR_SWAP.before, NEAR_SWAP.after, NEAR_SWAP.precision, 0.3f0 + 0.3f0 * rand(rng, Float32), NEAR_SWAP.width)
+    point = swap_point(swap)
+    refuse = RefuseOnceBeyond(point.relative_precision, Ref(false))
+    redraw = SwapAt(LogitGame(swap.after, swap.precision), swap.swap_level)
+    logs, result = collect_test_logs(; min_level = Debug) do
+        trace_endpoint(LogitGame(swap.before, swap.precision), swap.width, REDRAW_SETTINGS; redraw, accept_corrected = refuse)
+    end
+    reasons = [record.kwargs[:reason] for record in logs if record.message == "corrector stopped"]
+    passed = refuse.refused[] && !is_error(result) && :reach ∉ reasons && on_map(result, swap.after, swap.precision)
+    passed || @info "refused-step-after-swap failed" seed reasons
+    @test passed
 end
