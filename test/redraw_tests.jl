@@ -313,17 +313,18 @@ end
     @test unwrap_error(result).context.relative_precision < 1
 end
 
-"""An `accept_corrected` that refuses the first converged corrector beyond relative precision `after` and accepts all others."""
+"""An `accept_corrected` that refuses the first `budget` converged correctors beyond relative precision `after`, halving the step each time, and accepts all others."""
 struct RefuseOnceBeyond{E <: Real}
     after::E
-    refused::Base.RefValue{Bool}
+    budget::Int
+    refused::Base.RefValue{Int}
 end
 
 function (hook::RefuseOnceBeyond)(::AbstractVector, relative_precision::Real, ::Bool)::Bool
-    if relative_precision <= hook.after || hook.refused[]
+    if relative_precision <= hook.after || hook.refused[] >= hook.budget
         return true
     end
-    hook.refused[] = true
+    hook.refused[] += 1
     return false
 end
 
@@ -332,13 +333,13 @@ end
     rng = Xoshiro(seed)
     swap = MapSwap(NEAR_SWAP.before, NEAR_SWAP.after, NEAR_SWAP.precision, 0.3f0 + 0.3f0 * rand(rng, Float32), NEAR_SWAP.width)
     point = swap_point(swap)
-    refuse = RefuseOnceBeyond(point.relative_precision, Ref(false))
+    refuse = RefuseOnceBeyond(point.relative_precision, 12, Ref(0))
     redraw = SwapAt(LogitGame(swap.after, swap.precision), swap.swap_level)
     logs, result = collect_test_logs(; min_level = Debug) do
         trace_endpoint(LogitGame(swap.before, swap.precision), swap.width, REDRAW_SETTINGS; redraw, accept_corrected = refuse)
     end
     reasons = [record.kwargs[:reason] for record in logs if record.message == "corrector stopped"]
-    passed = refuse.refused[] && !is_error(result) && :reach ∉ reasons && on_map(result, swap.after, swap.precision)
+    passed = refuse.refused[] == refuse.budget && !is_error(result) && :reach ∉ reasons && on_map(result, swap.after, swap.precision)
     passed || @info "refused-step-after-swap failed" seed reasons
     @test passed
 end
