@@ -162,5 +162,5 @@ function swapped(
             )
         )
     end
-    return restated(slot; redrawn.game, pending = true, redrawn.factorization, restart_shift(redrawn))
+    return restated(slot; redrawn.game, pending = true, redrawn.factorization, shift = restart_shift(redrawn))
 end
