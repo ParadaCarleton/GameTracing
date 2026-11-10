@@ -1,6 +1,6 @@
 using BifurcationKit: BifurcationKit
 using ErrorTypes: Err, Ok
-using LinearAlgebra: LU, issuccess, lu
+using LinearAlgebra: LU
 """
     StepControl{E}(; distance_limit, growth_limit, turn_limit)
 
