@@ -1,4 +1,5 @@
 using ErrorTypes: is_error, unwrap, unwrap_error
+using LinearAlgebra: I, lu
 using Random: AbstractRNG, Xoshiro
 
 # Random normal-form games whose trace to precision 1e6 once opened at λ ≈ 42426 and stalled off the map.
@@ -200,28 +201,36 @@ end
     @info "accepted points of the trace to 1e6 up to precision 100" points = length(recorded)
 end
 
-@testset "the opening tangent is the exact bordered tangent, whatever the first-tangent divisor" begin
-    game = LogitGame(GAME, TARGET_PRECISION)
-    settings = TraceSettings{Float32}()
-    start = GameTracing.trace_start(game, zeros(Float32, WIDTH))
-    @test GameTracing.opening_factorization(game, start, settings) isa GameTracing.LU
-    @test isnothing(GameTracing.opening_factorization(LogitGame(NaNSlopePass(GAME), TARGET_PRECISION), start, settings))
-    results = [
-        unwrap(trace_endpoint(game, WIDTH, TraceSettings{Float32}(; first_tangent_divisor = divisor)))
-            for divisor in (1.0f0, 150.0f0, 1.0f4)
-    ]
-    @test allequal(result.steps for result in results)
-    @test all(result -> isapprox(result.logits, first(results).logits; atol = 1.0f-4), results)
+"""The factored bordered tangent of a restart (`restart_tangent`), up to positive scale: the opening tangent's reference."""
+function factored_opening_tangent(game, start, settings)
+    width = length(start) - 1
+    palc = GameTracing.palc_geometry(settings.geometry, width, game.target_precision)
+    direction = setindex!(zero(start), one(eltype(start)), lastindex(start))
+    border = GameTracing.palc_border(palc.dot, eltype(start)(palc.palc_state_weight), direction)
+    system = GameTracing.branch_system!(GameTracing.BranchWorkspace(game, start), game, start, last(start))
+    return lu([@view(system.jacobian[1:width, :]); transpose(border)]) \ direction
 end
 
-# With noise 0.1 below precision 1e-3 the secant to a solve at first_step / 150 turned 1.16 rad from the branch, and
+@testset "at precision zero the gap Jacobian is the identity and the opening tangent is the factored tangent ($width)" for width in (2, 3, 5)
+    rng = Xoshiro(0x0123456789abcdef + width)
+    game = LogitGame(LinearGainPass(randn(rng, Float32, width, width), randn(rng, Float32, width)), TARGET_PRECISION)
+    settings = TraceSettings{Float32}()
+    start = GameTracing.trace_start(game, zeros(Float32, width))
+    system = GameTracing.branch_system!(GameTracing.BranchWorkspace(game, start), game, start, last(start))
+    @test system.jacobian[1:width, 1:width] == I(width)
+    closed = GameTracing.opening_tangent(game, start).tangent
+    factored = factored_opening_tangent(game, start, settings)
+    @test closed ./ last(closed) ≈ factored ./ last(factored) atol = 1.0f-5
+end
+
+# With noise 0.1 below precision 1e-3 the secant to a solve at first_step / 150 (the old opening) turned 1.16 rad from the branch, and
 # BifurcationKit's turn test refused every step (TraceStuck, no accepted point), as on irv-extremism study draw 116.
 @testset "noise in the secant's solve does not stop the trace" begin
     clean = unwrap(trace_endpoint(LogitGame(GAME, TARGET_PRECISION), WIDTH, TraceSettings{Float32}()))
     noisy = trace_endpoint(
         LogitGame(WindowNoisePass(GAME, 0.1f0, 1.0f-3), TARGET_PRECISION),
         WIDTH,
-        TraceSettings{Float32}(; first_tangent_divisor = 150.0f0),
+        TraceSettings{Float32}(),
     )
     @test !is_error(noisy)
     @test isapprox(unwrap(noisy).logits, clean.logits; atol = 1.0f-3)
