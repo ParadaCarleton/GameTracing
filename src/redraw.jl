@@ -123,7 +123,9 @@ function (check::RootShift{E})(game::LogitGame)::ShiftedGame{typeof(game), E} wh
 end
 
 """The root shift a restart on `redrawn` starts from: its own when `within` the corrector's reach, else none, so a root out of reach fails stuck at the swap instead of jumping branches."""
-restart_shift(redrawn::ShiftedGame{G, E})::Vector{E} where {G, E} = redrawn.within ? redrawn.shift : zero(redrawn.shift)
+function restart_shift(redrawn::ShiftedGame{G, E})::Vector{E} where {G <: LogitGame, E <: Real}
+    return redrawn.within ? redrawn.shift : zero(redrawn.shift)
+end
 
 """
     swapped(slot, check, redrawn)
