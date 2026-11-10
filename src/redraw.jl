@@ -122,17 +122,12 @@ function (check::RootShift{E})(game::LogitGame)::ShiftedGame{typeof(game), E} wh
     return ShiftedGame(game, point, factorization, shift, move, within_limit(check.limit, move))
 end
 
-"""The root shift a restart on `redrawn` starts from: its own when `within` the corrector's reach, else none, so a root out of reach fails stuck at the swap instead of jumping branches."""
-function restart_shift(redrawn::ShiftedGame{G, E})::Vector{E} where {G <: LogitGame, E <: Real}
-    return redrawn.within ? redrawn.shift : zero(redrawn.shift)
-end
-
 """
     swapped(slot, check, redrawn)
 
 The `RedrawSlot` after a `redraw` hook's result `redrawn`, `slot` itself unless it swaps the game: `nothing` and the current game do not; a new game
 swaps as the `ShiftedGame` that `check` (`RootShift`) builds for it, and a `ShiftedGame` the hook returned must come
-from `check`. A swap sets `pending`, the factorization and the root shift the restart reads. A game of another type, or with another
+from `check`. A swap sets `pending`, the factorization and the root shift the restart reads; a shift beyond the corrector's reach (not `within`) is dropped, so a root out of reach fails stuck at the swap instead of jumping branches. A game of another type, or with another
 target precision, is a caller error: the trace's relative precision would change meaning.
 """
 function swapped(slot::RedrawSlot{G, E}, ::RootShift, ::Nothing)::RedrawSlot{G, E} where {G <: LogitGame, E <: Real}
@@ -164,5 +159,5 @@ function swapped(
             )
         )
     end
-    return restated(slot; redrawn.game, pending = true, redrawn.factorization, shift = restart_shift(redrawn))
+    return restated(slot; redrawn.game, pending = true, redrawn.factorization, shift = redrawn.within ? redrawn.shift : zero(redrawn.shift))
 end
