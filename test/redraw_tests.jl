@@ -313,7 +313,7 @@ end
     @test unwrap_error(result).context.relative_precision < 1
 end
 
-"""An `accept_corrected` that refuses the first `budget` converged correctors beyond relative precision `after`, halving the step each time, and accepts all others."""
+"""An `accept_corrected` that refuses the refuse 6 steps|first `budget` converged correctors beyond relative precision `after`, halving the step each time, and accepts all others."""
 struct RefuseOnceBeyond{E <: Real}
     after::E
     budget::Int
@@ -333,7 +333,7 @@ end
     rng = Xoshiro(seed)
     swap = MapSwap(NEAR_SWAP.before, NEAR_SWAP.after, NEAR_SWAP.precision, 0.3f0 + 0.3f0 * rand(rng, Float32), NEAR_SWAP.width)
     point = swap_point(swap)
-    refuse = RefuseOnceBeyond(point.relative_precision, 12, Ref(0))
+    refuse = RefuseOnceBeyond(point.relative_precision, 6, Ref(0))
     redraw = SwapAt(LogitGame(swap.after, swap.precision), swap.swap_level)
     logs, result = collect_test_logs(; min_level = Debug) do
         trace_endpoint(LogitGame(swap.before, swap.precision), swap.width, REDRAW_SETTINGS; redraw, accept_corrected = refuse)
