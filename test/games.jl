@@ -555,3 +555,29 @@ function (pass::NaNPrecisionSlopePass)(
     end
     return nothing
 end
+
+"""
+A pass that adds deterministic noise of size `noise` to the gain at precisions in `(0, window)` and none past it: a branch
+whose second solve at the opening's secant distance is rounding noise, and whose endpoint is the clean game's.
+"""
+struct WindowNoisePass{P, E <: Real}
+    pass::P
+    noise::E
+    window::E
+end
+
+function (pass::WindowNoisePass)(
+        gain::AbstractVector,
+        gain_slope::AbstractMatrix,
+        gain_precision_slope::AbstractVector,
+        logits::AbstractVector{E},
+        precision::Real,
+    )::Nothing where {E <: Real}
+    pass.pass(gain, gain_slope, gain_precision_slope, logits, precision)
+    if 0 < precision < pass.window
+        for index in eachindex(gain)
+            gain[index] += pass.noise * (E(hash((index, sum(logits))) % 65536) / 32768 - one(E))
+        end
+    end
+    return nothing
+end

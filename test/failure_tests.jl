@@ -189,7 +189,8 @@ end
     )
     @test is_error(result)
     @test unwrap_error(result).cause == GameTracing.TraceStuck
-    @test unwrap_error(result).context.steps == 0
+    # The two-point start counts as BifurcationKit's step 1; no point was accepted off the flat start.
+    @test unwrap_error(result).context.relative_precision == 0
 end
 
 @testset "BifurcationKit's report of an uncorrectable start is a stuck trace" begin

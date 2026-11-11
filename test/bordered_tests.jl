@@ -154,7 +154,6 @@ end
             settings,
             settings.first_step,
             settings.max_steps,
-            settings.first_tangent_divisor,
         );
         verbosity = 0,
     )

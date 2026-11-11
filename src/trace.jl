@@ -18,7 +18,7 @@ Base.@kwdef struct StepControl{E <: Real}
 end
 
 """
-    TraceSettings{E}(; first_step, max_step, aggressiveness, geometry, first_tangent_divisor,
+    TraceSettings{E}(; first_step, max_step, aggressiveness, geometry,
                      corrector, max_steps, tangent, bordered_solver, step_control, orientation_check, palc_corrector,
                      palc_options, continuation_options)
 
@@ -33,8 +33,8 @@ distance (`TraceGeometry`).
 - `aggressiveness` (BifurcationKit's `a`): without a `step_control` growth limit, a step grows by
   `1 + a ((N - n) / N)²` after a corrector of `n` of its `N = corrector.newton_iterations` iterations.
 - `corrector`: a `CorrectorSettings`.
-- `geometry`: a `TraceGeometry`, the norm a trace steps in and its state weight. `first_tangent_divisor`:
-  the first tangent is the secant to a solve at `first_step / first_tangent_divisor`.
+- `geometry`: a `TraceGeometry`, the norm a trace steps in and its state weight. The first tangent is the exact
+  tangent at the flat start (`opening_tangent`).
 - `max_steps`: continuation steps before the trace fails as `NoConvergence`.
 - `tangent`: BifurcationKit's tangent algorithm, passed to PALC as is. `Bordered()` (the default) solves the bordered
   Jacobian system. `Secant()` extrapolates the last two points and saves that solve. Do not use it where a small payoff
@@ -66,7 +66,6 @@ struct TraceSettings{
     max_step::E
     aggressiveness::E
     geometry::TraceGeometry{E}
-    first_tangent_divisor::E
     corrector::CorrectorSettings{E}
     max_steps::Int
     tangent::T
@@ -84,7 +83,6 @@ function TraceSettings{E}(;
         max_step::Real = 1000.0f0,
         aggressiveness::Real = 0.5f0,
         geometry::TraceGeometry{E} = TraceGeometry{E}(),
-        first_tangent_divisor::Real = 150.0f0,
         corrector::CorrectorSettings{E} = CorrectorSettings{E}(),
         max_steps::Integer = 2_000,
         tangent::T = BifurcationKit.Bordered(),
@@ -98,7 +96,7 @@ function TraceSettings{E}(;
         E <: Real, T <: BifurcationKit.AbstractTangentComputation, C, P <: NamedTuple, O <: NamedTuple,
     }
     return TraceSettings{E, T, C, P, O}(
-        E(first_step), E(max_step), E(aggressiveness), geometry, E(first_tangent_divisor), corrector,
+        E(first_step), E(max_step), E(aggressiveness), geometry, corrector,
         Int(max_steps), tangent, bordered_solver, step_control, orientation_check, palc_corrector, palc_options,
         continuation_options,
     )
@@ -214,22 +212,19 @@ end
 
 """
 BifurcationKit's continuation parameters for `settings`, from relative precision zero to one, with first step
-`step_length`, at most `max_steps` steps and first tangent the secant to a solve at `step_length / first_tangent_divisor`
-in the continuation parameter. Eigenvalues, fold and bifurcation detection serve bifurcation diagrams; the trace reads
+`step_length` and at most `max_steps` steps. Eigenvalues, fold and bifurcation detection serve bifurcation diagrams; the trace reads
 only its endpoint.
 """
 function continuation_options(
         settings::TraceSettings{E},
         step_length::E,
         max_steps::Integer,
-        first_tangent_divisor::E,
     )::BifurcationKit.ContinuationPar where {E <: Real}
     own = (;
         ds = step_length,
         dsmin = zero(E),
         dsmax = settings.max_step,
         a = settings.aggressiveness,
-        η = first_tangent_divisor,
         p_min = zero(E),
         p_max = one(E),
         max_steps,
@@ -249,18 +244,6 @@ function continuation_options(
         tol_param_bisection_event = zero(E),
     )
     return BifurcationKit.ContinuationPar(; merge(own, settings.continuation_options)...)
-end
-
-"""
-BifurcationKit's `η` for a trace from the flat start to `target_precision`: its secant solve, `step / η` in the relative
-precision, lies `step / settings.first_tangent_divisor` from the start in the trace's distance (`precision_length`).
-"""
-function opening_divisor(settings::TraceSettings{E}, target_precision::Real)::E where {
-        E <:
-        Real,
-    }
-    return settings.first_tangent_divisor *
-        precision_length(settings.geometry, zero(E), E(target_precision))
 end
 
 """
@@ -287,7 +270,6 @@ function trace_iterator(
             settings,
             step_length,
             max_steps,
-            opening_divisor(settings, game.target_precision),
         ),
         finalise,
         corrector,
@@ -313,18 +295,11 @@ function continuation_iterator(
 end
 
 """
-    opened_state(iterator, start, ::Nothing) / opened_state(iterator, start, opening)
+    opened_state(iterator, start, opening)
 
-BifurcationKit's first continuation state of `iterator` from `start`. From the flat start the first tangent is BifurcationKit's
-secant to a second solve. After a redraw, the run opens through BifurcationKit's two-point start toward the point
-`opening`, whose secant is the restart tangent.
+BifurcationKit's first continuation state of `iterator` from `start`: its two-point start toward the point
+`opening`, whose secant is the opening or restart tangent.
 """
-opened_state(
-    iterator::BifurcationKit.ContIterable,
-    ::AbstractVector,
-    ::Nothing,
-)::BifurcationKit.ContState = first(iterate(iterator))
-
 function opened_state(
         iterator::BifurcationKit.ContIterable,
         start::AbstractVector,
@@ -355,16 +330,48 @@ function restart_opening(
         old_tangent::AbstractVector{E},
     )::NamedTuple where {E <: Real}
     algorithm = iterator.alg
+    tangent = restart_tangent(factorization, old_tangent, E(algorithm.θ), algorithm.orientation_dot)
+    return opening_along(iterator, start, tangent)
+end
+
+"""`(; opening, gap_tangent, tangent_precision)` of `iterator` from `start` along `tangent`, scaled to unit length in the trace's norm."""
+function opening_along(
+        iterator::BifurcationKit.ContIterable,
+        start::AbstractVector{E},
+        tangent::AbstractVector{E},
+    )::NamedTuple where {E <: Real}
+    algorithm = iterator.alg
     dot, palc_state_weight = algorithm.dotθ, E(algorithm.θ)
     # A Fisher trace's weights are those of the point it restarts from.
     BifurcationKit.reweight!(dot, BifurcationKit.BorderedArray(start, last(start)))
-    tangent = restart_tangent(factorization, old_tangent, palc_state_weight, algorithm.orientation_dot)
     length_in_norm = sqrt(palc_product(dot, palc_state_weight, tangent, tangent))
     return (;
         opening = start .+ (iterator.contparams.ds / length_in_norm) .* tangent,
         gap_tangent = tangent[begin:(end - 1)] ./ length_in_norm,
         tangent_precision = last(tangent) / length_in_norm,
     )
+end
+
+"""
+    OpeningTangent(tangent)
+
+The tangent of a branch's opening at the flat start, `[-∂F/∂ρ; 1]` in `(w, ρ)`, as `opening_tangent` returns it.
+"""
+struct OpeningTangent{E <: Real}
+    tangent::Vector{E}
+end
+
+"""
+    opening_tangent(game, start)
+
+The branch's `OpeningTangent` at the flat `start = [w; 0]`. At precision zero play is uniform whatever the gaps, so
+`∂F/∂w` is the identity and the tangent is `(-∂F/∂ρ, 1)`, read from one evaluation of the game's Jacobian. A secant
+start instead turns by radians at a near crossing, where rounding in its second solve is large against the branch's bend.
+"""
+function opening_tangent(game::LogitGame, start::AbstractVector{E})::OpeningTangent{E} where {E <: Real}
+    width = length(start) - 1
+    system = branch_system!(BranchWorkspace(game, start), game, start, last(start))
+    return OpeningTangent([-system.jacobian[1:width, end]; one(E)])
 end
 
 """
@@ -425,7 +432,7 @@ function trace_endpoint(
         settings.corrector,
     )
     return redrawn_trace(
-        guarded_trace(traced_start, nothing, settings, finalise, accept_corrected, opening),
+        guarded_trace(traced_start, opening_tangent(game, traced_start), settings, finalise, accept_corrected, opening),
         finalise,
         settings,
         accept_corrected,
@@ -437,8 +444,8 @@ end
     redrawn_trace(outcome, finalise, settings, accept_corrected, context)
 
 The `TraceResult` of a trace segment that ended with `outcome`. When `redraw` swapped the game there, the trace
-restarts on the new game from the last accepted point (`outcome.progress`), a root of the old game, as a new segment
-counted on from its steps.
+restarts on the new game from the last accepted point (`outcome.progress`), a root of the old game, moved by the swap's
+root shift onto the new game's root, as a new segment counted on from its steps.
 """
 function redrawn_trace(
         outcome::NamedTuple,
@@ -459,7 +466,7 @@ function redrawn_trace(
     return redrawn_trace(
         with_earlier_accuracy(
             guarded_trace(
-                [progress.gaps; progress.relative_precision],
+                [progress.gaps; progress.relative_precision] .+ slot.shift,
                 [progress.gap_tangent; progress.tangent_precision],
                 settings,
                 finalise,
@@ -489,14 +496,14 @@ leaves: the progress after it (`branch_progress`), the step length its last corr
 accepted point (the slot's, carried from an earlier segment when this one accepted none), the corrector's confirmed stall
 at rounding noise (or `nothing`), the largest last correction of an accepted point, whether its predictor fell below
 the float type's resolution (`step_unresolved`), and `nothing` for a segment that
-ran, else the third-party failure it ended on. From the flat start (`old_tangent` is `nothing`) the first tangent is
-BifurcationKit's secant; a restart after a redraw opens along `restart_tangent`, oriented by `old_tangent`.
+ran, else the third-party failure it ended on. The segment opens along `restart_tangent`, oriented by `old_tangent`
+(`opening_tangent` from the flat start).
 BifurcationKit throws a `String` when Newton misses its first point and an `ErrorException` at its second; a
 non-finite Jacobian reaches LAPACK, and so does a singular restart tangent. Any other exception propagates.
 """
 function guarded_trace(
         start::AbstractVector{E},
-        old_tangent::Union{Nothing, AbstractVector{E}},
+        old_tangent::Union{AbstractVector{E}, OpeningTangent{E}},
         settings::TraceSettings{E},
         finalise::TraceFinalise,
         accept_corrected::Any,
@@ -582,7 +589,7 @@ function segment_branch(
         iterator::BifurcationKit.ContIterable,
         start::AbstractVector{E},
         factorization::Union{Nothing, LU{E}},
-        old_tangent::Union{Nothing, AbstractVector{E}},
+        old_tangent::Union{AbstractVector{E}, OpeningTangent{E}},
         opening::TraceProgress{E},
     )::NamedTuple where {E <: Real}
     return restarted_segment(
@@ -617,14 +624,8 @@ function restarted_segment(
         opening.unmoved,
         opening.looped,
     )
-    return opened_segment(iterator, guarded_state(iterator, start, restart.opening), opened)
+    return opened_segment(iterator, opened_state(iterator, start, restart.opening), opened)
 end
-
-opened_segment(
-    ::BifurcationKit.ContIterable,
-    thrown::Thrown,
-    opened::TraceProgress,
-)::NamedTuple = (; progress = opened, thrown.exception, retcode = BifurcationKit.ReturnCode.EmptyReturnCode)
 
 function opened_segment(
         iterator::BifurcationKit.ContIterable,
@@ -679,19 +680,6 @@ function guarded_restart(
     end
 end
 
-"""`opened_state`, or the `Thrown` failure that `expected_failure` names; any other exception propagates."""
-function guarded_state(
-        iterator::BifurcationKit.ContIterable,
-        start::AbstractVector,
-        opening::Union{Nothing, AbstractVector},
-    )::Union{BifurcationKit.ContState, GuardedEnd}
-    try
-        return opened_state(iterator, start, opening)
-    catch exception
-        return thrown_failure(exception)
-    end
-end
-
 """BifurcationKit's `continuation!`: `Ended` once it ends, or the `Thrown` failure that `expected_failure` names."""
 function guarded_continuation!(
         iterator::BifurcationKit.ContIterable,
@@ -721,19 +709,9 @@ expected_failure(exception::Any)::Bool = uncorrected_start(exception) ||
 """
     restart_opening(iterator, start, factorization, old_tangent, opening)
 
-The flat start (`old_tangent` is `nothing`) opens on BifurcationKit's secant with no point to aim at, and keeps
-`opening`'s tangent until a point is accepted.
+The restart of `iterator` along `restart_tangent` from `factorization` (see the four-argument method); `opening`'s
+progress is not read.
 """
-function restart_opening(
-        ::BifurcationKit.ContIterable,
-        ::AbstractVector,
-        ::Nothing,
-        ::Nothing,
-        opening::TraceProgress,
-    )::NamedTuple
-    return (; opening = nothing, opening.gap_tangent, opening.tangent_precision)
-end
-
 function restart_opening(
         iterator::BifurcationKit.ContIterable,
         start::AbstractVector{E},
@@ -742,6 +720,16 @@ function restart_opening(
         ::TraceProgress{E},
     )::NamedTuple where {E <: Real}
     return restart_opening(iterator, start, factorization, old_tangent)
+end
+
+function restart_opening(
+        iterator::BifurcationKit.ContIterable,
+        start::AbstractVector{E},
+        ::Nothing,
+        flat::OpeningTangent{E},
+        ::TraceProgress{E},
+    )::NamedTuple where {E <: Real}
+    return opening_along(iterator, start, flat.tangent)
 end
 
 function restart_opening(

@@ -152,7 +152,7 @@ end
 @testset "BifurcationKit's smallest step is zero, so its halving ends only at a zero step" begin
     for element in (Float16, Float32, float(Int))
         settings = TraceSettings{element}()
-        @test GameTracing.continuation_options(settings, settings.first_step, 1, settings.first_tangent_divisor).dsmin ==
+        @test GameTracing.continuation_options(settings, settings.first_step, 1).dsmin ==
             zero(element)
     end
 end
@@ -185,7 +185,7 @@ end
     @test algorithm.corrector === free
     @test !algorithm.orientation_check
     @test algorithm.θ == one(element) / 4
-    options = GameTracing.continuation_options(settings, settings.first_step, 50, settings.first_tangent_divisor)
+    options = GameTracing.continuation_options(settings, settings.first_step, 50)
     @test (options.max_steps, options.p_max) == (3, one(element) / 2)
     @test options.p_min == 0
 end
@@ -197,7 +197,6 @@ end
             first_step = rand(rng, Float32),
             max_step = 1 + rand(rng, Float32),
             aggressiveness = rand(rng, Float32),
-            first_tangent_divisor = 1 + 100 * rand(rng, Float32),
             max_steps = rand(rng, 1:50),
             corrector = CorrectorSettings{Float32}(
                 logit_tolerance = 1.0f-3 * rand(rng, Float32),
@@ -208,15 +207,13 @@ end
             settings,
             settings.first_step,
             settings.max_steps,
-            settings.first_tangent_divisor,
         )
-        @test (options.ds, options.dsmin, options.dsmax, options.a, options.η) ==
+        @test (options.ds, options.dsmin, options.dsmax, options.a) ==
             (
             settings.first_step,
             zero(settings.max_step),
             settings.max_step,
             settings.aggressiveness,
-            settings.first_tangent_divisor,
         )
         @test (options.p_min, options.p_max) == (0, 1)
         @test options.max_steps == settings.max_steps
@@ -335,7 +332,6 @@ end
             settings,
             settings.first_step,
             settings.max_steps,
-            settings.first_tangent_divisor,
         );
         verbosity = 0,
     )
@@ -385,10 +381,10 @@ end
     iterator = GameTracing.BifurcationKit.ContIterable(
         problem,
         GameTracing.palc_algorithm(settings, WIDTH, TARGET_PRECISION),
-        GameTracing.continuation_options(settings, settings.first_step, settings.max_steps, settings.first_tangent_divisor);
+        GameTracing.continuation_options(settings, settings.first_step, settings.max_steps);
         verbosity = 0,
     )
-    state = GameTracing.opened_state(iterator, zeros(Float32, WIDTH + 1), nothing)
+    state = GameTracing.opened_state(iterator, zeros(Float32, WIDTH + 1), Float32[0, 0, 1.0f-3])
     opening = GameTracing.TraceProgress{Float32}(
         zeros(Float32, WIDTH), 0.0f0, 0, 0.0f0, 0.0f0, zeros(Float32, WIDTH), 1.0f0, false, false,
     )

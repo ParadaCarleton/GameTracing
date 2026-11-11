@@ -25,18 +25,20 @@ end
     RedrawSlot(game, pending, step_length)
 
 The game a trace runs on, whether `redraw` swapped it since the last restart (`pending`), the arclength step the
-trace last held, which a restart carries on, and the swapped game's factored bordered Jacobian at the swap point
-(`ShiftedGame`), from which the restart takes its tangent. `TraceFinalise` holds the current one.
+trace last held, which a restart carries on, and the swapped game's factored bordered Jacobian at the swap point and
+root `shift` there (`ShiftedGame`), from which the restart takes its tangent and its start. `shift` is empty until a
+swap. `TraceFinalise` holds the current one.
 """
 struct RedrawSlot{G <: LogitGame, E <: Real}
     game::G
     pending::Bool
     step_length::E
     factorization::Union{Nothing, LU{E, Matrix{E}, Vector{Int}}}
+    shift::Vector{E}
 end
 
 function RedrawSlot(game::G, pending::Bool, step_length::E)::RedrawSlot{G, E} where {G <: LogitGame, E <: Real}
-    return RedrawSlot{G, E}(game, pending, step_length, nothing)
+    return RedrawSlot{G, E}(game, pending, step_length, nothing, E[])
 end
 
 """`slot` with the given fields replaced."""
@@ -46,8 +48,9 @@ function restated(
         pending::Bool = slot.pending,
         step_length::Real = slot.step_length,
         factorization::Union{Nothing, LU{E, Matrix{E}, Vector{Int}}} = slot.factorization,
+        shift::AbstractVector{E} = slot.shift,
     )::RedrawSlot{G, E} where {G <: LogitGame, E <: Real}
-    return RedrawSlot{G, E}(game, pending, step_length, factorization)
+    return RedrawSlot{G, E}(game, pending, step_length, factorization, shift)
 end
 
 """
@@ -124,7 +127,7 @@ end
 
 The `RedrawSlot` after a `redraw` hook's result `redrawn`, `slot` itself unless it swaps the game: `nothing` and the current game do not; a new game
 swaps as the `ShiftedGame` that `check` (`RootShift`) builds for it, and a `ShiftedGame` the hook returned must come
-from `check`. A swap sets `pending` and the factorization the restart reads. A game of another type, or with another
+from `check`. A swap sets `pending`, the factorization and the root shift the restart reads; a shift beyond the corrector's reach (not `within`) is dropped, so a root out of reach fails stuck at the swap instead of jumping branches. A game of another type, or with another
 target precision, is a caller error: the trace's relative precision would change meaning.
 """
 function swapped(slot::RedrawSlot{G, E}, ::RootShift, ::Nothing)::RedrawSlot{G, E} where {G <: LogitGame, E <: Real}
@@ -156,5 +159,5 @@ function swapped(
             )
         )
     end
-    return restated(slot; redrawn.game, pending = true, redrawn.factorization)
+    return restated(slot; redrawn.game, pending = true, redrawn.factorization, shift = redrawn.within ? redrawn.shift : zero(redrawn.shift))
 end
