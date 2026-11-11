@@ -206,3 +206,31 @@ function palc_border(dot::BifurcationKit.DotTheta, state_weight::E, vector::Abst
     border[end] += (one(E) - state_weight) * last(vector)
     return border
 end
+
+"""
+    PalcBorder(dot, state_weight)
+    PalcBorder(palc)
+    PalcBorder(geometry, width, target_precision)
+
+PALC's arclength row as a map from a direction `[w; ρ]` to `palc_border(dot, state_weight, direction)`, for PALC's
+`dotθ` and `θ`: `palc`, a `palc_geometry`, or the `palc_geometry` of `geometry` over `width` gaps to
+`target_precision`. Built from the `palc_geometry` PALC itself runs with, it holds PALC's own `dot`, whose point weights
+PALC resets in place at each accepted point, so a row read during a corrector carries the weights that corrector solves
+with.
+"""
+struct PalcBorder{D <: BifurcationKit.DotTheta, E <: Real}
+    dot::D
+    state_weight::E
+end
+
+function PalcBorder(palc::NamedTuple)::PalcBorder
+    return PalcBorder(palc.dot, palc.palc_state_weight)
+end
+
+function PalcBorder(geometry::TraceGeometry{E}, width::Integer, target_precision::Real)::PalcBorder where {E <: Real}
+    return PalcBorder(palc_geometry(geometry, width, target_precision))
+end
+
+function (border::PalcBorder{D, E})(direction::AbstractVector{E})::AbstractVector{E} where {D, E <: Real}
+    return palc_border(border.dot, border.state_weight, direction)
+end

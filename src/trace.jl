@@ -29,7 +29,8 @@ distance (`TraceGeometry`).
 - `first_step`, `max_step`: first and largest arclength step. A step whose corrector fails halves; the trace ends as
   `TraceStuck` once its predictor moves the point no more than a few ulps of its size (`step_unresolved`).
   BifurcationKit's `dsmin` is zero: its halving stops at a zero step. After the predictor stops moving, BifurcationKit
-  still halves to zero through the subnormals, about 150 halvings of one refused residual evaluation each.
+  still halves to zero through the subnormals, one refused residual evaluation per halving: about 150 halvings in
+  Float32 and 1100 in Float64.
 - `aggressiveness` (BifurcationKit's `a`): without a `step_control` growth limit, a step grows by
   `1 + a ((N - n) / N)²` after a corrector of `n` of its `N = corrector.newton_iterations` iterations.
 - `corrector`: a `CorrectorSettings`.
@@ -264,9 +265,10 @@ function opening_divisor(settings::TraceSettings{E}, target_precision::Real)::E 
 end
 
 """
-    trace_iterator(game, start, settings, finalise, corrector, step_length, max_steps)
+    trace_iterator(game, start, settings, palc, finalise, corrector, step_length, max_steps)
 
-BifurcationKit's PALC iterator over `game`'s branch from `start = [w; ρ]` toward relative precision one, with
+BifurcationKit's PALC iterator over `game`'s branch from `start = [w; ρ]` toward relative precision one, in PALC's
+`θ` and `dotθ` `palc` (`palc_geometry`), with
 `finalise` at each accepted point, `corrector` (`CorrectorReach`) at each Newton iterate and a branch of
 `trace_record_point` records. BifurcationKit's constructors are not inferable, so each is built in its own function
 and passed on without a named local; it runs once per segment.
@@ -275,6 +277,7 @@ function trace_iterator(
         game::LogitGame,
         start::AbstractVector{E},
         settings::TraceSettings{E},
+        palc::NamedTuple,
         finalise::TraceFinalise,
         corrector::CorrectorReach,
         step_length::E,
@@ -282,7 +285,13 @@ function trace_iterator(
     )::BifurcationKit.ContIterable where {E <: Real}
     return continuation_iterator(
         branch_problem(game, start, last(start); record_from_solution = trace_record_point),
-        palc_algorithm(settings, length(start) - 1, game.target_precision),
+        palc_with_geometry(
+            settings,
+            length(start) - 1,
+            palc,
+            settings.orientation_check,
+            PlainOrientation(settings.geometry),
+        ),
         continuation_options(
             settings,
             step_length,
@@ -502,10 +511,35 @@ function guarded_trace(
         accept_corrected::Any,
         opening::TraceProgress{E},
     )::NamedTuple where {E <: Real}
+    # PALC and the corrector's rounding bound share one `dotθ`, whose Fisher weights PALC resets in place. Its type
+    # follows the distance, so it is passed on rather than named.
+    return palc_segment(
+        palc_geometry(settings.geometry, length(start) - 1, finalise.slot[].game.target_precision),
+        opening,
+        settings,
+        finalise,
+        accept_corrected,
+        start,
+        old_tangent,
+    )
+end
+
+"""`guarded_trace`'s segment in PALC's `θ` and `dotθ` `palc` (`palc_geometry`), which the corrector's rounding bound shares."""
+function palc_segment(
+        palc::NamedTuple,
+        opening::TraceProgress{E},
+        settings::TraceSettings{E},
+        finalise::TraceFinalise,
+        accept_corrected::Any,
+        start::AbstractVector{E},
+        old_tangent::Union{Nothing, AbstractVector{E}},
+    )::NamedTuple where {E <: Real}
     corrector = CorrectorReach(
         accept_corrected,
+        finalise.slot[].game,
         settings.corrector,
         settings.geometry,
+        PalcBorder(palc),
         similar(start),
         similar(start),
         zero(E),
@@ -516,6 +550,7 @@ function guarded_trace(
                 finalise.slot[].game,
                 start,
                 settings,
+                palc,
                 finalise,
                 corrector,
                 finalise.slot[].step_length,

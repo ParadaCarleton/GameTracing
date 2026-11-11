@@ -149,9 +149,11 @@ function (pass::NaNSlopePass)(
     return nothing
 end
 
-"""A pass that throws a caller's `ArgumentError` once the precision is positive."""
-struct ThrowingPass{P}
+"""A pass that throws `exception` once the precision passes `onset`."""
+struct ThrowingPass{P, X <: Exception, E <: Real}
     pass::P
+    exception::X
+    onset::E
 end
 
 function (pass::ThrowingPass)(
@@ -161,8 +163,8 @@ function (pass::ThrowingPass)(
         logits::AbstractVector,
         precision::Real,
     )::Nothing
-    if precision > 0
-        throw(ArgumentError("bad game"))
+    if precision > pass.onset
+        throw(pass.exception)
     end
     pass.pass(gain, gain_slope, gain_precision_slope, logits, precision)
     return nothing
