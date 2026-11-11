@@ -536,6 +536,26 @@ function probability_bound(pass::Any, logits::AbstractVector, precision::Real, r
     return slope * logit_error
 end
 
+"""A pass that gives a NaN precision slope past `onset`, so the tangent and every predictor there are non-finite where the residual and Jacobian are not."""
+struct NaNPrecisionSlopePass{P, E <: Real}
+    pass::P
+    onset::E
+end
+
+function (pass::NaNPrecisionSlopePass)(
+        gain::AbstractVector,
+        gain_slope::AbstractMatrix,
+        gain_precision_slope::AbstractVector,
+        logits::AbstractVector,
+        precision::Real,
+    )::Nothing
+    pass.pass(gain, gain_slope, gain_precision_slope, logits, precision)
+    if precision > pass.onset
+        fill!(gain_precision_slope, NaN32)
+    end
+    return nothing
+end
+
 """
 A pass that adds deterministic noise of size `noise` to the gain at precisions in `(0, window)` and none past it: a branch
 whose second solve at the opening's secant distance is rounding noise, and whose endpoint is the clean game's.
