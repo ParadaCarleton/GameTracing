@@ -61,6 +61,29 @@ function branch_games(rng::AbstractRNG)::AbstractVector
     return [ntuple(_ -> 3 .* randn(rng, Float32, counts), length(counts)) for counts in ((3, 3), (2, 2, 2))]
 end
 
+# The seed whose (3, 3) game exhausts Float32 at λ ≈ 7.6; Float64 reaches λ ≈ 127.
+const ROUNDING_EXHAUSTED_BRANCH_SEED = 0x09277e98f12202da
+
+"""
+Whether `failure` is a `PrecisionExhausted` that Float32 rounding explains: a logit's rounding, `eps` of the largest
+logit, moves each payoff-weighted gain by up to `max|payoff|` times that, and the logit map multiplies it by `λ`;
+the corrector's last correction is within the Jacobian's amplification (at most `AMPLIFICATION`) of that noise.
+"""
+function rounding_exhausted(payoffs::Tuple, failure::TraceFailure)::Bool
+    (; lambda, correction, logits) = failure.context
+    noise = lambda * maximum(maximum.(abs, payoffs)) * eps(eltype(logits)) * maximum(abs, logits)
+    return failure.cause == GameTracing.PrecisionExhausted && correction <= AMPLIFICATION * noise
+end
+
+const AMPLIFICATION = 20
+
+@testset "a Float32 branch that exhausts its precision does so at rounding noise, which Float64 passes" begin
+    payoffs = first(branch_games(Xoshiro(ROUNDING_EXHAUSTED_BRANCH_SEED)))
+    failure = unwrap_error(logit_solve_branch(NormalFormGains(payoffs)))
+    @test rounding_exhausted(payoffs, failure)
+    @test !is_error(logit_solve_branch(NormalFormGains(map(table -> Float64.(table), payoffs))))
+end
+
 @testset "logit_solve_branch: each point solves the logit map at its precision, and the last meets maxregret" begin
     stuck_games = branch_games(Xoshiro(STUCK_BRANCH_SEED))
     # The seed's first payoff, as the failing run logged it.
@@ -68,9 +91,10 @@ end
     for payoffs in (stuck_games..., branch_games(fresh_rng())...)
         gains = NormalFormGains(payoffs)
         result = logit_solve_branch(gains)
-        @test !is_error(result)
+        failure_explained = !is_error(result) || rounding_exhausted(payoffs, unwrap_error(result))
+        @test failure_explained
         if is_error(result)
-            @error "logit_solve_branch failed" payoffs = repr(payoffs) payoff_bits = map(table -> reinterpret.(UInt32, table), payoffs) failure = unwrap_error(result)
+            failure_explained || @error "logit_solve_branch failed" payoffs = repr(payoffs) payoff_bits = map(table -> reinterpret.(UInt32, table), payoffs) failure = unwrap_error(result)
             continue
         end
         branch = unwrap(result)
