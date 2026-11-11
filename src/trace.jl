@@ -621,14 +621,8 @@ function restarted_segment(
         opening.unmoved,
         opening.looped,
     )
-    return opened_segment(iterator, guarded_state(iterator, start, restart.opening), opened)
+    return opened_segment(iterator, opened_state(iterator, start, restart.opening), opened)
 end
-
-opened_segment(
-    ::BifurcationKit.ContIterable,
-    thrown::Thrown,
-    opened::TraceProgress,
-)::NamedTuple = (; progress = opened, thrown.exception)
 
 function opened_segment(
         iterator::BifurcationKit.ContIterable,
@@ -676,19 +670,6 @@ function guarded_restart(
     )::Union{NamedTuple, GuardedEnd}
     try
         return restart_opening(iterator, start, factorization, old_tangent, opening)
-    catch exception
-        return thrown_failure(exception)
-    end
-end
-
-"""`opened_state`, or the `Thrown` failure that `expected_failure` names; any other exception propagates."""
-function guarded_state(
-        iterator::BifurcationKit.ContIterable,
-        start::AbstractVector,
-        opening::AbstractVector,
-    )::Union{BifurcationKit.ContState, GuardedEnd}
-    try
-        return opened_state(iterator, start, opening)
     catch exception
         return thrown_failure(exception)
     end
