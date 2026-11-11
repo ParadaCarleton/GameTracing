@@ -8,10 +8,23 @@ const MIXED_STALL_SEED = 0x233ce38d667063a1
 # The seed whose (3, 3) game's corrector made two zero-length Newton steps at λ ≈ 34: with tolerance 0 the step control's
 # contraction rate was 0 / 0, so the step length went NaN and the step halved forever.
 const ZERO_STEP_SEED = 0x4e6997513e7cba6d
+# Game 1 has logits near -27 at λ ≈ 9: Float32 rounding exceeds `logit_tolerance`, so only double precision reaches 50.
+const ROUNDING_EXHAUSTED_SEED = 0x4c03385ca80ab207
 
 """Normal-form games with strategy counts `(3, 3)` and `(2, 2, 2)`, payoffs `3 randn`, drawn from `rng` in that order."""
 function far_opening_games(rng::AbstractRNG)::AbstractVector
     return [ntuple(_ -> 3 .* randn(rng, Float32, counts), length(counts)) for counts in ((3, 3), (2, 2, 2))]
+end
+
+"""
+Whether `failure` is a `PrecisionExhausted` that Float32 rounding explains: a logit's rounding, `eps` of the largest
+logit, moves each payoff-weighted gain by up to `max|payoff|` times that, and the logit map multiplies it by `λ`;
+the corrector's last correction is within twice that noise.
+"""
+function exhausted_by_rounding(payoffs::Tuple, failure::TraceFailure)::Bool
+    (; lambda, correction, logits) = failure.context
+    noise = lambda * maximum(maximum.(abs, payoffs)) * eps(eltype(logits)) * maximum(abs, logits)
+    return failure.cause == GameTracing.PrecisionExhausted && correction <= 2 * noise
 end
 
 """A `keep_going` that stops a trace to `target` at the first accepted point at or past precision `precision`."""
@@ -41,6 +54,35 @@ const LOG_PRECISION_SETTINGS = TraceSettings{Float32}(; geometry = TraceGeometry
     end
 end
 
+@testset "a Float32 trace that exhausts its precision does so at rounding noise, which Float64 passes" begin
+    gains_32 = NormalFormGains(first(far_opening_games(Xoshiro(ROUNDING_EXHAUSTED_SEED))))
+    payoffs_32 = first(far_opening_games(Xoshiro(ROUNDING_EXHAUSTED_SEED)))
+    failure = unwrap_error(
+        trace_endpoint(
+            LogitGame(gains_32, FAR_TARGET),
+            GameTracing.logit_count(gains_32),
+            LOG_PRECISION_SETTINGS;
+            keep_going = StopAtPrecision(50.0f0, FAR_TARGET),
+        )
+    )
+    @test failure.cause == GameTracing.PrecisionExhausted
+    @test failure.context.precision < 50
+    @test exhausted_by_rounding(payoffs_32, failure)
+    wide = typeof(float(1))
+    payoffs_wide = map(payoff -> wide.(payoff), payoffs_32)
+    gains_wide = NormalFormGains(payoffs_wide)
+    settings_wide = TraceSettings{wide}(; geometry = TraceGeometry{wide}(; distance = FisherLogPrecisionDistance))
+    reached = unwrap_error(
+        trace_endpoint(
+            LogitGame(gains_wide, wide(FAR_TARGET)),
+            GameTracing.logit_count(gains_wide),
+            settings_wide;
+            keep_going = StopAtPrecision(wide(50), wide(FAR_TARGET)),
+        )
+    )
+    @test reached.context.precision >= 50
+end
+
 # Each comparison runs a Gambit trace; the mutation jobs skip it to stay under their time limit.
 if get(ENV, "GAMETRACING_MUTATION", "false") != "true"
     @testset "a trace to a far target stays on Gambit's branch" begin
@@ -60,9 +102,9 @@ if get(ENV, "GAMETRACING_MUTATION", "false") != "true"
                 )
             )
             (; precision, logits) = failure.context
-            @test precision >= 50
+            @test precision >= 50 || exhausted_by_rounding(payoffs, failure)
             if precision < 50
-                @error "a far-target trace stopped short" failure.cause failure.context
+                @info "a far-target trace stopped short" failure.cause failure.context
             end
             oracle = gambit_strategies(payoffs, precision)
             gap = maximum(maximum.(abs, GameTracing.mixed_strategies(gains, logits) .- oracle.strategies))
