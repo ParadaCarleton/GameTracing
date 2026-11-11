@@ -43,10 +43,14 @@ comparisons are skipped and the reference decides. Returns whether they were ski
 function cross_checked!(payoffs::Tuple, precision::Real, settings::TraceSettings{Float32})::Bool
     cross = logitnash_equilibrium(payoffs, precision)
     result = traced_result(payoffs, cross.precision, settings)
-    @test !is_error(result)
     if is_error(result)
-        @info "trace failed" payoffs unwrap_error(result).cause
-        return false
+        failure = unwrap_error(result)
+        # An unfolded pitchfork's Jacobian has condition number near 1e4: Float32 rounding exhausts, Float64 does not.
+        exhausted = failure.cause == GameTracing.PrecisionExhausted &&
+            !is_error(traced_result(payoffs, Float64(cross.precision), TraceSettings{Float64}(; settings.tangent)))
+        @test exhausted
+        exhausted || @info "trace failed" payoffs failure.cause
+        return true
     end
     logits = unwrap(result).logits
     traced = first_choices(logits)
@@ -147,14 +151,29 @@ end
     end
 end
 
+"""The battle of the sexes with each payoff moved by `scale` times a standard normal drawn from `rng`."""
+function unfolded_battle(rng::AbstractRNG, scale::Real)::Tuple
+    return map(table -> table .+ scale .* randn(rng, 2, 2), map(float, LOGITNASH_GAMES.battle_of_the_sexes))
+end
+
 @testset "a pitchfork unfolded by a payoff perturbation: the bordered trace turns with the principal branch" begin
     # Measured over 40 draws per scale against the arclength reference: the secant tangent followed the principal branch
     # 0/40 at 1e-4, 3/40 at 1e-3, 34/40 at 1e-2 and 39/40 at 1e-1; the bordered tangent 40/40 at every scale.
     rng = fresh_rng()
     for scale in inv.(float.((10^4, 10^3, 10^2, 10))), _ in 1:3
-        payoffs = map(table -> table .+ scale .* randn(rng, 2, 2), map(float, LOGITNASH_GAMES.battle_of_the_sexes))
-        cross_checked!(payoffs, 4, TraceSettings{Float32}())
+        cross_checked!(unfolded_battle(rng, scale), 4, TraceSettings{Float32}())
     end
+end
+
+# The seed whose second 1e-4 draw exhausts Float32 on the middle arm at relative precision 0.20.
+const ROUNDING_EXHAUSTED_PITCHFORK_SEED = 0xc4e6711884300db4
+
+@testset "a pitchfork unfolded by 1e-4 that exhausts Float32 at rounding noise, which Float64 passes" begin
+    rng = Xoshiro(ROUNDING_EXHAUSTED_PITCHFORK_SEED)
+    unfolded_battle(rng, 1.0e-4)
+    payoffs = unfolded_battle(rng, 1.0e-4)
+    @test unwrap_error(traced_result(payoffs, 4.0f0, TraceSettings{Float32}())).cause == GameTracing.PrecisionExhausted
+    @test !is_error(traced_result(payoffs, 4.0, TraceSettings{Float64}()))
 end
 
 @testset "a pitchfork unfolded by 1e-4: the reference, the default trace and every arm turn onto the (1, 1) arm" begin
