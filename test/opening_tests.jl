@@ -8,7 +8,7 @@ const MIXED_STALL_SEED = 0x233ce38d667063a1
 # The seed whose (3, 3) game's corrector made two zero-length Newton steps at λ ≈ 34: with tolerance 0 the step control's
 # contraction rate was 0 / 0, so the step length went NaN and the step halved forever.
 const ZERO_STEP_SEED = 0x4e6997513e7cba6d
-# Game 1 has logits near -27 at λ ≈ 9: Float32 rounding exceeds `logit_tolerance`, so only Float64 reaches 50.
+# Game 1 has logits near -27 at λ ≈ 9: Float32 rounding exceeds `logit_tolerance`, so only double precision reaches 50.
 const ROUNDING_EXHAUSTED_SEED = 0x4c03385ca80ab207
 
 """Normal-form games with strategy counts `(3, 3)` and `(2, 2, 2)`, payoffs `3 randn`, drawn from `rng` in that order."""
@@ -68,15 +68,16 @@ end
     @test failure.cause == GameTracing.PrecisionExhausted
     @test failure.context.precision < 50
     @test exhausted_by_rounding(payoffs_32, failure)
-    payoffs_64 = map(payoff -> Float64.(payoff), payoffs_32)
-    gains_64 = NormalFormGains(payoffs_64)
-    settings_64 = TraceSettings{Float64}(; geometry = TraceGeometry{Float64}(; distance = FisherLogPrecisionDistance))
+    wide = typeof(float(1))
+    payoffs_wide = map(payoff -> wide.(payoff), payoffs_32)
+    gains_wide = NormalFormGains(payoffs_wide)
+    settings_wide = TraceSettings{wide}(; geometry = TraceGeometry{wide}(; distance = FisherLogPrecisionDistance))
     reached = unwrap_error(
         trace_endpoint(
-            LogitGame(gains_64, Float64(FAR_TARGET)),
-            GameTracing.logit_count(gains_64),
-            settings_64;
-            keep_going = StopAtPrecision(50.0, Float64(FAR_TARGET)),
+            LogitGame(gains_wide, wide(FAR_TARGET)),
+            GameTracing.logit_count(gains_wide),
+            settings_wide;
+            keep_going = StopAtPrecision(wide(50), wide(FAR_TARGET)),
         )
     )
     @test reached.context.precision >= 50
