@@ -437,8 +437,8 @@ end
     redrawn_trace(outcome, finalise, settings, accept_corrected, context)
 
 The `TraceResult` of a trace segment that ended with `outcome`. When `redraw` swapped the game there, the trace
-restarts on the new game from the last accepted point (`outcome.progress`), a root of the old game, as a new segment
-counted on from its steps.
+restarts on the new game from the last accepted point (`outcome.progress`), a root of the old game, moved by the swap's
+root shift onto the new game's root, as a new segment counted on from its steps.
 """
 function redrawn_trace(
         outcome::NamedTuple,
@@ -459,7 +459,7 @@ function redrawn_trace(
     return redrawn_trace(
         with_earlier_accuracy(
             guarded_trace(
-                [progress.gaps; progress.relative_precision],
+                [progress.gaps; progress.relative_precision] .+ slot.shift,
                 [progress.gap_tangent; progress.tangent_precision],
                 settings,
                 finalise,
