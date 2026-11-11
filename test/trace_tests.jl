@@ -190,6 +190,13 @@ end
     @test options.p_min == 0
 end
 
+@testset "a trace accepts a Float64 PALC state-weight override for $element" for element in (Float32, Float64)
+    gains = LinearGainPass(element[0 1; 1 0], element[0.5, -0.25])
+    settings = TraceSettings{element}(palc_options = (; θ = 0.25))
+    traced = trace_endpoint(LogitGame(gains, element(2)), WIDTH, settings)
+    @test !is_error(traced)
+end
+
 @testset "continuation options carry the settings and the trace's endpoint-only needs" begin
     rng = Random.Xoshiro(7)
     for _ in 1:20
