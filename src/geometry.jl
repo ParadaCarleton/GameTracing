@@ -60,8 +60,11 @@ function arclength_distance(
         to::AbstractVector{E},
         geometry::TraceGeometry{E},
     )::E where {E <: Real}
-    displacement = to .- from
-    return sqrt(trace_dot(displacement, displacement, geometry))
+    gap_square = zero(E)
+    for index in firstindex(from):(lastindex(from) - 1)
+        gap_square += abs2(to[index] - from[index])
+    end
+    return sqrt(coordinate_weight(geometry, length(from) - 1) * gap_square + level_weight(geometry) * abs2(last(to) - last(from)))
 end
 
 """`KL(Bernoulli(logistic(from)) ‖ Bernoulli(logistic(to)))`, from the logits, exact where a probability rounds to 0 or 1."""

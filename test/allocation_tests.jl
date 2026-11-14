@@ -1,4 +1,4 @@
-using GameTracing: logit_change, step_unresolved, largest_kl, max_regret, max_regret!, regret_workspace
+using GameTracing: arclength_distance, corrected_accepted, logit_change, step_unresolved, largest_kl, max_regret, max_regret!, regret_workspace
 
 """The bytes a second call of `call` on `arguments` allocates, after a first call compiles it."""
 function warm_bytes(call::F, arguments...)::Integer where {F}
@@ -43,5 +43,12 @@ end
     from, to = randn(rng, element, 6), randn(rng, element, 6)
     for measure in (logit_change, step_unresolved, largest_kl)
         @test warm_bytes(measure, from, to) == 0
+    end
+    @test warm_bytes(corrected_accepted, GameTracing.AcceptAll(), to, one(element), true) == 0
+    for distance in instances(GameTracing.StepDistance)
+        geometry = TraceGeometry{element}(; distance)
+        displacement = to .- from
+        @test warm_bytes(arclength_distance, from, to, geometry) == 0
+        @test arclength_distance(from, to, geometry) ≈ sqrt(GameTracing.trace_dot(displacement, displacement, geometry))
     end
 end
