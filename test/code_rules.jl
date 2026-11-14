@@ -40,6 +40,9 @@ const GENERIC_RESULTS = (
     "logit_solve.jl gambit_settings",
     "logit_solve.jl lambda_profile",
     "logit_solve.jl logit_solve_lambda",
+    "logit_solve.jl settled_points",
+    "logit_solve.jl branch_profiles",
+    "logit_solve.jl last_profile",
     "logit_solve.jl logit_solve_branch",
     "logit_solve.jl logit_solve",
 )

@@ -149,22 +149,21 @@ function logit_solve_lambda(gains::NormalFormGains{N}, lam::Real; keywords...)::
     return logit_solve_lambda(gains, [lam]; keywords...)
 end
 
-"""
-    logit_solve_branch(gains; maxregret, first_step, max_accel, maximum_precision, settings)
+# The precisions and logits of a branch's accepted points, in trace order.
+const BranchPoints{E} = @NamedTuple{precisions::Vector{E}, logits::Vector{Vector{E}}}
 
-pygambit's `logit_solve_branch`: every accepted point of the principal branch of the normal-form game `gains`, from
-the first step to the first point where no player's regret passes `maxregret` times the payoff range. The trace runs
-to `maximum_precision` at most, and fails `NoConvergence` with reason `:maximum_precision` if it ends there unsettled;
-any other failure of the trace is returned as is. `maxregret` defaults to `sqrt(eps(E))` in the trace's element type `E`. `first_step`, `max_accel` and `settings` are `logit_solve_lambda`'s.
 """
-function logit_solve_branch(
-        gains::NormalFormGains{N};
+The accepted points of `logit_solve_branch`'s trace of `gains`, as precisions and logits, or its failure. Takes
+`logit_solve_branch`'s keywords and defaults; the profiles are left to the caller, which may want only the last.
+"""
+function settled_points(
+        gains::NormalFormGains;
         first_step::Real = 0.03f0,
         max_accel::Real = 1.1f0,
         maximum_precision::Real = 1.0f6,
         settings::TraceSettings{E} = gambit_settings(float(eltype(gains))(first_step), max_accel),
         maxregret::Real = sqrt(eps(typeof(settings.first_step))),
-    )::BranchResult{E, N} where {N, E <: Real}
+    )::Result{BranchPoints{E}, TraceFailure} where {E <: Real}
     if !(maxregret > 0)
         throw(ArgumentError("maxregret must be positive; got $maxregret"))
     end
@@ -178,23 +177,43 @@ function logit_solve_branch(
     if !settled
         return Err(TraceFailure(NoConvergence, (; maxregret, maximum_precision, reason = :maximum_precision)))
     end
-    return Ok(LogitQREProfile.((gains,), recorder.precisions, recorder.logits))
+    return Ok((; recorder.precisions, recorder.logits))
+end
+
+"""
+    logit_solve_branch(gains; maxregret, first_step, max_accel, maximum_precision, settings)
+
+pygambit's `logit_solve_branch`: every accepted point of the principal branch of the normal-form game `gains`, from
+the first step to the first point where no player's regret passes `maxregret` times the payoff range. The trace runs
+to `maximum_precision` at most, and fails `NoConvergence` with reason `:maximum_precision` if it ends there unsettled;
+any other failure of the trace is returned as is. `maxregret` defaults to `sqrt(eps(E))` in the trace's element type `E`. `first_step`, `max_accel` and `settings` are `logit_solve_lambda`'s.
+"""
+function logit_solve_branch(gains::NormalFormGains{N}; keywords...)::BranchResult{<:Real, N} where {N}
+    return branch_profiles(gains, settled_points(gains; keywords...))
+end
+
+"""Every point of `points` (`settled_points`) as a profile of `gains`, or the failure."""
+function branch_profiles(gains::NormalFormGains{N}, points::Result{BranchPoints{E}, TraceFailure})::BranchResult{E, N} where {N, E <: Real}
+    if is_error(points)
+        return Err(unwrap_error(points))
+    end
+    return Ok(LogitQREProfile.((gains,), unwrap(points).precisions, unwrap(points).logits))
 end
 
 """
     logit_solve(gains; maxregret, first_step, max_accel, maximum_precision, settings)
 
 pygambit's `logit_solve`: the last point of `logit_solve_branch`, an approximate Nash equilibrium of the normal-form
-game `gains` at which no player's regret passes `maxregret` times the payoff range.
+game `gains` at which no player's regret passes `maxregret` times the payoff range. Only that point's profile is built.
 """
 function logit_solve(gains::NormalFormGains{N}; keywords...)::ProfileResult{<:Real, N} where {N}
-    return last_profile(logit_solve_branch(gains; keywords...))
+    return last_profile(gains, settled_points(gains; keywords...))
 end
 
-"""The last profile of a `logit_solve_branch` result, or its failure."""
-function last_profile(branch::BranchResult{E, N})::ProfileResult{E, N} where {E <: Real, N}
-    if is_error(branch)
-        return Err(unwrap_error(branch))
+"""The last point of `points` (`settled_points`) as a profile of `gains`, or the failure."""
+function last_profile(gains::NormalFormGains{N}, points::Result{BranchPoints{E}, TraceFailure})::ProfileResult{E, N} where {N, E <: Real}
+    if is_error(points)
+        return Err(unwrap_error(points))
     end
-    return Ok(last(unwrap(branch)))
+    return Ok(LogitQREProfile(gains, last(unwrap(points).precisions), last(unwrap(points).logits)))
 end
