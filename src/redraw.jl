@@ -1,8 +1,9 @@
 using LinearAlgebra: LU, lu
-"""A `redraw` hook that never swaps the game."""
+"""
+The `redraw` default: the game is never swapped. `redrawn_slot` keeps the slot for it, so it is never called and
+the trace builds no `RootShift`.
+"""
 struct NoRedraw end
-
-(::NoRedraw)(::AbstractVector, ::Real, ::Any)::Nothing = nothing
 
 """
     ShiftedGame(game, point, factorization, shift, shift_move, within)
@@ -139,6 +140,45 @@ function swapped(slot::RedrawSlot{G, E}, check::RootShift, redrawn::LogitGame)::
         return slot
     end
     return swapped(slot, check, check(redrawn))
+end
+
+"""
+    redrawn_slot(redraw, slot, logits, point, tangent, step_length, algorithm, settings)
+
+The `RedrawSlot` after `redraw` saw the accepted `point` with its `logits` (`swapped`). `redraw` gets the point's
+`RootShift` for the predictor `step_length` along `tangent` of PALC `algorithm`. `NoRedraw` keeps `slot` and builds
+no `RootShift`.
+"""
+function redrawn_slot(
+        redraw::Any,
+        slot::RedrawSlot{G, E},
+        logits::AbstractVector,
+        point::Any,
+        tangent::Any,
+        step_length::Real,
+        algorithm::BifurcationKit.PALC,
+        settings::CorrectorSettings,
+    )::RedrawSlot{G, E} where {G <: LogitGame, E <: Real}
+    shift = RootShift(
+        point.u,
+        step_length .* tangent.u,
+        palc_border(algorithm.dotθ, eltype(point.u)(algorithm.θ), tangent.u),
+        settings,
+    )
+    return swapped(slot, shift, redraw(logits, point.p, shift))
+end
+
+function redrawn_slot(
+        ::NoRedraw,
+        slot::RedrawSlot{G, E},
+        ::AbstractVector,
+        ::Any,
+        ::Any,
+        ::Real,
+        ::BifurcationKit.PALC,
+        ::CorrectorSettings,
+    )::RedrawSlot{G, E} where {G <: LogitGame, E <: Real}
+    return slot
 end
 
 function swapped(

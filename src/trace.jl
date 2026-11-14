@@ -287,6 +287,8 @@ function continuation_iterator(
         problem,
         algorithm,
         options;
+        # The default name formats the clock at every segment; the trace saves no file.
+        filename = "branch",
         normC = BifurcationKit.norminf,
         verbosity = 0,
         finalise_solution = finalise,
