@@ -54,6 +54,23 @@ function bit_identical(system::NamedTuple, row_scale::Real, corner_scale::Real):
         solutions.ours[2:4] == solutions.reference[2:4]
 end
 
+@testset "one in-place bordered solver reused across systems stays bit-identical to MatrixBLS" begin
+    rng = Xoshiro(rand(RandomDevice(), UInt))
+    width = 4
+    ours = GameTracing.bordered_linear_solver(GameTracing.MatrixSolve, width, Float32)
+    for _ in 1:20
+        system = bordered_system(rng, width, Float32)
+        arguments = (system.jacobian, system.border_column, system.border_row, system.corner, system.residual, system.border_value)
+        solution = ours(arguments...)
+        reference = GameTracing.BifurcationKit.MatrixBLS()(arguments...)
+        @test collect(solution[1]) == collect(reference[1]) && solution[2:4] == reference[2:4]
+    end
+    @test_throws DimensionMismatch ours(
+        randn(rng, Float32, width, width), randn(rng, Float32, width), randn(rng, Float32, width), 1.0f0,
+        randn(rng, Float32, width - 1), 1.0f0,
+    )
+end
+
 @testset "the in-place bordered solver is bit-identical to BifurcationKit's MatrixBLS" begin
     rng = Xoshiro(rand(RandomDevice(), UInt))
     for width in 1:5, (row_scale, corner_scale) in ((1.0f0, 1.0f0), (0.3f0, 2.0f0))

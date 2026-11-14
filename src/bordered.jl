@@ -4,18 +4,31 @@ using LinearAlgebra: LU, issuccess, istril, istriu, ldiv!, logabsdet, lu, lu!
 @enum BorderedSolver MatrixSolve BorderingSolve
 
 """
-    InPlaceMatrixBLS(factorization, solver)
+    InPlaceMatrixBLS(factorization, rhs, solver)
 
 BifurcationKit's `MatrixBLS` with the bordered matrix written into `factorization`'s factors and LU-factored there
-(`lu!`), without `MatrixBLS`'s `vcat`/`hcat` copies; its solutions are bit-identical. Any real element type factors:
-LAPACK's for the BLAS floats, the generic LU otherwise. A triangular bordered matrix goes to `\\`. `solver` is never
-read; it keeps PALC's `update` from replacing this solver with one built from the Newton options. The system is
+(`lu!`), and the right-hand side solved in place in `rhs`; its solutions are bit-identical. Any real element type
+factors: LAPACK's for the BLAS floats, the generic LU otherwise. A triangular bordered matrix goes to `\\`. `solver` is
+never read; it keeps PALC's `update` from replacing this solver with one built from the Newton options. The system is
 `[J dR; ξu dzu' ξp dzp] [dX; dl] = [R; n]`, `J` the trace's `width × width` Jacobian.
+
+The returned `dX` is a view of `rhs`, valid until the next solve. PALC's Newton step and tangent use it before then.
 """
 struct InPlaceMatrixBLS{E <: Real, S <: BifurcationKit.AbstractLinearSolver} <:
     BifurcationKit.AbstractBorderedLinearSolver
     factorization::LU{E, Matrix{E}, Vector{Int}}
+    rhs::Vector{E}
     solver::S
+end
+
+"""`bls`'s right-hand-side buffer filled with `[upper; lower]`."""
+function stacked_rhs!(bls::InPlaceMatrixBLS, upper::AbstractVector, lower::Number)::AbstractVector
+    if length(upper) + 1 != length(bls.rhs)
+        throw(DimensionMismatch("a $(length(upper))-entry right-hand side for a $(length(bls.rhs))-row bordered system"))
+    end
+    copyto!(bls.rhs, firstindex(bls.rhs), upper, firstindex(upper), length(upper))
+    bls.rhs[end] = lower
+    return bls.rhs
 end
 
 function (bls::InPlaceMatrixBLS)(
@@ -32,7 +45,7 @@ function (bls::InPlaceMatrixBLS)(
     )::Tuple where {T <: Number}
     bordered = bordered_matrix!(bls.factorization.factors, jacobian, dR, dzu, dzp, ξu, ξp, applyξu!)
     width = size(bordered, 1) - 1
-    rhs = vcat(residual, border_value)
+    rhs = stacked_rhs!(bls, residual, border_value)
     if istril(bordered) || istriu(bordered)
         solution = bordered \ rhs
         return view(solution, 1:width), solution[end], true, 1
@@ -101,7 +114,7 @@ function BifurcationKit.bordered_tangent_and_sign(
         iter.alg.dotθ.apply!,
     )
     factorization = lu!(bls.factorization, bordered; check = false)
-    solution = vcat(rhsu, rhsp)
+    solution = stacked_rhs!(bls, rhsu, rhsp)
     if !issuccess(factorization)
         return view(zero(solution), 1:(length(solution) - 1)),
             zero(eltype(solution)),
@@ -131,5 +144,5 @@ function bordered_linear_solver(
     for diagonal in axes(identity, 1)
         identity[diagonal, diagonal] = one(E)
     end
-    return InPlaceMatrixBLS(lu(identity), BifurcationKit.DefaultLS())
+    return InPlaceMatrixBLS(lu(identity), Vector{E}(undef, width + 1), BifurcationKit.DefaultLS())
 end

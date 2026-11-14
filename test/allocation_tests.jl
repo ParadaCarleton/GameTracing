@@ -24,6 +24,15 @@ end
     @test solve_bytes(gains, element, 20_000, 1.0f-3) <= solve_bytes(gains, element, 2_000, 1.0f-3) + 1024
 end
 
+@testset "a warm in-place bordered solve allocates nothing ($element)" for element in (Float32, widen(Float32))
+    rng = fresh_rng()
+    width = 4
+    solver = GameTracing.bordered_linear_solver(GameTracing.MatrixSolve, width, element)
+    jacobian = randn(rng, element, width, width) + element[row == column ? 4 : 0 for row in 1:width, column in 1:width]
+    border_column, border_row, residual = randn(rng, element, width), randn(rng, element, width), randn(rng, element, width)
+    @test warm_bytes(solver, jacobian, border_column, border_row, one(element), residual, one(element)) == 0
+end
+
 @testset "the regret check and the corrector's logit measures allocate nothing ($element)" for element in (Float32, widen(Float32))
     rng = fresh_rng()
     gains = NormalFormGains(ntuple(_ -> randn(rng, element, (3, 4)), 2))
