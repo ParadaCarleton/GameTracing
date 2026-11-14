@@ -20,6 +20,8 @@ jobs:
       - run: julia --project=benchmark -e 'using Pkg; Pkg.instantiate()'
       - run: julia --project=benchmark benchmark/arms.jl arms.csv | tee arms.log
       - run: julia --project=benchmark benchmark/arms.jl pitchfork.csv pitchfork | tee pitchfork.log
+      # One seed with a short timing budget runs every solver call of the LogitNash comparison, so a broken call fails here.
+      - run: julia --project=benchmark benchmark/logitnash_speed.jl logitnash_check.csv 1 0.01 | tee logitnash_check.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -29,3 +31,5 @@ jobs:
             arms.log
             pitchfork.csv
             pitchfork.log
+            logitnash_check.csv
+            logitnash_check.log

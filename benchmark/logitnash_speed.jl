@@ -77,7 +77,7 @@ solver_input(::Nash, payoffs::Tuple, tolerance::Real)::Tuple = (payoffs, toleran
 
 """`solver`'s result on `input` (`solver_input`)."""
 solve(::Tracing, input::Tuple)::Any = logit_solve(first(input); maxregret = last(input))
-solve(::Nash, input::Tuple)::Tuple = LogitNash.solve(first(input); stop_iters = 10^7, stop_lambda = 1.0f6, stop_eps = last(input))
+solve(::Nash, input::Tuple)::Tuple = LogitNash.solve(first(input); stop_iters = 10^7, stop_lambda = WIDE(1.0f6), stop_eps = last(input))
 
 """
 `(; strategies, outcome, lam, steps)` of `solver`'s `result` on `input`. `strategies` is each player's strategy in
