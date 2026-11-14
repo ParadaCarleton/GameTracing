@@ -1,12 +1,16 @@
 [deps]
 BifurcationKit = "0f109fa4-8a5d-4b75-95aa-f515264e7665"
+CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
+Chairmarks = "0ca39b1e-fe0b-4e98-acfc-b1656634c4de"
 ErrorTypes = "7f495686-c6d2-4c77-9e8e-e4c865675f9d"
 GameTracing = "5d2f1c0e-7a4b-4e3c-9b6a-1f0c8d2e4a77"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
 LogitNash = "56ed5f9e-c32e-46b8-b489-5928d745fddb"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+StructArrays = "09ab397b-f2b6-538f-b94a-2f83cf4a842a"
 
 [sources]
 GameTracing = {path = ".."}
