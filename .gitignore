@@ -2,3 +2,9 @@ Manifest.toml
 *.cov
 .gremlins_cache.json
 docs/build/
+
+# Claude Code conversations symlink (machine-local, via claude-dirs)
+.claude/chats
+# Local scratch files and agent workspaces
+.scratch/
+.worktrees/
