@@ -38,11 +38,20 @@ function logit_change(from::AbstractVector{E}, to::AbstractVector{E})::E where {
     return largest
 end
 
-"""A trace callback that always lets the trace go on: `(logits, relative_precision)` or `(logits, relative_precision, converged)`."""
+"""
+A trace callback that always lets the trace go on: `keep_going(logits, relative_precision)` is `true`, and
+`corrected_accepted` accepts every closing point without building its logits.
+"""
 struct AcceptAll end
 
 (::AcceptAll)(::AbstractVector, ::Real)::Bool = true
-(::AcceptAll)(::AbstractVector, ::Real, ::Bool)::Bool = true
+
+"""Whether `accept_corrected` accepts the closing point `point = [w; ρ]` at relative precision `relative_precision`, from its logits."""
+function corrected_accepted(accept_corrected::Any, point::AbstractVector, relative_precision::Real, converged::Bool)::Bool
+    return accept_corrected(logits_at(point), relative_precision, converged)
+end
+
+corrected_accepted(::AcceptAll, ::AbstractVector, ::Real, ::Bool)::Bool = true
 
 """Whether `measured` is within `limit`; every measure is within an absent (`nothing`) limit."""
 within_limit(::Nothing, ::Real)::Bool = true
@@ -282,7 +291,7 @@ function (check::CorrectorReach{C, E})(
     if converged && !closing_accepted(check, iterate.x)
         return false
     end
-    if !check.accept_corrected(logits_at(iterate.x), iterate.p, converged)
+    if !corrected_accepted(check.accept_corrected, iterate.x, iterate.p, converged)
         return false
     end
     # A solve that settled at its start has no correction (NaN). An unsettled exact root's next correction is 0.
