@@ -1,5 +1,5 @@
 using BifurcationKit: BifurcationKit
-using LinearAlgebra: dot, norm
+using LinearAlgebra: dot
 using Logging: @debug
 """
     CorrectorSettings{E}(; reach, max_kl, logit_tolerance, pin_tolerance, contraction_limit,
@@ -29,9 +29,9 @@ Base.@kwdef struct CorrectorSettings{E <: Real}
     newton_iterations::Int = 25
 end
 
-"""The largest change of a logit from `from` to `to`, two points `[w; ρ]` (`logits_at`)."""
+"""The largest change of a logit from `from` to `to`, two points `[w; ρ]` (`logits_at`), one logit at a time."""
 function logit_change(from::AbstractVector{E}, to::AbstractVector{E})::E where {E <: Real}
-    return maximum(abs, logits_at(to) .- logits_at(from))
+    return maximum(index -> abs(last(to) * to[index] - last(from) * from[index]), firstindex(to):(lastindex(to) - 1))
 end
 
 """A trace callback that always lets the trace go on: `(logits, relative_precision)` or `(logits, relative_precision, converged)`."""
@@ -137,7 +137,7 @@ size: the ODE solvers' per-coordinate error test, `|Δz_i| ≤ abstol + reltol |
 of different scales (payoff gaps near 1e6, ρ near 1e-5) each count, and any move of a zero coordinate resolves.
 """
 function step_unresolved(start::AbstractVector{E}, predicted::AbstractVector{E})::Bool where {E <: Real}
-    return all(abs.(predicted .- start) .<= RESOLUTION_ULPS * eps(E) .* abs.(start))
+    return all(index -> abs(predicted[index] - start[index]) <= RESOLUTION_ULPS * eps(E) * abs(start[index]), eachindex(start, predicted))
 end
 
 """A step's reach-failure record before any corrector failed its reach: the correction is NaN, as at a solve's start."""
@@ -453,6 +453,11 @@ function tangent_turn(left::R, right::R)::fieldtype(R, :param) where {R <: Named
     return acos(clamp(cosine, -one(cosine), one(cosine)))
 end
 
+"""The squared Euclidean distance between two points with `gaps` and `param`, such as branch records."""
+function squared_distance(left::NamedTuple, right::NamedTuple)::typeof(left.param)
+    return sum(index -> abs2(left.gaps[index] - right.gaps[index]), eachindex(left.gaps, right.gaps)) + abs2(left.param - right.param)
+end
+
 """
     looped(history, current)
 
@@ -469,9 +474,7 @@ function looped(history::AbstractVector{R}, current::NamedTuple)::Bool where {R 
         return false
     end
     anchor = history[firstindex(history) + anchor_index - 1]
-    point = [current.gaps; current.param]
-    step_length = norm(point - [last(history).gaps; last(history).param])
-    if !(norm(point - [anchor.gaps; anchor.param]) < step_length)
+    if !(squared_distance(current, anchor) < squared_distance(current, last(history)))
         return false
     end
     # A closed curve returns to its starting precision, so its precision tangent changes sign along the lap.
@@ -571,14 +574,7 @@ function (finalise::TraceFinalise)(
     if point.p == 1
         return true
     end
-    algorithm = iter.alg
-    shift = RootShift(
-        point.u,
-        state.ds .* tangent.u,
-        palc_border(algorithm.dotθ, eltype(point.u)(algorithm.θ), tangent.u),
-        finalise.settings,
-    )
     # The slot is pending only after a swap here: a restart clears it before the segment runs.
-    finalise.slot[] = swapped(slot, shift, finalise.redraw(logits, point.p, shift))
+    finalise.slot[] = redrawn_slot(finalise.redraw, slot, logits, point, tangent, state.ds, iter.alg, finalise.settings)
     return !finalise.slot[].pending
 end

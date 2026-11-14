@@ -141,6 +141,34 @@ function swapped(slot::RedrawSlot{G, E}, check::RootShift, redrawn::LogitGame)::
     return swapped(slot, check, check(redrawn))
 end
 
+"""
+    redrawn_slot(redraw, slot, logits, point, tangent, step_length, algorithm, settings)
+
+The `RedrawSlot` after `redraw` saw the accepted `point` with its `logits` (`swapped`). `redraw` gets the point's
+`RootShift` for the predictor `step_length` along `tangent` of PALC `algorithm`. `NoRedraw` keeps `slot` and builds
+no `RootShift`.
+"""
+function redrawn_slot(
+        redraw::Any,
+        slot::RedrawSlot,
+        logits::AbstractVector,
+        point::BifurcationKit.BorderedArray,
+        tangent::BifurcationKit.BorderedArray,
+        step_length::Real,
+        algorithm::BifurcationKit.PALC,
+        settings::CorrectorSettings,
+    )::RedrawSlot
+    shift = RootShift(
+        point.u,
+        step_length .* tangent.u,
+        palc_border(algorithm.dotθ, eltype(point.u)(algorithm.θ), tangent.u),
+        settings,
+    )
+    return swapped(slot, shift, redraw(logits, point.p, shift))
+end
+
+redrawn_slot(::NoRedraw, slot::RedrawSlot, ::AbstractVector, ::BifurcationKit.BorderedArray, ::BifurcationKit.BorderedArray, ::Real, ::BifurcationKit.PALC, ::CorrectorSettings)::RedrawSlot = slot
+
 function swapped(
         slot::RedrawSlot{G, E},
         check::RootShift,

@@ -70,9 +70,9 @@ function bernoulli_kl(from::E, to::E)::E where {E <: Real}
     return probability * (log1pexp(-to) - log1pexp(-from)) + (one(E) - probability) * (log1pexp(to) - log1pexp(from))
 end
 
-"""The largest `bernoulli_kl` over the logits of two points `[w; ρ]` (`logits_at`)."""
+"""The largest `bernoulli_kl` over the logits of two points `[w; ρ]` (`logits_at`), one logit at a time."""
 function largest_kl(from::AbstractVector{E}, to::AbstractVector{E})::E where {E <: Real}
-    return maximum(bernoulli_kl(start, finish) for (start, finish) in zip(logits_at(from), logits_at(to)))
+    return maximum(index -> bernoulli_kl(last(from) * from[index], last(to) * to[index]), firstindex(from):(lastindex(from) - 1))
 end
 
 """
@@ -82,8 +82,8 @@ accepted point's logits `z`, and one for the relative precision.
 struct FisherWeights end
 
 function (::FisherWeights)(weights::AbstractVector{E}, point::BifurcationKit.BorderedArray)::AbstractVector{E} where {E <: Real}
-    logits = logits_at(point.u)
-    payoff_gaps(weights) .= logistic.(logits) .* logistic.(.-logits)
+    relative_precision, gaps = last(point.u), payoff_gaps(point.u)
+    payoff_gaps(weights) .= logistic.(relative_precision .* gaps) .* logistic.(.-(relative_precision .* gaps))
     weights[end] = one(E)
     return weights
 end
@@ -124,8 +124,8 @@ function precision_dot_weight(weighting::FisherLogPrecisionWeights{E}, relative_
 end
 
 function (weighting::FisherLogPrecisionWeights{E})(weights::AbstractVector{E}, point::BifurcationKit.BorderedArray)::AbstractVector{E} where {E <: Real}
-    logits = logits_at(point.u)
-    payoff_gaps(weights) .= weighting.gap_scale .* logistic.(logits) .* logistic.(.-logits)
+    relative_precision, gaps = last(point.u), payoff_gaps(point.u)
+    payoff_gaps(weights) .= weighting.gap_scale .* logistic.(relative_precision .* gaps) .* logistic.(.-(relative_precision .* gaps))
     weights[end] = precision_dot_weight(weighting, last(point.u))
     return weights
 end
