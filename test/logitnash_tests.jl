@@ -79,11 +79,14 @@ end
         crossing = log.(oracle.first_choices) .- log1p.(-oracle.first_choices)
         response = evaluated(NormalFormPass(payoffs), crossing, oracle.precision).response
         @test maximum(abs, inv.(1 .+ exp.(-response)) .- oracle.first_choices) < inv(float(10^8))
-        # Gambit does not normalize payoffs: doubling them doubles λ, and moves the profile.
+        # Gambit does not normalize payoffs: doubling them doubles λ.
         doubled = gambit_branch(map(table -> 2 .* table, payoffs), precision / 2)
         @test maximum(abs, doubled.first_choices .- oracle.first_choices) < inv(float(10^8))
-        @test maximum(abs, gambit_branch(payoffs, precision / 2).first_choices .- oracle.first_choices) > inv(float(10^4))
     end
+    # Halving λ alone moves the profile, so the doubling check above can fail. A random game near a pure profile barely
+    # moves, so this uses a fixed game: matching pennies, with the row player's payoffs made asymmetric.
+    pennies = ([3 -1; -1 1], [-1 1; 1 -1])
+    @test maximum(abs, gambit_branch(pennies, 1.0f0).first_choices .- gambit_branch(pennies, 2.0f0).first_choices) > inv(float(10^4))
 end
 
 @testset "NormalFormPass: the logit slope is the derivative of the response" begin
