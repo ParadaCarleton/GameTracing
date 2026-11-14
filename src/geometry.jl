@@ -72,7 +72,12 @@ end
 
 """The largest `bernoulli_kl` over the logits of two points `[w; ρ]` (`logits_at`), one logit at a time."""
 function largest_kl(from::AbstractVector{E}, to::AbstractVector{E})::E where {E <: Real}
-    return maximum(index -> bernoulli_kl(last(from) * from[index], last(to) * to[index]), firstindex(from):(lastindex(from) - 1))
+    # Rounding can make a KL slightly negative, so the search starts below every value.
+    largest = typemin(E)
+    for index in firstindex(from):(lastindex(from) - 1)
+        largest = max(largest, bernoulli_kl(last(from) * from[index], last(to) * to[index]))
+    end
+    return largest
 end
 
 """

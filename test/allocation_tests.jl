@@ -1,15 +1,15 @@
 using GameTracing: logit_change, step_unresolved, largest_kl, max_regret, max_regret!, regret_workspace
 
-"""The bytes a second call of `f` on `arguments` allocates, after a first call compiles it."""
-function warm_bytes(f::F, arguments...)::Integer where {F}
-    f(arguments...)
-    return @allocated f(arguments...)
+"""The bytes a second call of `call` on `arguments` allocates, after a first call compiles it."""
+function warm_bytes(call::F, arguments...)::Integer where {F}
+    call(arguments...)
+    return @allocated call(arguments...)
 end
 
 """`gambit_settings`-like trace settings in `E` that allow `max_steps` steps."""
 function step_budget_settings(::Type{E}, max_steps::Integer)::TraceSettings{E} where {E <: Real}
     return TraceSettings{E}(;
-        first_step = E(0.03), aggressiveness = E(0.1), max_steps,
+        first_step = E(0.03f0), aggressiveness = E(0.1f0), max_steps,
         geometry = TraceGeometry{E}(; distance = FisherLogPrecisionDistance),
     )
 end
@@ -19,24 +19,20 @@ function solve_bytes(gains::NormalFormGains, ::Type{E}, max_steps::Integer, maxr
     return warm_bytes(gains -> logit_solve(gains; maxregret, settings = step_budget_settings(E, max_steps)), gains)
 end
 
-@testset "logit_solve allocates by the points it records, whatever max_steps allows" begin
-    for E in (Float32, Float64)
-        gains = NormalFormGains(map(table -> E.(table), LOGITNASH_GAMES.prisoners_dilemma))
-        @test solve_bytes(gains, E, 20_000, 1.0e-3) <= solve_bytes(gains, E, 2_000, 1.0e-3) + 1024
-    end
+@testset "logit_solve allocates by the points it records, whatever max_steps allows ($element)" for element in (Float32, widen(Float32))
+    gains = NormalFormGains(map(table -> element.(table), LOGITNASH_GAMES.prisoners_dilemma))
+    @test solve_bytes(gains, element, 20_000, 1.0f-3) <= solve_bytes(gains, element, 2_000, 1.0f-3) + 1024
 end
 
-@testset "the regret check and the corrector's logit measures allocate nothing" begin
+@testset "the regret check and the corrector's logit measures allocate nothing ($element)" for element in (Float32, widen(Float32))
     rng = fresh_rng()
-    for E in (Float32, Float64)
-        gains = NormalFormGains(ntuple(_ -> randn(rng, E, (3, 4)), 2))
-        logits = randn(rng, E, logit_count(gains))
-        work = regret_workspace(gains, logits)
-        @test warm_bytes(max_regret!, work, gains, logits) == 0
-        @test max_regret!(work, gains, logits) == max_regret(gains, logits)
-        from, to = randn(rng, E, 6), randn(rng, E, 6)
-        for measure in (logit_change, step_unresolved, largest_kl)
-            @test warm_bytes(measure, from, to) == 0
-        end
+    gains = NormalFormGains(ntuple(_ -> randn(rng, element, (3, 4)), 2))
+    logits = randn(rng, element, logit_count(gains))
+    work = regret_workspace(gains, logits)
+    @test warm_bytes(max_regret!, work, gains, logits) == 0
+    @test max_regret!(work, gains, logits) == max_regret(gains, logits)
+    from, to = randn(rng, element, 6), randn(rng, element, 6)
+    for measure in (logit_change, step_unresolved, largest_kl)
+        @test warm_bytes(measure, from, to) == 0
     end
 end

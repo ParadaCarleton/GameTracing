@@ -31,7 +31,11 @@ end
 
 """The largest change of a logit from `from` to `to`, two points `[w; ρ]` (`logits_at`), one logit at a time."""
 function logit_change(from::AbstractVector{E}, to::AbstractVector{E})::E where {E <: Real}
-    return maximum(index -> abs(last(to) * to[index] - last(from) * from[index]), firstindex(to):(lastindex(to) - 1))
+    largest = zero(E)
+    for index in firstindex(to):(lastindex(to) - 1)
+        largest = max(largest, abs(last(to) * to[index] - last(from) * from[index]))
+    end
+    return largest
 end
 
 """A trace callback that always lets the trace go on: `(logits, relative_precision)` or `(logits, relative_precision, converged)`."""
@@ -137,7 +141,13 @@ size: the ODE solvers' per-coordinate error test, `|Δz_i| ≤ abstol + reltol |
 of different scales (payoff gaps near 1e6, ρ near 1e-5) each count, and any move of a zero coordinate resolves.
 """
 function step_unresolved(start::AbstractVector{E}, predicted::AbstractVector{E})::Bool where {E <: Real}
-    return all(index -> abs(predicted[index] - start[index]) <= RESOLUTION_ULPS * eps(E) * abs(start[index]), eachindex(start, predicted))
+    for index in eachindex(start, predicted)
+        # Negated so a NaN move counts as resolved, as the comparison is false for it.
+        if !(abs(predicted[index] - start[index]) <= RESOLUTION_ULPS * eps(E) * abs(start[index]))
+            return false
+        end
+    end
+    return true
 end
 
 """A step's reach-failure record before any corrector failed its reach: the correction is NaN, as at a solve's start."""
@@ -455,7 +465,11 @@ end
 
 """The squared Euclidean distance between two points with `gaps` and `param`, such as branch records."""
 function squared_distance(left::NamedTuple, right::NamedTuple)::typeof(left.param)
-    return sum(index -> abs2(left.gaps[index] - right.gaps[index]), eachindex(left.gaps, right.gaps)) + abs2(left.param - right.param)
+    total = zero(left.param)
+    for index in eachindex(left.gaps, right.gaps)
+        total += abs2(left.gaps[index] - right.gaps[index])
+    end
+    return total + abs2(left.param - right.param)
 end
 
 """
