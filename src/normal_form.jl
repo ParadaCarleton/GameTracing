@@ -87,6 +87,31 @@ function rival_weight(
     return weight
 end
 
+"""
+    write_gains!(work, gain, gains, logits)
+
+Each player's gains `G_pk = U_p(k, π) - U_p(1, π)` of `gains` at the stacked `logits`, into `gain`. The mixed strategies
+`π` stay in `work.strategies` (`pass_workspace`).
+"""
+function write_gains!(
+        work::NamedTuple,
+        gain::AbstractVector,
+        gains::NormalFormGains,
+        logits::AbstractVector{E},
+    )::Nothing where {E <: Real}
+    ranges = logit_ranges(gains)
+    reference_softmax!.(work.strategies, view.((logits,), ranges))
+    for (player, payoff) in pairs(gains.payoffs)
+        expected = view(work.expected, axes(payoff, player))
+        fill!(expected, zero(E))
+        for profile in CartesianIndices(payoff)
+            expected[profile[player]] += payoff[profile] * rival_weight(work.strategies, profile, player, 0)
+        end
+        view(gain, ranges[player]) .= view(expected, (firstindex(expected) + 1):lastindex(expected)) .- first(expected)
+    end
+    return nothing
+end
+
 function (gains::NormalFormGains)(
         work::NamedTuple,
         gain::AbstractVector,
@@ -95,21 +120,13 @@ function (gains::NormalFormGains)(
         logits::AbstractVector{E},
         ::Real,
     )::Nothing where {E <: Real}
-    ranges = logit_ranges(gains)
-    reference_softmax!.(work.strategies, view.((logits,), ranges))
+    write_gains!(work, gain, gains, logits)
     fill!(gain_slope, zero(E))
     fill!(gain_precision_slope, zero(E))
-    for (player, payoff) in pairs(gains.payoffs)
-        expected = view(work.expected, axes(payoff, player))
-        fill!(expected, zero(E))
-        for profile in CartesianIndices(payoff)
-            expected[profile[player]] += payoff[profile] * rival_weight(work.strategies, profile, player, 0)
-        end
-        view(gain, ranges[player]) .= view(expected, (firstindex(expected) + 1):lastindex(expected)) .- first(expected)
-        for (rival, rival_range) in pairs(ranges)
-            if rival != player
-                write_gain_slope!(@view(gain_slope[ranges[player], rival_range]), payoff, work, player, rival)
-            end
+    ranges = logit_ranges(gains)
+    for (player, payoff) in pairs(gains.payoffs), (rival, rival_range) in pairs(ranges)
+        if rival != player
+            write_gain_slope!(@view(gain_slope[ranges[player], rival_range]), payoff, work, player, rival)
         end
     end
     return nothing

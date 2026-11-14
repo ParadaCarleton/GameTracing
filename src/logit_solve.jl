@@ -51,12 +51,23 @@ function player_regret(gain::AbstractVector{E}, strategy::AbstractVector{E})::E 
     return maximum(gain; init = zero(E)) - dot(view(strategy, (firstindex(strategy) + 1):lastindex(strategy)), gain)
 end
 
-"""The largest regret of any player of `gains` at `logits`: its best strategy's expected payoff less its mixed strategy's."""
+"""The work arrays of `max_regret!` on `gains` at logits like `logits`: a pass's arrays (`pass_workspace`) and the gains."""
+function regret_workspace(gains::NormalFormGains, logits::AbstractVector{E})::NamedTuple where {E <: Real}
+    return (; pass = pass_workspace(gains, logits), gain = zeros(E, length(logits)))
+end
+
+"""
+The largest regret of any player of `gains` at `logits`: its best strategy's expected payoff less its mixed strategy's.
+The gains and strategies go into `work` (`regret_workspace`).
+"""
+function max_regret!(work::NamedTuple, gains::NormalFormGains, logits::AbstractVector{E})::E where {E <: Real}
+    write_gains!(work.pass, work.gain, gains, logits)
+    return maximum(player_regret.(view.((work.gain,), logit_ranges(gains)), work.pass.strategies))
+end
+
+"""`max_regret!` in work arrays of its own."""
 function max_regret(gains::NormalFormGains, logits::AbstractVector{E})::E where {E <: Real}
-    width = length(logits)
-    gain = zeros(E, width)
-    gains(gain, zeros(E, width, width), zeros(E, width), logits, one(E))
-    return maximum(player_regret.(view.((gain,), logit_ranges(gains)), mixed_strategies(gains, logits)))
+    return max_regret!(regret_workspace(gains, logits), gains, logits)
 end
 
 """Refuse `settings` whose element type is not `float` of the payoffs' of `gains`: the trace and its profiles run in the settings' type."""
@@ -73,30 +84,28 @@ function payoff_range(gains::NormalFormGains{N, A})::eltype(A) where {N, A}
 end
 
 """
-    BranchRecorder(gains, target, tolerance, precisions, logits)
+    BranchRecorder(gains, target, tolerance)
 
-A `keep_going` that writes each accepted point of a trace of `gains` to precision `target` into the next branch point
-of `precisions` (NaN until written) and `logits`, and stops the trace at the first point whose largest regret
-(`max_regret`) is at most `tolerance`. Its arrays hold one branch point per step the trace may take.
+A `keep_going` that appends each accepted point of a trace of `gains` to precision `target` to `precisions` and
+`logits`, and stops the trace at the first point whose largest regret (`max_regret!`) is at most `tolerance`.
 """
-struct BranchRecorder{G <: NormalFormGains, E <: Real}
+struct BranchRecorder{G <: NormalFormGains, E <: Real, W <: NamedTuple}
     gains::G
     target::E
     tolerance::E
     precisions::Vector{E}
-    logits::Matrix{E}
+    logits::Vector{Vector{E}}
+    work::W
+end
+
+function BranchRecorder(gains::NormalFormGains, target::E, tolerance::E)::BranchRecorder{<:NormalFormGains, E} where {E <: Real}
+    return BranchRecorder(gains, target, tolerance, E[], Vector{E}[], regret_workspace(gains, zeros(E, logit_count(gains))))
 end
 
 function (recorder::BranchRecorder{G, E})(logits::AbstractVector{E}, relative_precision::Real)::Bool where {G, E <: Real}
-    point = something(findfirst(isnan, recorder.precisions))
-    setindex!(recorder.precisions, relative_precision * recorder.target, point)
-    view(recorder.logits, :, point) .= logits
-    return max_regret(recorder.gains, logits) > recorder.tolerance
-end
-
-"""The branch points `recorder` wrote: the leading entries of its precisions that are not NaN."""
-function recorded_points(recorder::BranchRecorder)::AbstractUnitRange
-    return 1:count(!isnan, recorder.precisions)
+    push!(recorder.precisions, relative_precision * recorder.target)
+    push!(recorder.logits, collect(logits))
+    return max_regret!(recorder.work, recorder.gains, logits) > recorder.tolerance
 end
 
 """The `LogitQREProfile` at precision `lam` on the principal branch of `gains`, traced with `settings`."""
@@ -160,25 +169,16 @@ function logit_solve_branch(
         throw(ArgumentError("maxregret must be positive; got $maxregret"))
     end
     require_payoff_type(gains, settings)
-    width = logit_count(gains)
-    recorder = BranchRecorder(
-        gains,
-        E(maximum_precision),
-        E(maxregret) * E(payoff_range(gains)),
-        fill(E(NaN32), settings.max_steps + 1),
-        zeros(E, width, settings.max_steps + 1),
-    )
-    result = trace_endpoint(LogitGame(gains, E(maximum_precision)), width, settings; keep_going = recorder, context = (; maxregret))
-    recorded = recorded_points(recorder)
-    logits = eachcol(@view recorder.logits[:, recorded])
-    settled = !isempty(recorded) && max_regret(gains, last(logits)) <= recorder.tolerance
+    recorder = BranchRecorder(gains, E(maximum_precision), E(maxregret) * E(payoff_range(gains)))
+    result = trace_endpoint(LogitGame(gains, E(maximum_precision)), logit_count(gains), settings; keep_going = recorder, context = (; maxregret))
+    settled = !isempty(recorder.logits) && max_regret!(recorder.work, gains, last(recorder.logits)) <= recorder.tolerance
     if !settled && is_error(result)
         return Err(unwrap_error(result))
     end
     if !settled
         return Err(TraceFailure(NoConvergence, (; maxregret, maximum_precision, reason = :maximum_precision)))
     end
-    return Ok(LogitQREProfile.((gains,), view(recorder.precisions, recorded), logits))
+    return Ok(LogitQREProfile.((gains,), recorder.precisions, recorder.logits))
 end
 
 """
